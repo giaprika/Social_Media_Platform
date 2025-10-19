@@ -1,0 +1,10 @@
+**/node_modules/
+**/logs/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
