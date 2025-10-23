@@ -28,11 +28,11 @@ export default function NonAuthed() {
     return <Loading />;
   }
 
-  // if (authed) {
-  //   return (
-  //     <Navigate to={PATHS.FEED} replace state={{ path: location.pathname }} />
-  //   );
-  // }
+  if (authed) {
+    return (
+      <Navigate to={PATHS.FEED} replace state={{ path: location.pathname }} />
+    );
+  }
 
   return <Outlet className="outlet" />;
 }
