@@ -1,26 +1,32 @@
-import React from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { PATHS } from "src/constants/paths";
 
 export default function Home() {
-  const navigate = useNavigate();
-
   return (
-    <div className="flex flex-col items-center justify-center h-[calc(100vh-60px)] bg-gray-50">
-      <h1 className="text-3xl font-bold mb-8 text-gray-800">Welcome to MyApp</h1>
-      <div className="flex space-x-6">
-        <button
-          onClick={() => navigate(PATHS.LOGIN)}
-          className="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-all duration-200"
-        >
-          Login
-        </button>
-        <button
-          onClick={() => navigate(PATHS.SIGNUP)}
-          className="px-6 py-2 rounded-lg bg-gray-200 text-gray-800 font-semibold hover:bg-gray-300 transition-all duration-200"
-        >
-          Sign Up
-        </button>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
+      <div className="w-full max-w-xl text-center">
+        <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-primary">
+          <span className="text-2xl font-bold text-primary-foreground">S</span>
+        </div>
+        <h1 className="text-4xl font-bold text-foreground">Welcome to SocialApp</h1>
+        <p className="mt-4 text-lg text-muted-foreground">
+          Dive into a Reddit-inspired experience with a modern dark theme. Connect, share, and explore trending discussions.
+        </p>
+
+        <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:justify-center">
+          <Link
+            to={PATHS.LOGIN}
+            className="rounded-lg bg-primary px-6 py-3 text-center font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            Log In
+          </Link>
+          <Link
+            to={PATHS.SIGNUP}
+            className="rounded-lg bg-muted px-6 py-3 text-center font-semibold text-foreground transition-colors hover:bg-muted/80"
+          >
+            Create an Account
+          </Link>
+        </div>
       </div>
     </div>
   );

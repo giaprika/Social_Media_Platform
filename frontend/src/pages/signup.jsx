@@ -1,130 +1,207 @@
-import React from "react";
-import {
-  Form,
-  Input,
-  Button,
-  DatePicker,
-  Select,
-  Typography,
-  Card,
-  message,
-} from "antd";
-import { useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { message } from "antd";
 import { signup } from "src/api/auth";
 import { validatePassword } from "src/utils/validate";
 import { PATHS } from "src/constants/paths";
 
-const { Title, Text } = Typography;
+const defaultForm = {
+  fullName: "",
+  email: "",
+  birthDate: "",
+  gender: "",
+  password: "",
+  confirmPassword: "",
+};
 
 const SignUp = () => {
   const navigate = useNavigate();
+  const [formData, setFormData] = useState(defaultForm);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (values) => {
-    const { full_name, email, password, confirmPassword, birth_date, gender } =
-      values;
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
 
-    if (!validatePassword(password))
-      return message.error("Password must be at least 8 characters");
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setError("");
 
-    if (password !== confirmPassword)
-      return message.error("Passwords do not match");
+    if (!validatePassword(formData.password)) {
+      setError(
+        "Password must be at least 8 characters and include uppercase, lowercase, and a number"
+      );
+      return;
+    }
+
+    if (formData.password !== formData.confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+
+    if (!formData.birthDate || !formData.gender) {
+      setError("Please complete all required fields");
+      return;
+    }
 
     try {
+      setLoading(true);
       await signup({
-        full_name,
-        email,
-        password,
-        birth_date: birth_date.format("YYYY-MM-DD"),
-        gender,
+        full_name: formData.fullName,
+        email: formData.email,
+        password: formData.password,
+        birth_date: formData.birthDate,
+        gender: formData.gender,
       });
       message.success("Account created successfully!");
       navigate(PATHS.LOGIN);
-    } catch (error) {
-      console.error(error);
-      message.error(error.response?.data?.error || "Signup failed");
+    } catch (err) {
+      console.error(err);
+      const apiError = err.response?.data?.error || "Signup failed";
+      setError(apiError);
+      message.error(apiError);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 px-4">
-      <Card className="shadow-xl w-full max-w-md rounded-2xl">
-        <Title level={2} className="text-center mb-6 text-gray-800">
-          Create Account
-        </Title>
-
-        <Form layout="vertical" onFinish={handleSubmit}>
-          <Form.Item
-            label="Full Name"
-            name="full_name"
-            rules={[{ required: true, message: "Please enter your full name" }]}
-          >
-            <Input size="large" placeholder="Your full name" />
-          </Form.Item>
-
-          <Form.Item
-            label="Email"
-            name="email"
-            rules={[{ required: true, message: "Please enter your email" }]}
-          >
-            <Input size="large" placeholder="you@example.com" />
-          </Form.Item>
-
-          <Form.Item
-            label="Birth Date"
-            name="birth_date"
-            rules={[{ required: true }]}
-          >
-            <DatePicker size="large" className="w-full" />
-          </Form.Item>
-
-          <Form.Item label="Gender" name="gender" rules={[{ required: true }]}>
-            <Select size="large" placeholder="Select">
-              <Select.Option value="male">Male</Select.Option>
-              <Select.Option value="female">Female</Select.Option>
-              <Select.Option value="other">Other</Select.Option>
-            </Select>
-          </Form.Item>
-
-          <Form.Item
-            label="Password"
-            name="password"
-            rules={[{ required: true, message: "Please enter a password" }]}
-          >
-            <Input.Password size="large" placeholder="••••••••" />
-          </Form.Item>
-
-          <Form.Item
-            label="Confirm Password"
-            name="confirmPassword"
-            rules={[
-              { required: true, message: "Please confirm your password" },
-            ]}
-          >
-            <Input.Password size="large" placeholder="••••••••" />
-          </Form.Item>
-
-          <Button
-            type="primary"
-            htmlType="submit"
-            block
-            size="large"
-            className="mt-2 rounded-lg"
-          >
-            Sign Up
-          </Button>
-        </Form>
-
-        <div className="text-center mt-4">
-          <Text>Already have an account? </Text>
-          <Button
-            type="link"
-            onClick={() => navigate(PATHS.LOGIN)}
-            className="p-0"
-          >
-            Login
-          </Button>
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="w-full max-w-md">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary">
+            <span className="text-xl font-bold text-primary-foreground">S</span>
+          </div>
+          <h1 className="text-3xl font-bold text-foreground">Create Account</h1>
+          <p className="mt-2 text-muted-foreground">Join SocialApp today</p>
         </div>
-      </Card>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="fullName">
+              Full Name
+            </label>
+            <input
+              id="fullName"
+              name="fullName"
+              value={formData.fullName}
+              onChange={handleChange}
+              placeholder="John Doe"
+              className="w-full rounded-lg border border-border bg-card px-4 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="email">
+              Email
+            </label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              value={formData.email}
+              onChange={handleChange}
+              placeholder="you@example.com"
+              className="w-full rounded-lg border border-border bg-card px-4 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="birthDate">
+              Birth Date
+            </label>
+            <input
+              id="birthDate"
+              name="birthDate"
+              type="date"
+              value={formData.birthDate}
+              onChange={handleChange}
+              className="w-full rounded-lg border border-border bg-card px-4 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="gender">
+              Gender
+            </label>
+            <select
+              id="gender"
+              name="gender"
+              value={formData.gender}
+              onChange={handleChange}
+              className="w-full rounded-lg border border-border bg-card px-4 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              required
+            >
+              <option value="" disabled>
+                Select your gender
+              </option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="password">
+              Password
+            </label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              value={formData.password}
+              onChange={handleChange}
+              placeholder="••••••••"
+              className="w-full rounded-lg border border-border bg-card px-4 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="confirmPassword">
+              Confirm Password
+            </label>
+            <input
+              id="confirmPassword"
+              name="confirmPassword"
+              type="password"
+              value={formData.confirmPassword}
+              onChange={handleChange}
+              placeholder="••••••••"
+              className="w-full rounded-lg border border-border bg-card px-4 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              required
+            />
+          </div>
+
+          {error && (
+            <div className="rounded-lg border border-destructive bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-lg bg-primary py-2 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+          >
+            {loading ? "Creating account..." : "Sign Up"}
+          </button>
+        </form>
+
+        <div className="mt-6 text-center">
+          <p className="text-muted-foreground">
+            Already have an account?{" "}
+            <Link to={PATHS.LOGIN} className="font-semibold text-primary hover:underline">
+              Log in
+            </Link>
+          </p>
+        </div>
+      </div>
     </div>
   );
 };
