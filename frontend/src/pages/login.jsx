@@ -1,25 +1,38 @@
-import React from "react";
-import { Form, Input, Button, Typography, message, Card } from "antd";
-import { useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { message } from "antd";
 import * as auth from "src/api/auth";
 import useAuth from "src/hooks/useAuth";
 import { PATHS } from "src/constants/paths";
 import { validateEmail, validatePassword } from "src/utils/validate";
 
-const { Title, Text } = Typography;
-
 const Login = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
 
-  const handleSubmit = async (values) => {
-    const { email, password } = values;
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-    if (!validateEmail(email)) return message.error("Invalid email");
-    if (!validatePassword(password))
-      return message.error("Password must be at least 8 characters");
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setError("");
+
+    if (!validateEmail(email)) {
+      setError("Invalid email address");
+      return;
+    }
+
+    if (!validatePassword(password)) {
+      setError(
+        "Password must be at least 8 characters and include uppercase, lowercase, and a number"
+      );
+      return;
+    }
 
     try {
+      setLoading(true);
       const { data } = await auth.login({ email, password });
       await login({
         accessToken: data.access_token,
@@ -28,59 +41,82 @@ const Login = () => {
         user: data.user,
       });
       message.success("Login successful!");
-      navigate(PATHS.ROOT);
+      navigate(PATHS.FEED);
     } catch (err) {
       console.error(err);
-      message.error("Login failed. Please try again.");
+  setError("Login failed. Please try again.");
+  message.error("Login failed. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 px-4">
-      <Card className="shadow-xl w-full max-w-md rounded-2xl">
-        <Title level={2} className="text-center mb-6 text-gray-800">
-          Welcome Back
-        </Title>
-
-        <Form layout="vertical" onFinish={handleSubmit}>
-          <Form.Item
-            label="Email"
-            name="email"
-            rules={[{ required: true, message: "Please enter your email" }]}
-          >
-            <Input size="large" placeholder="you@example.com" />
-          </Form.Item>
-
-          <Form.Item
-            label="Password"
-            name="password"
-            rules={[{ required: true, message: "Please enter your password" }]}
-          >
-            <Input.Password size="large" placeholder="••••••••" />
-          </Form.Item>
-
-          <Button
-            type="primary"
-            htmlType="submit"
-            block
-            size="large"
-            className="mt-2 rounded-lg"
-          >
-            Login
-          </Button>
-        </Form>
-
-        <div className="text-center mt-4">
-          <Text>Don’t have an account? </Text>
-          <Button
-            type="link"
-            onClick={() => navigate(PATHS.SIGNUP)}
-            className="p-0"
-          >
-            Sign up
-          </Button>
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="w-full max-w-md">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary">
+            <span className="text-xl font-bold text-primary-foreground">S</span>
+          </div>
+          <h1 className="text-3xl font-bold text-foreground">SocialApp</h1>
+          <p className="mt-2 text-muted-foreground">Welcome back</p>
         </div>
-      </Card>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="email">
+              Email
+            </label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="you@example.com"
+              className="w-full rounded-lg border border-border bg-card px-4 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="password">
+              Password
+            </label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="••••••••"
+              className="w-full rounded-lg border border-border bg-card px-4 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              required
+            />
+          </div>
+
+          {error && (
+            <div className="rounded-lg border border-destructive bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-lg bg-primary py-2 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+          >
+            {loading ? "Logging in..." : "Log In"}
+          </button>
+        </form>
+
+        <div className="mt-6 text-center">
+          <p className="text-muted-foreground">
+            Don't have an account?{" "}
+            <Link to={PATHS.SIGNUP} className="font-semibold text-primary hover:underline">
+              Sign up
+            </Link>
+          </p>
+        </div>
+      </div>
     </div>
   );
 };
