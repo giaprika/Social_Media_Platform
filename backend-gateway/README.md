@@ -4,9 +4,8 @@
 
 ## Thiết lập env
 
-Copy từ file env.example:
+Thêm từ file env:
 
-- `USER_NAME`: tên của mình
 - `*_SERVICE_URL`: domain của các services
 
 ## Thiết lập proxy
@@ -16,24 +15,24 @@ Vào file `src/config/index.js`.
 
 **Ví dụ:**
 
-User service có endpoint path là `http://localhost:10458/{BASE_PATH}` thì thêm đoạn này vào trong file:
+User service có endpoint path là `http://localhost:8001/{BASE_PATH}` thì thêm đoạn này vào trong file:
 
 ```js
 users: {
-    target: process.env.USER_SERVICE_URL || 'http://localhost:10458',
+    target: process.env.USER_SERVICE_URL || 'http://localhost:8001',
         pathRewrite: {
             '^/api/service/users': '/BASE_PATH'
         },
     },
 ```
 
-Lúc này muốn check API thì gọi `http://localhost:3000/api/service/{service}/*`.
+Lúc này muốn check API thì gọi `http://localhost:8000/api/service/{service}/*`.
 
 **Ví dụ:**
 
-Thay vì gọi trực tiếp tới `http://localhost:10458/users/login`
+Thay vì gọi trực tiếp tới `http://localhost:8001/users/login`
 
-Sau khi thiết lập proxy thì gọi `http://locahost:3000/api/service/users/login`
+Sau khi thiết lập proxy thì gọi `http://locahost:8000/api/service/users/login`
 
 ## Authenticate
 
