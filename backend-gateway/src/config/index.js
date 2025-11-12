@@ -40,6 +40,14 @@ const config = {
       ],
       timeout: 5000,
     },
+    notifications: {
+      target: process.env.NOTIFICATION_SERVICE_URL || "http://localhost:8002",
+      pathRewrite: {
+        "^/api/service/notifications": "/notifications",
+      },
+      excludeList: ["/", ""],
+      timeout: 5000,
+    },
   },
 };
 
