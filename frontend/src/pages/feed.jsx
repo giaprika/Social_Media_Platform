@@ -1,4 +1,12 @@
 import { useState } from "react";
+import { useNotifications } from "../hooks/useNotifications";
+import { useEffect } from "react";
+function getCookie(name) {
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop().split(';').shift();
+  return null;
+}
 
 const mockPosts = [
   {
@@ -41,6 +49,25 @@ const mockPosts = [
 
 export default function Feed() {
   const [posts, setPosts] = useState(mockPosts);
+
+
+  const token = getCookie("accessToken");
+  console.log("Access Token:", token);
+
+  useEffect(() => {
+    if (token) {
+      console.log("User is logged in.");
+    } else {
+      console.log("User is not logged in.");
+    }
+  }, []);
+  const { notifications } = useNotifications(token);
+
+  useEffect(() => {
+    if (notifications.length > 0) {
+      console.log("Bạn có thông báo mới:", notifications[0]);
+    }
+  }, [notifications]);
 
   const toggleLike = (postId) => {
     setPosts((prevPosts) =>
