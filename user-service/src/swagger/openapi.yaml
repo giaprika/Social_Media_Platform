@@ -230,7 +230,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  users/relationships:
+  /users/relationships:
     post:
       summary: Create a relationship
       description: Create a new relationship (friend, follow, or block) between two users. When creating a block, existing friend/follow relations between the two users are removed.
@@ -367,7 +367,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  users/relationships/friends:
+  /users/relationships/friends:
     get:
       summary: List friends for a user
       description: List friends of a user (type=friend and status=accepted). Returns relationship data with friend user info embedded.
@@ -394,7 +394,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  users/relationships/followers:
+  /users/relationships/followers:
     get:
       summary: List followers for a user
       description: List followers (users who follow `userId`). Returns relationship data with follower user info embedded.
