@@ -21,6 +21,10 @@ app.use(morgan("dev"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Swagger UI setup
+import setupSwagger from "./src/swagger/swagger.js";
+setupSwagger(app);
+
 // Routes
 app.use("/users", userRoutes);
 app.use("/users/relationships", relationshipsRoutes);

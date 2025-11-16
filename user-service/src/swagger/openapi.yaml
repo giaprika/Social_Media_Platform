@@ -4,7 +4,7 @@ info:
   description: API specification for the user-service in the Social_Media_Platform project.
   version: 1.0.0
 servers:
-  - url: http://localhost:4000
+  - url: http://localhost:8001
     description: Local development server (adjust port as needed)
 paths:
   /users:
