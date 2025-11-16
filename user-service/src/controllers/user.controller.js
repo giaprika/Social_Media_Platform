@@ -37,8 +37,7 @@ export class UserController {
 
   static async getUserById(req, res) {
     try {
-      console.log("req.user:", req.user);
-      const userId = req.user.id;
+      const userId = req.headers["x-user-id"];
       const user = await UserService.findUserById(userId);
       if (!user) {
         return res.status(404).json({ error: "Không tìm thấy người dùng" });
