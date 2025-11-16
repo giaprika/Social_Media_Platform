@@ -9,11 +9,11 @@ router.get("/", (req, res) => {
 });
 
 // Routes không cần xác thực
-router.post("/register", UserController.createUser);
-router.post("/validate", UserController.validateUser);
-router.post("/login", UserController.loginUser);
-router.delete("/deleteUser/:id", UserController.deleteUser);
-router.post("/saveRefreshToken", UserController.saveRefreshToken);
+router.post("/", UserController.createUser);
+router.post("/validation", UserController.validateUser);
+router.post("/logining", UserController.loginUser);
+router.delete("/:id", UserController.deleteUser);
+router.post("/refresh-token", UserController.saveRefreshToken);
 
 // Routes cần xác thực (từ gateway)
 router.get("/me", authenticate, UserController.getUserById);

@@ -1,0 +1,292 @@
+openapi: 3.0.3
+info:
+  title: User Service API
+  description: API specification for the user-service in the Social_Media_Platform project.
+  version: 1.0.0
+servers:
+  - url: http://localhost:4000
+    description: Local development server (adjust port as needed)
+paths:
+  /users:
+    get:
+      summary: Health check for user-service
+      description: Returns a simple JSON message to verify the service is running.
+      responses:
+        "200":
+          description: Service is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: user-service running
+
+    post:
+      summary: Create a new user
+      description: Create a new user account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Invalid input or email already used
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /users/validation:
+    post:
+      summary: Validate if email is available
+      description: Check whether an email is already used by another user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+              required:
+                - email
+      responses:
+        "200":
+          description: Email available
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available:
+                    type: boolean
+                    example: true
+        "400":
+          description: Email already used or invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /users/logining:
+    post:
+      summary: Login user
+      description: Authenticate user with email and password.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful (returns user info without password)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized - wrong email or password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /users/{id}:
+    delete:
+      summary: Delete a user
+      description: Delete a user by id.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: User id to delete
+      responses:
+        "200":
+          description: Deletion result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Xóa người dùng thành công, 123e4567-e89b-12d3-a456-426614174000
+        "400":
+          description: Bad request or user not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /users/refresh-token:
+    post:
+      summary: Save refresh token
+      description: Store a refresh token for a user (used by gateway).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshTokenRequest"
+      responses:
+        "200":
+          description: Refresh token saved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Refresh token saved successfully
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /users/me:
+    get:
+      summary: Get current user
+      description: Return the authenticated user's profile. Requires bearer token.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized - missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 123e4567-e89b-12d3-a456-426614174000
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        full_name:
+          type: string
+          example: Jane Doe
+        avatar_url:
+          type: string
+          nullable: true
+          example: https://example.com/avatar.png
+        birth_date:
+          type: string
+          format: date
+          nullable: true
+          example: "1990-01-01"
+        gender:
+          type: string
+          nullable: true
+          example: female
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-11-16T12:00:00Z"
+        metadata:
+          type: object
+          additionalProperties: true
+
+    CreateUserRequest:
+      type: object
+      required:
+        - email
+        - password
+        - full_name
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+        full_name:
+          type: string
+        avatar_url:
+          type: string
+        birth_date:
+          type: string
+          format: date
+        gender:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+
+    RefreshTokenRequest:
+      type: object
+      required:
+        - userId
+        - refreshToken
+      properties:
+        userId:
+          type: string
+        refreshToken:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Error message here
+
+tags: []
