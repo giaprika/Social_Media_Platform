@@ -19,3 +19,17 @@ CREATE TABLE auth_tokens (
   last_used_at TIMESTAMP,
   is_revoked BOOLEAN
 );
+
+CREATE TYPE relationship_type AS ENUM ('friend', 'follow', 'block');
+
+CREATE TYPE relationship_status AS ENUM ('pending', 'accepted');
+
+CREATE TABLE relationships (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id),
+  target_id UUID NOT NULL REFERENCES users(id),
+  type relationship_type NOT NULL,
+  status relationship_status NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);

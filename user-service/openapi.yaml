@@ -187,6 +187,197 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  users/relationships:
+    post:
+      summary: Create a relationship
+      description: Create a new relationship (friend, follow, or block) between two users. When creating a block, existing friend/follow relations between the two users are removed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRelationshipRequest"
+      responses:
+        "201":
+          description: Relationship created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Relationship"
+        "400":
+          description: Invalid input or business rule violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    get:
+      summary: Get relationship between two users
+      description: Get the relationship (if any) between two users. Provide `userId` and `targetId` as query params.
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: targetId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Relationship found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Relationship"
+        "404":
+          description: No relationship found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    patch:
+      summary: Accept or refuse a relationship request
+      description: The `target_id` accepts or refuses an action from `user_id`. Pass `action` = `accept` or `refuse` in the request body.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+                - target_id
+                - action
+              properties:
+                user_id:
+                  type: string
+                  example: 123e4567-e89b-12d3-a456-426614174001
+                target_id:
+                  type: string
+                  example: 123e4567-e89b-12d3-a456-426614174002
+                action:
+                  type: string
+                  enum: ["accept", "refuse"]
+                  example: accept
+      responses:
+        "200":
+          description: Action processed successfully
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/Relationship"
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                        example: Request refused
+        "400":
+          description: Invalid input or unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    delete:
+      summary: Delete relationship between two users
+      description: Delete any relationship(s) between `user_id` and `target_id` (either direction).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+                - target_id
+              properties:
+                user_id:
+                  type: string
+                  example: 123e4567-e89b-12d3-a456-426614174001
+                target_id:
+                  type: string
+                  example: 123e4567-e89b-12d3-a456-426614174002
+      responses:
+        "200":
+          description: Relationship(s) deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Relationship(s) deleted
+                  deleted:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Relationship"
+        "404":
+          description: Relationship not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  users/relationships/friends:
+    get:
+      summary: List friends for a user
+      description: List friends of a user (type=friend and status=accepted). Returns relationship data with friend user info embedded.
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: string
+          example: 123e4567-e89b-12d3-a456-426614174000
+      responses:
+        "200":
+          description: List of friends with user info
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RelationshipWithFriendInfo"
+        "400":
+          description: Missing userId
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  users/relationships/followers:
+    get:
+      summary: List followers for a user
+      description: List followers (users who follow `userId`). Returns relationship data with follower user info embedded.
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: string
+          example: 123e4567-e89b-12d3-a456-426614174000
+      responses:
+        "200":
+          description: List of followers with user info
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RelationshipWithFollowerInfo"
+        "400":
+          description: Missing userId
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -288,5 +479,68 @@ components:
         error:
           type: string
           example: Error message here
+
+    Relationship:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 123e4567-e89b-12d3-a456-426614174000
+        user_id:
+          type: string
+          example: 123e4567-e89b-12d3-a456-426614174001
+        target_id:
+          type: string
+          example: 123e4567-e89b-12d3-a456-426614174002
+        type:
+          type: string
+          enum: ["friend", "follow", "block"]
+          example: friend
+        status:
+          type: string
+          enum: ["pending", "accepted"]
+          example: accepted
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-11-16T12:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2025-11-16T12:00:00Z"
+
+    CreateRelationshipRequest:
+      type: object
+      required:
+        - user_id
+        - target_id
+        - type
+      properties:
+        user_id:
+          type: string
+          example: 123e4567-e89b-12d3-a456-426614174001
+        target_id:
+          type: string
+          example: 123e4567-e89b-12d3-a456-426614174002
+        type:
+          type: string
+          enum: ["friend", "follow", "block"]
+          example: friend
+
+    RelationshipWithFriendInfo:
+      allOf:
+        - $ref: "#/components/schemas/Relationship"
+        - type: object
+          properties:
+            friend_info:
+              $ref: "#/components/schemas/User"
+
+    RelationshipWithFollowerInfo:
+      allOf:
+        - $ref: "#/components/schemas/Relationship"
+        - type: object
+          properties:
+            follower_info:
+              $ref: "#/components/schemas/User"
 
 tags: []
