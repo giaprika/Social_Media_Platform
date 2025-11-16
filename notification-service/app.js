@@ -20,6 +20,9 @@ app.use(morgan("dev"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Swagger UI setup
+import setupSwagger from "./src/swagger/swagger.js";
+setupSwagger(app);
 // Routes
 app.use("/notifications", userRoutes);
 
@@ -36,5 +39,8 @@ app.use((err, req, res, next) => {
 app.use((req, res) => {
   res.status(404).json({ message: "API không tồn tại" });
 });
+
+
+
 
 export default app;

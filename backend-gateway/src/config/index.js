@@ -45,7 +45,7 @@ const config = {
       pathRewrite: {
         "^/api/service/notifications": "/notifications",
       },
-      excludeList: ["/", ""],
+      excludeList: [],
       timeout: 5000,
     },
   },

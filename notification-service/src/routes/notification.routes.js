@@ -3,14 +3,11 @@ import { NotificationController } from "../controllers/notification.controller.j
 import { authenticate } from "../middlewares/authMiddleware.js";
 const router = express.Router();
 
-// Routes không cần xác thực
-
-// Routes cần xác thực (từ gateway)
-// router.post("/notification", authenticate, NotificationController.createNotification);
-router.post("/", authenticate, NotificationController.createNotificationToMultipleUsers);
+// router.post("/notification", NotificationController.createNotification);
+router.post("/", NotificationController.createNotificationToMultipleUsers);
 router.get("/", authenticate, NotificationController.getNotificationsByUserId);
-router.patch("/:notification_id/read", authenticate, NotificationController.markNotificationAsRead);
-router.delete("/:notification_id", authenticate, NotificationController.deleteNotification);
+router.patch("/:notification_id/read", NotificationController.markNotificationAsRead);
+router.delete("/:notification_id", NotificationController.deleteNotification);
 
 
 export default router;

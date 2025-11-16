@@ -1,3 +1,5 @@
+DROP TABLE notifications;
+
 CREATE TABLE IF NOT EXISTS notifications(
     id                  UUID PRIMARY KEY,
     user_id             UUID NOT NULL,
@@ -7,7 +9,7 @@ CREATE TABLE IF NOT EXISTS notifications(
 
     description         TEXT,
 
-    is_readed           BOOLEAN NOT NULL DEFAULT TRUE,
+    is_readed           BOOLEAN NOT NULL DEFAULT FALSE,
     link_url           VARCHAR(500),
 
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
