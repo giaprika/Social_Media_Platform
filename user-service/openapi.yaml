@@ -9,19 +9,31 @@ servers:
 paths:
   /users:
     get:
-      summary: Health check for user-service
-      description: Returns a simple JSON message to verify the service is running.
+      summary: Search users by name
+      description: Search for users by full name (case-insensitive partial match).
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Search query (full name or partial name)
+          example: John
       responses:
         "200":
-          description: Service is running
+          description: List of matching users
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: user-service running
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+        "400":
+          description: Missing search query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
     post:
       summary: Create a new user
@@ -105,6 +117,37 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /users/{id}:
+    get:
+      summary: Get user by ID
+      description: Retrieve user information by user ID.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: User ID
+          example: 123e4567-e89b-12d3-a456-426614174000
+      responses:
+        "200":
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
     delete:
       summary: Delete a user
       description: Delete a user by id.
