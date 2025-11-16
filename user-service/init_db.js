@@ -10,9 +10,9 @@ const { Client } = pkg;
 const client = new Client({
   host: process.env.DB_HOST || "localhost",
   port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || "notify_db",
+  database: process.env.DB_NAME || "user_db",
   user: process.env.DB_USER || "postgres",
-  password: process.env.DB_PASSWORD || "duyvu11052005",
+  password: process.env.DB_PASSWORD || "giap08022005",
 });
 
 async function initDB() {

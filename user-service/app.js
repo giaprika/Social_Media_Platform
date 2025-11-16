@@ -3,6 +3,7 @@ import helmet from "helmet";
 import morgan from "morgan";
 import cors from "cors";
 import userRoutes from "./src/routes/user.routes.js";
+import relationshipsRoutes from "./src/routes/relationships.routes.js";
 
 const app = express();
 
@@ -22,6 +23,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 app.use("/users", userRoutes);
+app.use("/users/relationships", relationshipsRoutes);
 
 // Middleware xử lý lỗi
 app.use((err, req, res, next) => {
