@@ -176,7 +176,7 @@ const Sidebar = ({ activeNav, onActiveNavChange }) => {
   };
 
   return (
-    <aside className="fixed left-0 top-0 flex h-screen w-72 flex-col overflow-y-auto border-r border-border bg-card pt-4">
+    <aside className="fixed left-0 top-0 z-30 flex h-screen w-72 flex-col overflow-y-auto border-r border-border bg-card pt-4">
       <div className="mb-6 px-4">
         <button
           type="button"

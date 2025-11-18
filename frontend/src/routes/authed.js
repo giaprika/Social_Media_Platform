@@ -5,6 +5,7 @@ import RequireAuth from "../layouts/RequireAuth";
 import Feed from "../pages/feed";
 import Profile from "../pages/profile";
 import Settings from "../pages/setting";
+import Search from "../pages/search";
 
 const routes = {
   element: <DefaultLayout />,
@@ -24,6 +25,10 @@ const routes = {
         {
           path: PATHS.SETTINGS,
           element: <Settings />,
+        },
+        {
+          path: PATHS.SEARCH,
+          element: <Search />,
         },
       ],
     },

@@ -1,114 +1,333 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate, useLocation, useOutletContext } from "react-router-dom";
+import PostCard from "src/components/post/PostCard";
+import CreatePostModal from "src/components/post/CreatePostModal";
+import CommentSection from "src/components/post/CommentSection";
+import Modal from "src/components/ui/Modal";
+import { useToast } from "src/components/ui";
+import { useNotifications } from "../hooks/useNotifications";
 
+function getCookie(name) {
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop().split(";").shift();
+  return null;
+}
+
+// Mock data - sẽ thay thế bằng API calls sau
 const mockPosts = [
   {
     id: "1",
-    author: "John Doe",
-    avatar: "JD",
+    author: { id: "1", name: "John Doe", avatar: null },
+    community: "nature",
     title: "Amazing sunset today!",
-    description:
+    content:
       "Just captured this beautiful sunset at the beach. Nature is incredible!",
-    likes: 1234,
+    url: "https://www.example.com/sunset-photography",
+    upvotes: 1234,
+    downvotes: 45,
     comments: 89,
-    shares: 45,
-    liked: false,
+    hasUpvoted: false,
+    hasDownvoted: false,
+    saved: false,
+    isFollowing: false,
+    createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+    images: [],
   },
   {
     id: "2",
-    author: "Jane Smith",
-    avatar: "JS",
+    author: { id: "2", name: "Jane Smith", avatar: null },
+    community: "webdev",
     title: "New project launch",
-    description:
+    content:
       "Excited to announce the launch of our new web application. Check it out!",
-    likes: 2456,
+    upvotes: 2456,
+    downvotes: 123,
     comments: 234,
-    shares: 123,
-    liked: false,
+    hasUpvoted: true,
+    hasDownvoted: false,
+    saved: true,
+    isFollowing: true,
+    createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+    images: [],
   },
   {
     id: "3",
-    author: "Tech News",
-    avatar: "TN",
+    author: { id: "3", name: "Tech News", avatar: null },
+    community: "technology",
     title: "Latest AI breakthroughs",
-    description:
+    content:
       "Researchers announce major advances in artificial intelligence and machine learning.",
-    likes: 5678,
+    url: "https://www.technews.com/ai-breakthroughs-2025",
+    upvotes: 5678,
+    downvotes: 234,
     comments: 567,
-    shares: 345,
-    liked: false,
+    hasUpvoted: false,
+    hasDownvoted: false,
+    saved: false,
+    isFollowing: false,
+    createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+    images: [],
   },
 ];
 
 export default function Feed() {
-  const [posts, setPosts] = useState(mockPosts);
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [selectedPostId, setSelectedPostId] = useState(null);
+  const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const toast = useToast();
+  const { addRecentPost } = useOutletContext() || { addRecentPost: () => {} };
 
-  const toggleLike = (postId) => {
+  const token = getCookie("accessToken");
+  const { notifications } = useNotifications(token);
+
+  useEffect(() => {
+    // Simulate API call
+    const loadPosts = async () => {
+      setLoading(true);
+      // Simulate network delay
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      setPosts(mockPosts);
+      setLoading(false);
+    };
+    loadPosts();
+  }, []);
+
+  // Open create modal if state indicates
+  useEffect(() => {
+    if (location.state?.openCreateModal) {
+      setIsCreateModalOpen(true);
+      // Clear state
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, navigate, location.pathname]);
+
+  useEffect(() => {
+    if (notifications.length > 0) {
+      const latest = notifications[0];
+      toast.info(`Bạn có thông báo mới: ${latest.title || "Thông báo"}`);
+    }
+  }, [notifications, toast]);
+
+  const handleCreatePost = async (postData) => {
+    // Simulate API call
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    
+    const newPost = {
+      id: Date.now().toString(),
+      author: { id: "current-user", name: "You", avatar: null },
+      community: "general",
+      title: postData.title,
+      content: postData.content,
+      upvotes: 0,
+      downvotes: 0,
+      comments: 0,
+      hasUpvoted: false,
+      hasDownvoted: false,
+      saved: false,
+      isFollowing: false,
+      createdAt: new Date().toISOString(),
+      images: postData.images.map((img) => URL.createObjectURL(img)),
+    };
+
+    setPosts((prev) => [newPost, ...prev]);
+    addRecentPost(newPost);
+    toast.success("Đã tạo bài viết thành công!");
+  };
+
+  const handleUpvote = (postId) => {
+    setPosts((prevPosts) =>
+      prevPosts.map((post) => {
+        if (post.id === postId) {
+          const newPost = { ...post };
+          if (post.hasUpvoted) {
+            // Remove upvote
+            newPost.hasUpvoted = false;
+            newPost.upvotes = post.upvotes - 1;
+          } else {
+            // Add upvote
+            newPost.hasUpvoted = true;
+            newPost.upvotes = post.upvotes + 1;
+            // Remove downvote if exists
+            if (post.hasDownvoted) {
+              newPost.hasDownvoted = false;
+              newPost.downvotes = post.downvotes - 1;
+            }
+          }
+          addRecentPost(newPost);
+          return newPost;
+        }
+        return post;
+      })
+    );
+  };
+
+  const handleDownvote = (postId) => {
+    setPosts((prevPosts) =>
+      prevPosts.map((post) => {
+        if (post.id === postId) {
+          const newPost = { ...post };
+          if (post.hasDownvoted) {
+            // Remove downvote
+            newPost.hasDownvoted = false;
+            newPost.downvotes = post.downvotes - 1;
+          } else {
+            // Add downvote
+            newPost.hasDownvoted = true;
+            newPost.downvotes = post.downvotes + 1;
+            // Remove upvote if exists
+            if (post.hasUpvoted) {
+              newPost.hasUpvoted = false;
+              newPost.upvotes = post.upvotes - 1;
+            }
+          }
+          return newPost;
+        }
+        return post;
+      })
+    );
+  };
+
+  const handleFollow = (authorId, shouldFollow) => {
     setPosts((prevPosts) =>
       prevPosts.map((post) =>
-        post.id === postId
-          ? {
-              ...post,
-              liked: !post.liked,
-              likes: post.liked ? post.likes - 1 : post.likes + 1,
-            }
+        post.author?.id === authorId
+          ? { ...post, isFollowing: shouldFollow }
           : post
+      )
+    );
+    toast.success(shouldFollow ? "Đã follow!" : "Đã unfollow!");
+  };
+
+  const handleSave = (postId) => {
+    setPosts((prevPosts) =>
+      prevPosts.map((post) =>
+        post.id === postId ? { ...post, saved: !post.saved } : post
       )
     );
   };
 
+  const handleComment = (postId) => {
+    setSelectedPostId(postId);
+    setIsCommentModalOpen(true);
+  };
+
+  const handleAddComment = (postId, content) => {
+    // Simulate adding comment
+    setPosts((prevPosts) =>
+      prevPosts.map((post) =>
+        post.id === postId
+          ? { ...post, comments: (post.comments || 0) + 1 }
+          : post
+      )
+    );
+    toast.success("Đã thêm bình luận!");
+  };
+
+  const handleAuthorClick = (authorId) => {
+    navigate(`/profile/${authorId}`);
+  };
+
+  const handleCommunityClick = (community) => {
+    toast.info(`Navigating to s/${community}`);
+    // navigate(`/community/${community}`);
+  };
+
+  const selectedPost = posts.find((p) => p.id === selectedPostId);
+  const mockComments = selectedPost
+    ? [
+        {
+          id: "1",
+          author: { id: "2", name: "Jane Smith", avatar: null },
+          content: "Great post!",
+          likes: 5,
+          liked: false,
+          createdAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
+          replies: [],
+        },
+      ]
+    : [];
+
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="mb-8 text-3xl font-bold text-foreground">Home Feed</h1>
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl sm:text-3xl font-bold text-foreground">
+          Home Feed
+        </h1>
+        <button
+          onClick={() => setIsCreateModalOpen(true)}
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 lg:hidden"
+        >
+          Tạo bài viết
+        </button>
+      </div>
+
+      <CreatePostModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSubmit={handleCreatePost}
+      />
+
+      <Modal
+        isOpen={isCommentModalOpen}
+        onClose={() => {
+          setIsCommentModalOpen(false);
+          setSelectedPostId(null);
+        }}
+        title="Bình luận"
+        size="lg"
+      >
+        {selectedPost && (
+          <CommentSection
+            postId={selectedPostId}
+            comments={mockComments}
+            onAddComment={handleAddComment}
+            onLikeComment={(commentId) => {
+              toast.info("Đã thích bình luận");
+            }}
+            onReplyComment={(commentId, content) => {
+              toast.info("Đã phản hồi");
+            }}
+          />
+        )}
+      </Modal>
 
       <div className="space-y-4">
-        {posts.map((post) => (
-          <article
-            key={post.id}
-            className="rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/50"
-          >
-            <div className="mb-3 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
-                {post.avatar}
-              </div>
-              <div>
-                <p className="font-semibold text-foreground">{post.author}</p>
-                <p className="text-xs text-muted-foreground">2 hours ago</p>
-              </div>
-            </div>
-
-            <h2 className="mb-2 text-lg font-bold text-foreground">{post.title}</h2>
-            <p className="mb-4 text-muted-foreground">{post.description}</p>
-
-            <div className="flex items-center gap-6 border-t border-border pt-3">
-              <button
-                type="button"
-                onClick={() => toggleLike(post.id)}
-                className={`flex items-center gap-2 text-sm font-medium transition-colors ${
-                  post.liked
-                    ? "text-primary"
-                    : "text-muted-foreground hover:text-primary"
-                }`}
-              >
-                <span className="text-lg">{post.liked ? "❤️" : "🤍"}</span>
-                <span>{post.likes}</span>
-              </button>
-              <button
-                type="button"
-                className="flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
-              >
-                <span className="text-lg">💬</span>
-                <span>{post.comments}</span>
-              </button>
-              <button
-                type="button"
-                className="flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
-              >
-                <span className="text-lg">↗️</span>
-                <span>{post.shares}</span>
-              </button>
-            </div>
-          </article>
-        ))}
+        {loading ? (
+          <>
+            {[1, 2, 3].map((i) => (
+              <PostCard key={i} loading />
+            ))}
+          </>
+        ) : posts.length === 0 ? (
+          <div className="rounded-lg border border-border bg-card p-12 text-center">
+            <p className="text-muted-foreground">
+              Chưa có bài viết nào. Hãy tạo bài viết đầu tiên!
+            </p>
+          </div>
+        ) : (
+          posts.map((post) => (
+            <PostCard
+              key={post.id}
+              post={post}
+              onUpvote={handleUpvote}
+              onDownvote={handleDownvote}
+              onComment={handleComment}
+              onShare={(id) => {
+                navigator.clipboard.writeText(window.location.href);
+                toast.success("Đã sao chép link!");
+              }}
+              onSave={handleSave}
+              onAuthorClick={handleAuthorClick}
+              onFollow={handleFollow}
+              onCommunityClick={handleCommunityClick}
+            />
+          ))
+        )}
       </div>
     </div>
   );

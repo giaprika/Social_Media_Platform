@@ -1,0 +1,195 @@
+version: "3.8"
+
+services:
+  # ============================================
+  # Databases
+  # ============================================
+  postgres-social:
+    image: postgres:15-alpine
+    container_name: postgres-social
+    environment:
+      POSTGRES_DB: social_media
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-social-data:/var/lib/postgresql/data
+      - ./user-service/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./user-service/init-db.sh:/usr/local/bin/init-db.sh:ro
+    command: >
+      sh -c "
+        docker-entrypoint.sh postgres &
+        sleep 5 &&
+        until pg_isready -U postgres; do sleep 1; done &&
+        psql -U postgres -d social_media -tAc \"SELECT 1 FROM information_schema.tables WHERE table_name='users'\" | grep -q 1 ||
+        (echo 'Initializing database...' && psql -U postgres -d social_media -f /docker-entrypoint-initdb.d/init.sql && echo 'Database initialized!') &&
+        wait
+      "
+    ports:
+      - "5432:5432"
+    networks:
+      - social-network
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'pg_isready -U postgres && psql -U postgres -d social_media -tAc "SELECT 1 FROM information_schema.tables WHERE table_name=''users''" | grep -q 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ============================================
+  # Databases cho services chưa hoàn thiện (commented)
+  # ============================================
+  # postgres-notification:
+  #   image: postgres:15-alpine
+  #   container_name: postgres-notification
+  #   environment:
+  #     POSTGRES_DB: notification_db
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #   volumes:
+  #     - postgres-notification-data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5433:5432"
+  #   networks:
+  #     - social-network
+
+  # postgres-posts:
+  #   image: postgres:15-alpine
+  #   container_name: postgres-posts
+  #   environment:
+  #     POSTGRES_DB: posts_db
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #   volumes:
+  #     - postgres-posts-data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5434:5432"
+  #   networks:
+  #     - social-network
+
+  # ============================================
+  # Backend Services
+  # ============================================
+  backend-gateway:
+    build:
+      context: ./backend-gateway
+      dockerfile: Dockerfile
+    container_name: backend-gateway
+    environment:
+      NODE_ENV: production
+      PORT: 8000
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:-your_super_secret_access_token_key}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-your_super_secret_refresh_token_key}
+      USER_SERVICE_URL: http://user-service:8001
+      # NOTIFICATION_SERVICE_URL: http://notification-service:8002
+      # POST_SERVICE_URL: http://post-service:8003
+      CORS_ORIGIN: http://localhost:3000
+    ports:
+      - "8000:8000"
+    depends_on:
+      - user-service
+    networks:
+      - social-network
+    restart: unless-stopped
+
+  user-service:
+    build:
+      context: ./user-service
+      dockerfile: Dockerfile
+    container_name: user-service
+    environment:
+      NODE_ENV: production
+      PORT: 8001
+      DB_HOST: postgres-social
+      DB_PORT: 5432
+      DB_NAME: social_media
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_MAX_CONNECTIONS: 10
+      DB_SSL: "false"
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:-your_super_secret_access_token_key}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-your_super_secret_refresh_token_key}
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres-social:
+        condition: service_healthy
+    networks:
+      - social-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "require(''http'').get(''http://localhost:8001'', (r) => {process.exit(r.statusCode ? 0 : 1)})"',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================
+  # Services chưa hoàn thiện (commented)
+  # ============================================
+  # notification-service:
+  #   build:
+  #     context: ./notification-service
+  #     dockerfile: Dockerfile
+  #   container_name: notification-service
+  #   environment:
+  #     NODE_ENV: production
+  #     PORT: 8002
+  #     DB_HOST: postgres-notification
+  #     DB_PORT: 5432
+  #     DB_NAME: notification_db
+  #     DB_USER: postgres
+  #     DB_PASSWORD: postgres
+  #   ports:
+  #     - "8002:8002"
+  #   depends_on:
+  #     - postgres-notification
+  #   networks:
+  #     - social-network
+
+  # post-service:
+  #   build:
+  #     context: ./post-service
+  #     dockerfile: Dockerfile
+  #   container_name: post-service
+  #   environment:
+  #     PORT: 8003
+  #   ports:
+  #     - "8003:8003"
+  #   networks:
+  #     - social-network
+
+  # ============================================
+  # Frontend (Optional - có thể chạy ngoài)
+  # ============================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    environment:
+      REACT_APP_GATEWAY_URL: http://localhost:8000
+      REACT_APP_USER_SERVICE_BASE_URL: http://localhost:8001
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend-gateway
+    networks:
+      - social-network
+    restart: unless-stopped
+
+networks:
+  social-network:
+    driver: bridge
+
+volumes:
+  postgres-social-data:
+  # postgres-notification-data:  # Uncomment khi cần notification service
+  # postgres-posts-data:  # Uncomment khi cần post service
