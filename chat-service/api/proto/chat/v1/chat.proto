@@ -30,6 +30,14 @@ service ChatService {
       get: "/v1/conversations"
     };
   }
+
+  // Đánh dấu tin nhắn đã đọc
+  rpc MarkAsRead(MarkAsReadRequest) returns (MarkAsReadResponse) {
+    option (google.api.http) = {
+      post: "/v1/conversations/{conversation_id}/read"
+      body: "*"
+    };
+  }
 }
 
 message SendMessageRequest {
@@ -79,4 +87,13 @@ message Conversation {
   string last_message_content = 2;
   string last_message_at = 3;
   int32 unread_count = 4;
+}
+
+message MarkAsReadRequest {
+  string conversation_id = 1;
+  string user_id = 2;
+}
+
+message MarkAsReadResponse {
+  bool success = 1;
 }

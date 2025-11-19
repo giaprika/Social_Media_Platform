@@ -421,3 +421,53 @@ func formatTimestamp(ts pgtype.Timestamptz) string {
 	}
 	return ts.Time.Format(time.RFC3339Nano)
 }
+
+// MarkAsRead marks all messages in a conversation as read for a user
+func (s *ChatService) MarkAsRead(ctx context.Context, req *chatv1.MarkAsReadRequest) (*chatv1.MarkAsReadResponse, error) {
+	// Validate request
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+
+	if req.ConversationId == "" {
+		return nil, status.Error(codes.InvalidArgument, "conversation_id is required")
+	}
+
+	if req.UserId == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+
+	// Parse UUIDs
+	conversationUUID, err := parseUUID(req.ConversationId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
+	}
+
+	userUUID, err := parseUUID(req.UserId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid user_id")
+	}
+
+	// Update last_read_at
+	err = s.queries.MarkAsRead(ctx, repository.MarkAsReadParams{
+		ConversationID: conversationUUID,
+		UserID:         userUUID,
+	})
+	if err != nil {
+		s.logger.Error("failed to mark as read",
+			zap.Error(err),
+			zap.String("conversation_id", req.ConversationId),
+			zap.String("user_id", req.UserId),
+		)
+		return nil, status.Error(codes.Internal, "failed to mark messages as read")
+	}
+
+	s.logger.Info("messages marked as read",
+		zap.String("conversation_id", req.ConversationId),
+		zap.String("user_id", req.UserId),
+	)
+
+	return &chatv1.MarkAsReadResponse{
+		Success: true,
+	}, nil
+}

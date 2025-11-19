@@ -204,6 +204,23 @@ func (q *Queries) InsertOutbox(ctx context.Context, arg InsertOutboxParams) erro
 	return err
 }
 
+const markAsRead = `-- name: MarkAsRead :exec
+UPDATE conversation_participants
+SET last_read_at = NOW()
+WHERE conversation_id = $1
+  AND user_id = $2
+`
+
+type MarkAsReadParams struct {
+	ConversationID pgtype.UUID `json:"conversation_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) MarkAsRead(ctx context.Context, arg MarkAsReadParams) error {
+	_, err := q.db.Exec(ctx, markAsRead, arg.ConversationID, arg.UserID)
+	return err
+}
+
 const updateConversationLastMessage = `-- name: UpdateConversationLastMessage :exec
 UPDATE conversations
 SET last_message_content = $2,

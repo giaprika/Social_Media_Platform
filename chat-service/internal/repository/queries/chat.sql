@@ -59,3 +59,9 @@ WHERE id = $1;
 INSERT INTO conversation_participants (conversation_id, user_id, joined_at)
 VALUES ($1, $2, NOW())
 ON CONFLICT DO NOTHING;
+
+-- name: MarkAsRead :exec
+UPDATE conversation_participants
+SET last_read_at = NOW()
+WHERE conversation_id = $1
+  AND user_id = $2;

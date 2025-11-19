@@ -630,3 +630,70 @@ func mustParseUUID(t *testing.T, value string) pgtype.UUID {
 	assert.NoError(t, err)
 	return uuid
 }
+
+func TestMarkAsRead_ValidationErrors(t *testing.T) {
+	service := &ChatService{logger: zap.NewNop()}
+
+	tests := []struct {
+		name    string
+		req     *chatv1.MarkAsReadRequest
+		errCode codes.Code
+		errMsg  string
+	}{
+		{
+			name:    "nil request",
+			req:     nil,
+			errCode: codes.InvalidArgument,
+			errMsg:  "request cannot be nil",
+		},
+		{
+			name: "empty conversation_id",
+			req: &chatv1.MarkAsReadRequest{
+				ConversationId: "",
+				UserId:         "550e8400-e29b-41d4-a716-446655440000",
+			},
+			errCode: codes.InvalidArgument,
+			errMsg:  "conversation_id is required",
+		},
+		{
+			name: "empty user_id",
+			req: &chatv1.MarkAsReadRequest{
+				ConversationId: "550e8400-e29b-41d4-a716-446655440000",
+				UserId:         "",
+			},
+			errCode: codes.InvalidArgument,
+			errMsg:  "user_id is required",
+		},
+		{
+			name: "invalid conversation_id",
+			req: &chatv1.MarkAsReadRequest{
+				ConversationId: "not-a-uuid",
+				UserId:         "550e8400-e29b-41d4-a716-446655440000",
+			},
+			errCode: codes.InvalidArgument,
+			errMsg:  "invalid conversation_id",
+		},
+		{
+			name: "invalid user_id",
+			req: &chatv1.MarkAsReadRequest{
+				ConversationId: "550e8400-e29b-41d4-a716-446655440000",
+				UserId:         "not-a-uuid",
+			},
+			errCode: codes.InvalidArgument,
+			errMsg:  "invalid user_id",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, err := service.MarkAsRead(context.Background(), tt.req)
+			assert.Nil(t, resp)
+			assert.Error(t, err)
+			assert.Equal(t, tt.errCode, status.Code(err))
+			assert.Contains(t, err.Error(), tt.errMsg)
+		})
+	}
+}
+
+// Note: For integration tests with actual DB, we would test MarkAsRead success case.
+// For unit tests, we focus on validation since the repository layer is already tested separately.
