@@ -8,8 +8,8 @@ SELECT *
 FROM messages
 WHERE conversation_id = sqlc.arg('conversation_id')
 	AND (
-		sqlc.narg('before') IS NULL
-		OR created_at < sqlc.narg('before')
+		sqlc.narg('before')::timestamptz IS NULL
+		OR created_at < sqlc.narg('before')::timestamptz
 	)
 ORDER BY created_at DESC
 LIMIT sqlc.arg('limit');

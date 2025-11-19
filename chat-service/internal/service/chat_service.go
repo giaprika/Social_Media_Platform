@@ -280,7 +280,7 @@ func (s *ChatService) GetMessages(ctx context.Context, req *chatv1.GetMessagesRe
 
 	limit := sanitizeLimit(req.Limit)
 
-	var before interface{}
+	var before pgtype.Timestamptz
 	if req.BeforeTimestamp != "" {
 		beforeTs, err := parseTimestampToPgtype(req.BeforeTimestamp)
 		if err != nil {

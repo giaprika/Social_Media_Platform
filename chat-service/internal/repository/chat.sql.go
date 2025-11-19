@@ -89,17 +89,17 @@ SELECT id, conversation_id, sender_id, content, created_at
 FROM messages
 WHERE conversation_id = $1
 	AND (
-		$2 IS NULL
-		OR created_at < $2
+		$2::timestamptz IS NULL
+		OR created_at < $2::timestamptz
 	)
 ORDER BY created_at DESC
 LIMIT $3
 `
 
 type GetMessagesParams struct {
-	ConversationID pgtype.UUID `json:"conversation_id"`
-	Before         interface{} `json:"before"`
-	Limit          int32       `json:"limit"`
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	Before         pgtype.Timestamptz `json:"before"`
+	Limit          int32              `json:"limit"`
 }
 
 func (q *Queries) GetMessages(ctx context.Context, arg GetMessagesParams) ([]Message, error) {
