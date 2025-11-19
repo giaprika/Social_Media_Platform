@@ -11,20 +11,96 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createMessage = `-- name: CreateMessage :one
+const getMessages = `-- name: GetMessages :many
+SELECT id, conversation_id, sender_id, content, created_at
+FROM messages
+WHERE conversation_id = $1
+	AND ($2 IS NULL OR created_at < $2)
+ORDER BY created_at DESC
+LIMIT $3
+`
+
+type GetMessagesParams struct {
+	ConversationID pgtype.UUID `json:"conversation_id"`
+	Column2        interface{} `json:"column_2"`
+	Limit          int32       `json:"limit"`
+}
+
+func (q *Queries) GetMessages(ctx context.Context, arg GetMessagesParams) ([]Message, error) {
+	rows, err := q.db.Query(ctx, getMessages, arg.ConversationID, arg.Column2, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Message
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.ID,
+			&i.ConversationID,
+			&i.SenderID,
+			&i.Content,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUnprocessedOutbox = `-- name: GetUnprocessedOutbox :many
+SELECT id, aggregate_type, aggregate_id, payload, created_at, processed_at
+FROM outbox
+WHERE processed_at IS NULL
+ORDER BY created_at ASC
+LIMIT $1
+`
+
+func (q *Queries) GetUnprocessedOutbox(ctx context.Context, limit int32) ([]Outbox, error) {
+	rows, err := q.db.Query(ctx, getUnprocessedOutbox, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Outbox
+	for rows.Next() {
+		var i Outbox
+		if err := rows.Scan(
+			&i.ID,
+			&i.AggregateType,
+			&i.AggregateID,
+			&i.Payload,
+			&i.CreatedAt,
+			&i.ProcessedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const insertMessage = `-- name: InsertMessage :one
 INSERT INTO messages (conversation_id, sender_id, content)
 VALUES ($1, $2, $3)
 RETURNING id, conversation_id, sender_id, content, created_at
 `
 
-type CreateMessageParams struct {
+type InsertMessageParams struct {
 	ConversationID pgtype.UUID `json:"conversation_id"`
 	SenderID       pgtype.UUID `json:"sender_id"`
 	Content        string      `json:"content"`
 }
 
-func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error) {
-	row := q.db.QueryRow(ctx, createMessage, arg.ConversationID, arg.SenderID, arg.Content)
+func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (Message, error) {
+	row := q.db.QueryRow(ctx, insertMessage, arg.ConversationID, arg.SenderID, arg.Content)
 	var i Message
 	err := row.Scan(
 		&i.ID,
@@ -36,18 +112,32 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (M
 	return i, err
 }
 
-const createOutbox = `-- name: CreateOutbox :exec
+const insertOutbox = `-- name: InsertOutbox :exec
 INSERT INTO outbox (aggregate_type, aggregate_id, payload)
 VALUES ($1, $2, $3)
 `
 
-type CreateOutboxParams struct {
+type InsertOutboxParams struct {
 	AggregateType string      `json:"aggregate_type"`
 	AggregateID   pgtype.UUID `json:"aggregate_id"`
 	Payload       []byte      `json:"payload"`
 }
 
-func (q *Queries) CreateOutbox(ctx context.Context, arg CreateOutboxParams) error {
-	_, err := q.db.Exec(ctx, createOutbox, arg.AggregateType, arg.AggregateID, arg.Payload)
+func (q *Queries) InsertOutbox(ctx context.Context, arg InsertOutboxParams) error {
+	_, err := q.db.Exec(ctx, insertOutbox, arg.AggregateType, arg.AggregateID, arg.Payload)
 	return err
+}
+
+const upsertConversation = `-- name: UpsertConversation :one
+INSERT INTO conversations (id)
+VALUES ($1)
+ON CONFLICT (id) DO UPDATE SET created_at = conversations.created_at
+RETURNING id, created_at
+`
+
+func (q *Queries) UpsertConversation(ctx context.Context, id pgtype.UUID) (Conversation, error) {
+	row := q.db.QueryRow(ctx, upsertConversation, id)
+	var i Conversation
+	err := row.Scan(&i.ID, &i.CreatedAt)
+	return i, err
 }
