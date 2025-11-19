@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	ctxkeys "chat-service/internal/context"
+
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -98,7 +100,7 @@ func TestGetUserIDFromContext(t *testing.T) {
 	}{
 		{
 			name:          "valid user_id in context",
-			ctx:           context.WithValue(context.Background(), UserIDKey, "user-123"),
+			ctx:           context.WithValue(context.Background(), ctxkeys.UserIDKey, "user-123"),
 			expectedID:    "user-123",
 			expectedError: false,
 		},
@@ -109,12 +111,12 @@ func TestGetUserIDFromContext(t *testing.T) {
 		},
 		{
 			name:          "empty user_id in context",
-			ctx:           context.WithValue(context.Background(), UserIDKey, ""),
+			ctx:           context.WithValue(context.Background(), ctxkeys.UserIDKey, ""),
 			expectedError: true,
 		},
 		{
 			name:          "wrong type in context",
-			ctx:           context.WithValue(context.Background(), UserIDKey, 123),
+			ctx:           context.WithValue(context.Background(), ctxkeys.UserIDKey, 123),
 			expectedError: true,
 		},
 	}

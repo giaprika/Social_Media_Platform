@@ -8,6 +8,7 @@ import (
 	"time"
 
 	chatv1 "chat-service/api/chat/v1"
+	ctxkeys "chat-service/internal/context"
 	"chat-service/internal/repository"
 	"chat-service/pkg/idempotency"
 
@@ -483,15 +484,9 @@ func formatTimestamp(ts pgtype.Timestamptz) string {
 	return ts.Time.Format(time.RFC3339Nano)
 }
 
-// ContextKey is the type for context keys
-type ContextKey string
-
-// UserIDContextKey is the context key for user_id
-const UserIDContextKey ContextKey = "user_id"
-
 // getUserIDFromContext retrieves user_id from context (set by auth middleware)
 func getUserIDFromContext(ctx context.Context) (string, error) {
-	userID, ok := ctx.Value(UserIDContextKey).(string)
+	userID, ok := ctx.Value(ctxkeys.UserIDKey).(string)
 	if !ok || userID == "" {
 		return "", status.Error(codes.Unauthenticated, "user_id not found in context")
 	}

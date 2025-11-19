@@ -4,19 +4,13 @@ import (
 	"context"
 	"strings"
 
+	ctxkeys "chat-service/internal/context"
+
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-)
-
-// ContextKey is the type for context keys
-type ContextKey string
-
-const (
-	// UserIDKey is the context key for user_id
-	UserIDKey ContextKey = "user_id"
 )
 
 // GrpcAuthExtractor extracts user_id from JWT token (assumed validated by API Gateway)
@@ -51,10 +45,10 @@ func GrpcAuthExtractor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 			}
 
 			// Inject user_id into context
-			ctx = context.WithValue(ctx, UserIDKey, userID)
+			ctx = context.WithValue(ctx, ctxkeys.UserIDKey, userID)
 		} else {
 			// Use user_id from API Gateway
-			ctx = context.WithValue(ctx, UserIDKey, userIDs[0])
+			ctx = context.WithValue(ctx, ctxkeys.UserIDKey, userIDs[0])
 		}
 
 		return handler(ctx, req)
@@ -84,7 +78,7 @@ func extractUserIDFromToken(authHeader string) (string, error) {
 
 // GetUserIDFromContext retrieves user_id from context
 func GetUserIDFromContext(ctx context.Context) (string, error) {
-	userID, ok := ctx.Value(UserIDKey).(string)
+	userID, ok := ctx.Value(ctxkeys.UserIDKey).(string)
 	if !ok || userID == "" {
 		return "", status.Error(codes.Unauthenticated, "user_id not found in context")
 	}

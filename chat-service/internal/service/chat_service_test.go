@@ -7,6 +7,7 @@ import (
 	"time"
 
 	chatv1 "chat-service/api/chat/v1"
+	ctxkeys "chat-service/internal/context"
 	"chat-service/internal/repository"
 	"chat-service/pkg/idempotency"
 
@@ -678,7 +679,7 @@ func TestMarkAsRead_ValidationErrors(t *testing.T) {
 // contextWithUserID creates a context with user_id for testing
 // Must use the same context key as getUserIDFromContext in chat_service.go
 func contextWithUserID(userID string) context.Context {
-	return context.WithValue(context.Background(), UserIDContextKey, userID)
+	return context.WithValue(context.Background(), ctxkeys.UserIDKey, userID)
 }
 
 func TestSendMessage_MissingUserIDInContext(t *testing.T) {
