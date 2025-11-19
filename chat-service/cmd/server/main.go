@@ -84,6 +84,7 @@ func main() {
 
 	gatewayMux := runtime.NewServeMux(
 		runtime.WithErrorHandler(middleware.GatewayErrorHandler(logger)),
+		runtime.WithIncomingHeaderMatcher(middleware.CustomHeaderMatcher),
 	)
 
 	if err := chatv1.RegisterChatServiceHandlerServer(ctx, gatewayMux, chatService); err != nil {
@@ -91,7 +92,9 @@ func main() {
 	}
 
 	httpMux := http.NewServeMux()
-	httpHandler := middleware.HTTPRecovery(logger)(middleware.HTTPLogger(logger)(gatewayMux))
+	httpHandler := middleware.HTTPRecovery(logger)(
+		middleware.HTTPLogger(logger)(
+			middleware.HTTPAuthExtractor(logger)(gatewayMux)))
 	httpMux.Handle("/", httpHandler)
 
 	httpServer := &http.Server{
