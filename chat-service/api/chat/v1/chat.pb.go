@@ -27,9 +27,9 @@ const (
 type SendMessageRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	SenderId       string                 `protobuf:"bytes,2,opt,name=sender_id,json=senderId,proto3" json:"sender_id,omitempty"`
-	Content        string                 `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
-	IdempotencyKey string                 `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	// sender_id is extracted from JWT token via auth middleware
+	Content        string `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
+	IdempotencyKey string `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -67,13 +67,6 @@ func (*SendMessageRequest) Descriptor() ([]byte, []int) {
 func (x *SendMessageRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
-	}
-	return ""
-}
-
-func (x *SendMessageRequest) GetSenderId() string {
-	if x != nil {
-		return x.SenderId
 	}
 	return ""
 }
@@ -333,10 +326,10 @@ func (x *ChatMessage) GetCreatedAt() string {
 }
 
 type GetConversationsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // User ID (thường lấy từ token, nhưng để đây cho rõ ràng hoặc admin)
-	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
-	Cursor        string                 `protobuf:"bytes,3,opt,name=cursor,proto3" json:"cursor,omitempty"` // timestamp của last_message_at
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// user_id is extracted from JWT token via auth middleware
+	Limit         int32  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	Cursor        string `protobuf:"bytes,3,opt,name=cursor,proto3" json:"cursor,omitempty"` // timestamp của last_message_at
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -369,13 +362,6 @@ func (x *GetConversationsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use GetConversationsRequest.ProtoReflect.Descriptor instead.
 func (*GetConversationsRequest) Descriptor() ([]byte, []int) {
 	return file_chat_v1_chat_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *GetConversationsRequest) GetUserId() string {
-	if x != nil {
-		return x.UserId
-	}
-	return ""
 }
 
 func (x *GetConversationsRequest) GetLimit() int32 {
@@ -514,8 +500,7 @@ func (x *Conversation) GetUnreadCount() int32 {
 
 type MarkAsReadRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	UserId         string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"` // user_id is extracted from JWT token via auth middleware
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -553,13 +538,6 @@ func (*MarkAsReadRequest) Descriptor() ([]byte, []int) {
 func (x *MarkAsReadRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
-	}
-	return ""
-}
-
-func (x *MarkAsReadRequest) GetUserId() string {
-	if x != nil {
-		return x.UserId
 	}
 	return ""
 }
@@ -612,10 +590,9 @@ var File_chat_v1_chat_proto protoreflect.FileDescriptor
 
 const file_chat_v1_chat_proto_rawDesc = "" +
 	"\n" +
-	"\x12chat/v1/chat.proto\x12\achat.v1\x1a\x1cgoogle/api/annotations.proto\"\x9d\x01\n" +
+	"\x12chat/v1/chat.proto\x12\achat.v1\x1a\x1cgoogle/api/annotations.proto\"\x80\x01\n" +
 	"\x12SendMessageRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x1b\n" +
-	"\tsender_id\x18\x02 \x01(\tR\bsenderId\x12\x18\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x18\n" +
 	"\acontent\x18\x03 \x01(\tR\acontent\x12'\n" +
 	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\"L\n" +
 	"\x13SendMessageResponse\x12\x1d\n" +
@@ -636,9 +613,8 @@ const file_chat_v1_chat_proto_rawDesc = "" +
 	"\tsender_id\x18\x03 \x01(\tR\bsenderId\x12\x18\n" +
 	"\acontent\x18\x04 \x01(\tR\acontent\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\tR\tcreatedAt\"`\n" +
-	"\x17GetConversationsRequest\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x14\n" +
+	"created_at\x18\x05 \x01(\tR\tcreatedAt\"G\n" +
+	"\x17GetConversationsRequest\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\x12\x16\n" +
 	"\x06cursor\x18\x03 \x01(\tR\x06cursor\"x\n" +
 	"\x18GetConversationsResponse\x12;\n" +
@@ -649,10 +625,9 @@ const file_chat_v1_chat_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x120\n" +
 	"\x14last_message_content\x18\x02 \x01(\tR\x12lastMessageContent\x12&\n" +
 	"\x0flast_message_at\x18\x03 \x01(\tR\rlastMessageAt\x12!\n" +
-	"\funread_count\x18\x04 \x01(\x05R\vunreadCount\"U\n" +
+	"\funread_count\x18\x04 \x01(\x05R\vunreadCount\"<\n" +
 	"\x11MarkAsReadRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x17\n" +
-	"\auser_id\x18\x02 \x01(\tR\x06userId\".\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\".\n" +
 	"\x12MarkAsReadResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess2\xe0\x03\n" +
 	"\vChatService\x12a\n" +

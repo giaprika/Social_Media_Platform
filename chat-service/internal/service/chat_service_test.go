@@ -58,27 +58,15 @@ func TestValidateSendMessageRequest(t *testing.T) {
 			name: "empty conversation_id",
 			req: &chatv1.SendMessageRequest{
 				ConversationId: "",
-				SenderId:       "sender-123",
 				Content:        "Hello",
 				IdempotencyKey: "key-123",
 			},
 			expectedErr: ErrEmptyConversationID,
 		},
 		{
-			name: "empty sender_id",
-			req: &chatv1.SendMessageRequest{
-				ConversationId: "conv-123",
-				SenderId:       "",
-				Content:        "Hello",
-				IdempotencyKey: "key-123",
-			},
-			expectedErr: ErrEmptySenderID,
-		},
-		{
 			name: "empty content",
 			req: &chatv1.SendMessageRequest{
 				ConversationId: "conv-123",
-				SenderId:       "sender-123",
 				Content:        "",
 				IdempotencyKey: "key-123",
 			},
@@ -88,7 +76,6 @@ func TestValidateSendMessageRequest(t *testing.T) {
 			name: "empty idempotency_key",
 			req: &chatv1.SendMessageRequest{
 				ConversationId: "conv-123",
-				SenderId:       "sender-123",
 				Content:        "Hello",
 				IdempotencyKey: "",
 			},
@@ -98,7 +85,6 @@ func TestValidateSendMessageRequest(t *testing.T) {
 			name: "valid request",
 			req: &chatv1.SendMessageRequest{
 				ConversationId: "conv-123",
-				SenderId:       "sender-123",
 				Content:        "Hello",
 				IdempotencyKey: "key-123",
 			},
@@ -127,10 +113,10 @@ func TestSendMessage_ValidationError(t *testing.T) {
 		logger:           logger,
 	}
 
-	ctx := context.Background()
+	// Create context with user_id
+	ctx := contextWithUserID("660e8400-e29b-41d4-a716-446655440000")
 	req := &chatv1.SendMessageRequest{
 		ConversationId: "",
-		SenderId:       "sender-123",
 		Content:        "Hello",
 		IdempotencyKey: "key-123",
 	}
@@ -139,6 +125,7 @@ func TestSendMessage_ValidationError(t *testing.T) {
 
 	assert.Nil(t, resp)
 	assert.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
 	assert.Contains(t, err.Error(), "conversation_id")
 	mockIdempotency.AssertNotCalled(t, "Check")
 }
@@ -152,10 +139,10 @@ func TestSendMessage_DuplicateRequest(t *testing.T) {
 		logger:           logger,
 	}
 
-	ctx := context.Background()
+	// Create context with user_id
+	ctx := contextWithUserID("660e8400-e29b-41d4-a716-446655440000")
 	req := &chatv1.SendMessageRequest{
 		ConversationId: "550e8400-e29b-41d4-a716-446655440000",
-		SenderId:       "660e8400-e29b-41d4-a716-446655440000",
 		Content:        "Hello",
 		IdempotencyKey: "key-123",
 	}
@@ -180,10 +167,10 @@ func TestSendMessage_IdempotencyCheckError(t *testing.T) {
 		logger:           logger,
 	}
 
-	ctx := context.Background()
+	// Create context with user_id
+	ctx := contextWithUserID("660e8400-e29b-41d4-a716-446655440000")
 	req := &chatv1.SendMessageRequest{
 		ConversationId: "550e8400-e29b-41d4-a716-446655440000",
-		SenderId:       "660e8400-e29b-41d4-a716-446655440000",
 		Content:        "Hello",
 		IdempotencyKey: "key-123",
 	}
@@ -363,7 +350,6 @@ func TestValidateSendMessageRequest_AllFields(t *testing.T) {
 	// Test with all valid fields
 	validReq := &chatv1.SendMessageRequest{
 		ConversationId: "550e8400-e29b-41d4-a716-446655440000",
-		SenderId:       "660e8400-e29b-41d4-a716-446655440000",
 		Content:        "This is a test message with special chars: !@#$%^&*()",
 		IdempotencyKey: "unique-key-12345",
 	}
@@ -375,7 +361,6 @@ func TestValidateSendMessageRequest_AllFields(t *testing.T) {
 	longContent := string(make([]byte, 10000))
 	longContentReq := &chatv1.SendMessageRequest{
 		ConversationId: "550e8400-e29b-41d4-a716-446655440000",
-		SenderId:       "660e8400-e29b-41d4-a716-446655440000",
 		Content:        longContent,
 		IdempotencyKey: "key-123",
 	}
@@ -447,13 +432,12 @@ func TestSendMessage_ContextCancellation(t *testing.T) {
 		logger:           logger,
 	}
 
-	// Create a cancelled context
-	ctx, cancel := context.WithCancel(context.Background())
+	// Create a cancelled context with user_id
+	ctx, cancel := context.WithCancel(contextWithUserID("660e8400-e29b-41d4-a716-446655440000"))
 	cancel() // Cancel immediately
 
 	req := &chatv1.SendMessageRequest{
 		ConversationId: "550e8400-e29b-41d4-a716-446655440000",
-		SenderId:       "660e8400-e29b-41d4-a716-446655440000",
 		Content:        "Hello",
 		IdempotencyKey: "key-123",
 	}
@@ -636,57 +620,50 @@ func TestMarkAsRead_ValidationErrors(t *testing.T) {
 
 	tests := []struct {
 		name    string
+		ctx     context.Context
 		req     *chatv1.MarkAsReadRequest
 		errCode codes.Code
 		errMsg  string
 	}{
 		{
 			name:    "nil request",
+			ctx:     contextWithUserID("550e8400-e29b-41d4-a716-446655440000"),
 			req:     nil,
 			errCode: codes.InvalidArgument,
 			errMsg:  "request cannot be nil",
 		},
 		{
 			name: "empty conversation_id",
+			ctx:  contextWithUserID("550e8400-e29b-41d4-a716-446655440000"),
 			req: &chatv1.MarkAsReadRequest{
 				ConversationId: "",
-				UserId:         "550e8400-e29b-41d4-a716-446655440000",
 			},
 			errCode: codes.InvalidArgument,
 			errMsg:  "conversation_id is required",
 		},
 		{
-			name: "empty user_id",
+			name: "missing user_id in context",
+			ctx:  context.Background(),
 			req: &chatv1.MarkAsReadRequest{
 				ConversationId: "550e8400-e29b-41d4-a716-446655440000",
-				UserId:         "",
 			},
-			errCode: codes.InvalidArgument,
-			errMsg:  "user_id is required",
+			errCode: codes.Unauthenticated,
+			errMsg:  "user_id not found in context",
 		},
 		{
 			name: "invalid conversation_id",
+			ctx:  contextWithUserID("550e8400-e29b-41d4-a716-446655440000"),
 			req: &chatv1.MarkAsReadRequest{
 				ConversationId: "not-a-uuid",
-				UserId:         "550e8400-e29b-41d4-a716-446655440000",
 			},
 			errCode: codes.InvalidArgument,
-			errMsg:  "invalid conversation_id",
-		},
-		{
-			name: "invalid user_id",
-			req: &chatv1.MarkAsReadRequest{
-				ConversationId: "550e8400-e29b-41d4-a716-446655440000",
-				UserId:         "not-a-uuid",
-			},
-			errCode: codes.InvalidArgument,
-			errMsg:  "invalid user_id",
+			errMsg:  "conversation_id",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp, err := service.MarkAsRead(context.Background(), tt.req)
+			resp, err := service.MarkAsRead(tt.ctx, tt.req)
 			assert.Nil(t, resp)
 			assert.Error(t, err)
 			assert.Equal(t, tt.errCode, status.Code(err))
@@ -697,3 +674,52 @@ func TestMarkAsRead_ValidationErrors(t *testing.T) {
 
 // Note: For integration tests with actual DB, we would test MarkAsRead success case.
 // For unit tests, we focus on validation since the repository layer is already tested separately.
+
+// contextWithUserID creates a context with user_id for testing
+// Must use the same context key as getUserIDFromContext in chat_service.go
+func contextWithUserID(userID string) context.Context {
+	return context.WithValue(context.Background(), UserIDContextKey, userID)
+}
+
+func TestSendMessage_MissingUserIDInContext(t *testing.T) {
+	logger := zap.NewNop()
+	mockIdempotency := new(MockIdempotencyChecker)
+
+	service := &ChatService{
+		idempotencyCheck: mockIdempotency,
+		logger:           logger,
+	}
+
+	// Context without user_id
+	ctx := context.Background()
+	req := &chatv1.SendMessageRequest{
+		ConversationId: "550e8400-e29b-41d4-a716-446655440000",
+		Content:        "Hello",
+		IdempotencyKey: "key-123",
+	}
+
+	resp, err := service.SendMessage(ctx, req)
+
+	assert.Nil(t, resp)
+	assert.Error(t, err)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+	assert.Contains(t, err.Error(), "user_id not found in context")
+	mockIdempotency.AssertNotCalled(t, "Check")
+}
+
+func TestGetConversations_MissingUserIDInContext(t *testing.T) {
+	service := &ChatService{logger: zap.NewNop()}
+
+	// Context without user_id
+	ctx := context.Background()
+	req := &chatv1.GetConversationsRequest{
+		Limit: 50,
+	}
+
+	resp, err := service.GetConversations(ctx, req)
+
+	assert.Nil(t, resp)
+	assert.Error(t, err)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+	assert.Contains(t, err.Error(), "user_id not found in context")
+}

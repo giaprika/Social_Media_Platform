@@ -42,7 +42,7 @@ service ChatService {
 
 message SendMessageRequest {
   string conversation_id = 1;
-  string sender_id = 2;
+  // sender_id is extracted from JWT token via auth middleware
   string content = 3;
   string idempotency_key = 4; 
 }
@@ -72,7 +72,7 @@ message ChatMessage {
 }
 
 message GetConversationsRequest {
-  string user_id = 1; // User ID (thường lấy từ token, nhưng để đây cho rõ ràng hoặc admin)
+  // user_id is extracted from JWT token via auth middleware
   int32 limit = 2;
   string cursor = 3; // timestamp của last_message_at
 }
@@ -91,7 +91,7 @@ message Conversation {
 
 message MarkAsReadRequest {
   string conversation_id = 1;
-  string user_id = 2;
+  // user_id is extracted from JWT token via auth middleware
 }
 
 message MarkAsReadResponse {

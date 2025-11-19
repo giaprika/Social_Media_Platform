@@ -65,6 +65,7 @@ func main() {
 		grpc.ChainUnaryInterceptor(
 			middleware.GrpcLogger(logger),
 			middleware.GrpcRecovery(logger),
+			middleware.GrpcAuthExtractor(logger),
 		),
 	)
 

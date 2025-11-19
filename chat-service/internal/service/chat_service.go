@@ -23,7 +23,6 @@ var (
 	ErrInvalidRequest      = errors.New("invalid request")
 	ErrEmptyContent        = errors.New("message content cannot be empty")
 	ErrEmptyConversationID = errors.New("conversation_id cannot be empty")
-	ErrEmptySenderID       = errors.New("sender_id cannot be empty")
 	ErrEmptyIdempotencyKey = errors.New("idempotency_key cannot be empty")
 	ErrTransactionFailed   = errors.New("transaction failed")
 )
@@ -57,22 +56,31 @@ func NewChatService(
 
 // SendMessage handles sending a new message
 func (s *ChatService) SendMessage(ctx context.Context, req *chatv1.SendMessageRequest) (*chatv1.SendMessageResponse, error) {
-	// 1. Validate request
+	// 1. Extract user_id from context (set by auth middleware)
+	userID, err := getUserIDFromContext(ctx)
+	if err != nil {
+		s.logger.Error("failed to get user_id from context", zap.Error(err))
+		return nil, err
+	}
+
+	// 2. Validate request
 	if err := s.validateSendMessageRequest(req); err != nil {
 		s.logger.Error("validation failed",
 			zap.Error(err),
 			zap.String("conversation_id", req.ConversationId),
+			zap.String("user_id", userID),
 		)
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// 2. Check idempotency
-	err := s.idempotencyCheck.Check(ctx, req.IdempotencyKey)
+	// 3. Check idempotency
+	err = s.idempotencyCheck.Check(ctx, req.IdempotencyKey)
 	if err != nil {
 		if errors.Is(err, idempotency.ErrDuplicateRequest) {
 			s.logger.Warn("duplicate request detected",
 				zap.String("idempotency_key", req.IdempotencyKey),
 				zap.String("conversation_id", req.ConversationId),
+				zap.String("user_id", userID),
 			)
 			return nil, status.Error(codes.AlreadyExists, "duplicate request: message already sent")
 		}
@@ -83,13 +91,13 @@ func (s *ChatService) SendMessage(ctx context.Context, req *chatv1.SendMessageRe
 		return nil, status.Error(codes.Internal, "failed to check idempotency")
 	}
 
-	// 3. Execute transaction: upsert conversation + insert message + insert outbox
-	messageID, err := s.sendMessageTx(ctx, req)
+	// 4. Execute transaction: upsert conversation + insert message + insert outbox
+	messageID, err := s.sendMessageTx(ctx, req, userID)
 	if err != nil {
 		s.logger.Error("transaction failed",
 			zap.Error(err),
 			zap.String("conversation_id", req.ConversationId),
-			zap.String("sender_id", req.SenderId),
+			zap.String("user_id", userID),
 		)
 		return nil, status.Error(codes.Internal, "failed to send message")
 	}
@@ -97,7 +105,7 @@ func (s *ChatService) SendMessage(ctx context.Context, req *chatv1.SendMessageRe
 	s.logger.Info("message sent successfully",
 		zap.String("message_id", messageID),
 		zap.String("conversation_id", req.ConversationId),
-		zap.String("sender_id", req.SenderId),
+		zap.String("user_id", userID),
 	)
 
 	return &chatv1.SendMessageResponse{
@@ -116,10 +124,6 @@ func (s *ChatService) validateSendMessageRequest(req *chatv1.SendMessageRequest)
 		return ErrEmptyConversationID
 	}
 
-	if req.SenderId == "" {
-		return ErrEmptySenderID
-	}
-
 	if req.Content == "" {
 		return ErrEmptyContent
 	}
@@ -132,16 +136,16 @@ func (s *ChatService) validateSendMessageRequest(req *chatv1.SendMessageRequest)
 }
 
 // sendMessageTx executes the message sending in a transaction
-func (s *ChatService) sendMessageTx(ctx context.Context, req *chatv1.SendMessageRequest) (string, error) {
+func (s *ChatService) sendMessageTx(ctx context.Context, req *chatv1.SendMessageRequest, userID string) (string, error) {
 	// Parse UUIDs
 	conversationUUID, err := parseUUID(req.ConversationId)
 	if err != nil {
 		return "", fmt.Errorf("invalid conversation_id: %w", err)
 	}
 
-	senderUUID, err := parseUUID(req.SenderId)
+	senderUUID, err := parseUUID(userID)
 	if err != nil {
-		return "", fmt.Errorf("invalid sender_id: %w", err)
+		return "", fmt.Errorf("invalid user_id: %w", err)
 	}
 
 	// Begin transaction
@@ -327,11 +331,14 @@ func (s *ChatService) GetConversations(ctx context.Context, req *chatv1.GetConve
 		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
 	}
 
-	if req.UserId == "" {
-		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	// Extract user_id from context (set by auth middleware)
+	userID, err := getUserIDFromContext(ctx)
+	if err != nil {
+		s.logger.Error("failed to get user_id from context", zap.Error(err))
+		return nil, err
 	}
 
-	userUUID, err := parseUUID(req.UserId)
+	userUUID, err := parseUUID(userID)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid user_id")
 	}
@@ -357,7 +364,7 @@ func (s *ChatService) GetConversations(ctx context.Context, req *chatv1.GetConve
 	if err != nil {
 		s.logger.Error("failed to fetch conversations",
 			zap.Error(err),
-			zap.String("user_id", req.UserId),
+			zap.String("user_id", userID),
 		)
 		return nil, status.Error(codes.Internal, "failed to fetch conversations")
 	}
@@ -398,8 +405,11 @@ func (s *ChatService) MarkAsRead(ctx context.Context, req *chatv1.MarkAsReadRequ
 		return nil, status.Error(codes.InvalidArgument, "conversation_id is required")
 	}
 
-	if req.UserId == "" {
-		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	// Extract user_id from context (set by auth middleware)
+	userID, err := getUserIDFromContext(ctx)
+	if err != nil {
+		s.logger.Error("failed to get user_id from context", zap.Error(err))
+		return nil, err
 	}
 
 	conversationUUID, err := parseUUID(req.ConversationId)
@@ -407,7 +417,7 @@ func (s *ChatService) MarkAsRead(ctx context.Context, req *chatv1.MarkAsReadRequ
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
 
-	userUUID, err := parseUUID(req.UserId)
+	userUUID, err := parseUUID(userID)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid user_id")
 	}
@@ -420,7 +430,7 @@ func (s *ChatService) MarkAsRead(ctx context.Context, req *chatv1.MarkAsReadRequ
 		s.logger.Error("failed to mark conversation as read",
 			zap.Error(err),
 			zap.String("conversation_id", req.ConversationId),
-			zap.String("user_id", req.UserId),
+			zap.String("user_id", userID),
 		)
 		return nil, status.Error(codes.Internal, "failed to mark conversation as read")
 	}
@@ -471,4 +481,19 @@ func formatTimestamp(ts pgtype.Timestamptz) string {
 		return ""
 	}
 	return ts.Time.Format(time.RFC3339Nano)
+}
+
+// ContextKey is the type for context keys
+type ContextKey string
+
+// UserIDContextKey is the context key for user_id
+const UserIDContextKey ContextKey = "user_id"
+
+// getUserIDFromContext retrieves user_id from context (set by auth middleware)
+func getUserIDFromContext(ctx context.Context) (string, error) {
+	userID, ok := ctx.Value(UserIDContextKey).(string)
+	if !ok || userID == "" {
+		return "", status.Error(codes.Unauthenticated, "user_id not found in context")
+	}
+	return userID, nil
 }
