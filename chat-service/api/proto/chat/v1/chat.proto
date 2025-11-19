@@ -1,0 +1,31 @@
+// api/proto/chat/v1/chat.proto
+syntax = "proto3";
+
+package chat.v1;
+
+option go_package = "chat-service/api/chat/v1;chatv1";
+
+// Import này sẽ được Buf tự động giải quyết
+import "google/api/annotations.proto"; 
+
+service ChatService {
+  // Gửi tin nhắn (API chính cho Phase 1)
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse) {
+    option (google.api.http) = {
+      post: "/v1/messages"
+      body: "*"
+    };
+  }
+}
+
+message SendMessageRequest {
+  string conversation_id = 1;
+  string sender_id = 2;
+  string content = 3;
+  string idempotency_key = 4; 
+}
+
+message SendMessageResponse {
+  string message_id = 1;
+  string status = 2; // SENT, DELIVERED
+}

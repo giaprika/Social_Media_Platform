@@ -1,0 +1,45 @@
+# Hi
+
+services:
+  # 1. PostgreSQL 15
+  postgres:
+    image: postgres:15-alpine
+    container_name: chat_postgres
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: chat_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # 2. Redis (Dev mode: Standalone)
+  redis:
+    image: redis:7-alpine
+    container_name: chat_redis
+    ports:
+      - "6379:6379"
+
+  # 3. Prometheus (Metrics)
+  prometheus:
+    image: prom/prometheus
+    container_name: chat_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deploy/prometheus:/etc/prometheus
+
+  # 4. Grafana (Dashboard)
+  grafana:
+    image: grafana/grafana
+    container_name: chat_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
+
+volumes:
+  postgres_data:

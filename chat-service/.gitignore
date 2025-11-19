@@ -1,0 +1,73 @@
+docs/
+
+# --- Go Standard ---
+# Binaries & Build Output
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Test coverage & reports
+coverage.txt
+profile.out
+
+# Vendor directory (nếu bạn không muốn commit thư viện dependencies)
+vendor/
+
+# --- Environment & Secrets (QUAN TRỌNG) ---
+# Tuyệt đối không commit file chứa mật khẩu, key, connection string
+.env
+.env.*
+*.pem
+*.key
+*.cert
+
+# --- Tools & Frameworks ---
+# Buf (Tool generate proto)
+.buf/
+
+# Terraform (Nếu sau này dùng)
+.terraform/
+*.tfstate
+*.tfstate.backup
+
+# --- IDE & OS ---
+# Mac
+.DS_Store
+
+# VS Code
+.vscode/
+!.vscode/settings.json # Giữ lại settings nếu muốn share config chuẩn cho team
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# IntelliJ / GoLand
+.idea/
+*.iml
+
+# --- Project Specific ---
+# Dữ liệu local của Docker (nếu bạn map volume ra ngoài folder)
+postgres_data/
+redis_data/
+grafana_data/
+
+# File tạm test kết nối
+cmd/test-infra/
+
+# --- Generated Code (Tùy chọn) ---
+# Thông thường trong Go, chúng ta NÊN COMMIT code sinh ra (pb.go, sql.go)
+# để người khác clone về chạy được ngay mà không cần cài buf/sqlc.
+# Nhưng nếu bạn muốn repo cực sạch và bắt buộc team phải chạy 'make gen', 
+# thì bỏ comment các dòng dưới đây:
+# api/chat/v1/*.pb.go
+# api/chat/v1/*.gw.go
+# internal/repository/*.sql.go
+# internal/repository/db.go
+# internal/repository/models.go
+# internal/repository/querier.go
