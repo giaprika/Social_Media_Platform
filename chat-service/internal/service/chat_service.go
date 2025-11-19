@@ -1,0 +1,228 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	chatv1 "chat-service/api/chat/v1"
+	"chat-service/internal/repository"
+	"chat-service/pkg/idempotency"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+// Common errors
+var (
+	ErrInvalidRequest      = errors.New("invalid request")
+	ErrEmptyContent        = errors.New("message content cannot be empty")
+	ErrEmptyConversationID = errors.New("conversation_id cannot be empty")
+	ErrEmptySenderID       = errors.New("sender_id cannot be empty")
+	ErrEmptyIdempotencyKey = errors.New("idempotency_key cannot be empty")
+	ErrTransactionFailed   = errors.New("transaction failed")
+)
+
+// ChatService implements the gRPC ChatService interface
+type ChatService struct {
+	chatv1.UnimplementedChatServiceServer
+	db               *pgxpool.Pool
+	queries          *repository.Queries
+	idempotencyCheck idempotency.Checker
+	logger           *zap.Logger
+}
+
+// NewChatService creates a new ChatService instance
+func NewChatService(
+	db *pgxpool.Pool,
+	idempotencyCheck idempotency.Checker,
+	logger *zap.Logger,
+) *ChatService {
+	return &ChatService{
+		db:               db,
+		queries:          repository.New(db),
+		idempotencyCheck: idempotencyCheck,
+		logger:           logger,
+	}
+}
+
+// SendMessage handles sending a new message
+func (s *ChatService) SendMessage(ctx context.Context, req *chatv1.SendMessageRequest) (*chatv1.SendMessageResponse, error) {
+	// 1. Validate request
+	if err := s.validateSendMessageRequest(req); err != nil {
+		s.logger.Error("validation failed",
+			zap.Error(err),
+			zap.String("conversation_id", req.ConversationId),
+		)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// 2. Check idempotency
+	err := s.idempotencyCheck.Check(ctx, req.IdempotencyKey)
+	if err != nil {
+		if errors.Is(err, idempotency.ErrDuplicateRequest) {
+			s.logger.Warn("duplicate request detected",
+				zap.String("idempotency_key", req.IdempotencyKey),
+				zap.String("conversation_id", req.ConversationId),
+			)
+			return nil, status.Error(codes.AlreadyExists, "duplicate request: message already sent")
+		}
+		s.logger.Error("idempotency check failed",
+			zap.Error(err),
+			zap.String("idempotency_key", req.IdempotencyKey),
+		)
+		return nil, status.Error(codes.Internal, "failed to check idempotency")
+	}
+
+	// 3. Execute transaction: upsert conversation + insert message + insert outbox
+	messageID, err := s.sendMessageTx(ctx, req)
+	if err != nil {
+		s.logger.Error("transaction failed",
+			zap.Error(err),
+			zap.String("conversation_id", req.ConversationId),
+			zap.String("sender_id", req.SenderId),
+		)
+		return nil, status.Error(codes.Internal, "failed to send message")
+	}
+
+	s.logger.Info("message sent successfully",
+		zap.String("message_id", messageID),
+		zap.String("conversation_id", req.ConversationId),
+		zap.String("sender_id", req.SenderId),
+	)
+
+	return &chatv1.SendMessageResponse{
+		MessageId: messageID,
+		Status:    "SENT",
+	}, nil
+}
+
+// validateSendMessageRequest validates the SendMessage request
+func (s *ChatService) validateSendMessageRequest(req *chatv1.SendMessageRequest) error {
+	if req == nil {
+		return ErrInvalidRequest
+	}
+
+	if req.ConversationId == "" {
+		return ErrEmptyConversationID
+	}
+
+	if req.SenderId == "" {
+		return ErrEmptySenderID
+	}
+
+	if req.Content == "" {
+		return ErrEmptyContent
+	}
+
+	if req.IdempotencyKey == "" {
+		return ErrEmptyIdempotencyKey
+	}
+
+	return nil
+}
+
+// sendMessageTx executes the message sending in a transaction
+func (s *ChatService) sendMessageTx(ctx context.Context, req *chatv1.SendMessageRequest) (string, error) {
+	// Parse UUIDs
+	conversationUUID, err := parseUUID(req.ConversationId)
+	if err != nil {
+		return "", fmt.Errorf("invalid conversation_id: %w", err)
+	}
+
+	senderUUID, err := parseUUID(req.SenderId)
+	if err != nil {
+		return "", fmt.Errorf("invalid sender_id: %w", err)
+	}
+
+	// Begin transaction
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) // Rollback if not committed
+
+	qtx := s.queries.WithTx(tx)
+
+	// 1. Upsert conversation (ensure it exists)
+	_, err = qtx.UpsertConversation(ctx, conversationUUID)
+	if err != nil {
+		return "", fmt.Errorf("failed to upsert conversation: %w", err)
+	}
+
+	// 2. Insert message
+	message, err := qtx.InsertMessage(ctx, repository.InsertMessageParams{
+		ConversationID: conversationUUID,
+		SenderID:       senderUUID,
+		Content:        req.Content,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to insert message: %w", err)
+	}
+
+	// 3. Create outbox event payload
+	payload, err := s.createMessageEventPayload(message)
+	if err != nil {
+		return "", fmt.Errorf("failed to create event payload: %w", err)
+	}
+
+	// 4. Insert outbox event
+	err = qtx.InsertOutbox(ctx, repository.InsertOutboxParams{
+		AggregateType: "message",
+		AggregateID:   message.ID,
+		Payload:       payload,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to insert outbox: %w", err)
+	}
+
+	// Commit transaction
+	if err = tx.Commit(ctx); err != nil {
+		return "", fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return uuidToString(message.ID), nil
+}
+
+// createMessageEventPayload creates the JSON payload for the outbox event
+func (s *ChatService) createMessageEventPayload(message repository.Message) ([]byte, error) {
+	event := map[string]interface{}{
+		"event_type":      "message.sent",
+		"message_id":      uuidToString(message.ID),
+		"conversation_id": uuidToString(message.ConversationID),
+		"sender_id":       uuidToString(message.SenderID),
+		"content":         message.Content,
+		"created_at":      message.CreatedAt.Time.Format(time.RFC3339),
+	}
+
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal event: %w", err)
+	}
+
+	return payload, nil
+}
+
+// parseUUID converts a string UUID to pgtype.UUID
+func parseUUID(uuidStr string) (pgtype.UUID, error) {
+	var uuid pgtype.UUID
+	err := uuid.Scan(uuidStr)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+	return uuid, nil
+}
+
+// uuidToString converts pgtype.UUID to string
+func uuidToString(uuid pgtype.UUID) string {
+	if !uuid.Valid {
+		return ""
+	}
+	return fmt.Sprintf("%x-%x-%x-%x-%x",
+		uuid.Bytes[0:4], uuid.Bytes[4:6], uuid.Bytes[6:8], uuid.Bytes[8:10], uuid.Bytes[10:16])
+}
