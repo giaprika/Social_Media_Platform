@@ -169,13 +169,26 @@ func (s *ChatService) sendMessageTx(ctx context.Context, req *chatv1.SendMessage
 		return "", fmt.Errorf("failed to insert message: %w", err)
 	}
 
-	// 3. Create outbox event payload
+	// 3. Update conversation last message
+	err = qtx.UpdateConversationLastMessage(ctx, repository.UpdateConversationLastMessageParams{
+		ID: conversationUUID,
+		LastMessageContent: pgtype.Text{
+			String: req.Content,
+			Valid:  true,
+		},
+		LastMessageAt: message.CreatedAt,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to update conversation last message: %w", err)
+	}
+
+	// 4. Create outbox event payload
 	payload, err := s.createMessageEventPayload(message)
 	if err != nil {
 		return "", fmt.Errorf("failed to create event payload: %w", err)
 	}
 
-	// 4. Insert outbox event
+	// 5. Insert outbox event
 	err = qtx.InsertOutbox(ctx, repository.InsertOutboxParams{
 		AggregateType: "message",
 		AggregateID:   message.ID,
@@ -296,6 +309,73 @@ func (s *ChatService) GetMessages(ctx context.Context, req *chatv1.GetMessagesRe
 	return &chatv1.GetMessagesResponse{
 		Messages:   respMessages,
 		NextCursor: nextCursor,
+	}, nil
+}
+
+// GetConversations returns list of conversations for a user with pagination support.
+func (s *ChatService) GetConversations(ctx context.Context, req *chatv1.GetConversationsRequest) (*chatv1.GetConversationsResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+
+	if req.UserId == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+
+	userUUID, err := parseUUID(req.UserId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid user_id")
+	}
+
+	limit := sanitizeLimit(req.Limit)
+
+	var before pgtype.Timestamptz
+	if req.Cursor != "" {
+		beforeTs, err := parseTimestampToPgtype(req.Cursor)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid cursor, must be RFC3339")
+		}
+		before = beforeTs
+	}
+
+	params := repository.GetConversationsForUserParams{
+		UserID:  userUUID,
+		Column2: before,
+		Limit:   limit,
+	}
+
+	conversations, err := s.queries.GetConversationsForUser(ctx, params)
+	if err != nil {
+		s.logger.Error("failed to fetch conversations",
+			zap.Error(err),
+			zap.String("user_id", req.UserId),
+		)
+		return nil, status.Error(codes.Internal, "failed to fetch conversations")
+	}
+
+	respConversations := make([]*chatv1.Conversation, 0, len(conversations))
+	for _, conv := range conversations {
+		var lastMessageContent string
+		if conv.LastMessageContent.Valid {
+			lastMessageContent = conv.LastMessageContent.String
+		}
+
+		respConversations = append(respConversations, &chatv1.Conversation{
+			Id:                 uuidToString(conv.ID),
+			LastMessageContent: lastMessageContent,
+			LastMessageAt:      formatTimestamp(conv.LastMessageAt),
+			UnreadCount:        int32(conv.UnreadCount),
+		})
+	}
+
+	nextCursor := ""
+	if len(conversations) > 0 {
+		nextCursor = formatTimestamp(conversations[len(conversations)-1].LastMessageAt)
+	}
+
+	return &chatv1.GetConversationsResponse{
+		Conversations: respConversations,
+		NextCursor:    nextCursor,
 	}, nil
 }
 

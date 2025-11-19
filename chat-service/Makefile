@@ -3,7 +3,7 @@
 # Generate Protobuf using Buf
 gen-proto:
 	@echo "Updating Buf dependencies..."
-	cd api/proto && buf mod update
+	cd api/proto && buf dep update
 	@echo "Generating Go code..."
 	buf generate api/proto
 

@@ -23,6 +23,13 @@ service ChatService {
       get: "/v1/conversations/{conversation_id}/messages"
     };
   }
+
+  // Lấy danh sách conversation của user
+  rpc GetConversations(GetConversationsRequest) returns (GetConversationsResponse) {
+    option (google.api.http) = {
+      get: "/v1/conversations"
+    };
+  }
 }
 
 message SendMessageRequest {
@@ -54,4 +61,22 @@ message ChatMessage {
   string sender_id = 3;
   string content = 4;
   string created_at = 5;
+}
+
+message GetConversationsRequest {
+  string user_id = 1; // User ID (thường lấy từ token, nhưng để đây cho rõ ràng hoặc admin)
+  int32 limit = 2;
+  string cursor = 3; // timestamp của last_message_at
+}
+
+message GetConversationsResponse {
+  repeated Conversation conversations = 1;
+  string next_cursor = 2;
+}
+
+message Conversation {
+  string id = 1;
+  string last_message_content = 2;
+  string last_message_at = 3;
+  int32 unread_count = 4;
 }

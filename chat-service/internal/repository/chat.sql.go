@@ -11,6 +11,79 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addParticipant = `-- name: AddParticipant :exec
+INSERT INTO conversation_participants (conversation_id, user_id, joined_at)
+VALUES ($1, $2, NOW())
+ON CONFLICT DO NOTHING
+`
+
+type AddParticipantParams struct {
+	ConversationID pgtype.UUID `json:"conversation_id"`
+	UserID         pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) AddParticipant(ctx context.Context, arg AddParticipantParams) error {
+	_, err := q.db.Exec(ctx, addParticipant, arg.ConversationID, arg.UserID)
+	return err
+}
+
+const getConversationsForUser = `-- name: GetConversationsForUser :many
+SELECT 
+    c.id,
+    c.last_message_content,
+    c.last_message_at,
+    (
+        SELECT COUNT(*) 
+        FROM messages m 
+        WHERE m.conversation_id = c.id 
+          AND m.created_at > cp.last_read_at
+    ) AS unread_count
+FROM conversations c
+JOIN conversation_participants cp ON c.id = cp.conversation_id
+WHERE cp.user_id = $1
+  AND ($2::timestamptz IS NULL OR c.last_message_at < $2::timestamptz)
+ORDER BY c.last_message_at DESC
+LIMIT $3
+`
+
+type GetConversationsForUserParams struct {
+	UserID  pgtype.UUID        `json:"user_id"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
+	Limit   int32              `json:"limit"`
+}
+
+type GetConversationsForUserRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	LastMessageContent pgtype.Text        `json:"last_message_content"`
+	LastMessageAt      pgtype.Timestamptz `json:"last_message_at"`
+	UnreadCount        int64              `json:"unread_count"`
+}
+
+func (q *Queries) GetConversationsForUser(ctx context.Context, arg GetConversationsForUserParams) ([]GetConversationsForUserRow, error) {
+	rows, err := q.db.Query(ctx, getConversationsForUser, arg.UserID, arg.Column2, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetConversationsForUserRow
+	for rows.Next() {
+		var i GetConversationsForUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.LastMessageContent,
+			&i.LastMessageAt,
+			&i.UnreadCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getMessages = `-- name: GetMessages :many
 SELECT id, conversation_id, sender_id, content, created_at
 FROM messages
@@ -131,16 +204,39 @@ func (q *Queries) InsertOutbox(ctx context.Context, arg InsertOutboxParams) erro
 	return err
 }
 
+const updateConversationLastMessage = `-- name: UpdateConversationLastMessage :exec
+UPDATE conversations
+SET last_message_content = $2,
+    last_message_at = $3
+WHERE id = $1
+`
+
+type UpdateConversationLastMessageParams struct {
+	ID                 pgtype.UUID        `json:"id"`
+	LastMessageContent pgtype.Text        `json:"last_message_content"`
+	LastMessageAt      pgtype.Timestamptz `json:"last_message_at"`
+}
+
+func (q *Queries) UpdateConversationLastMessage(ctx context.Context, arg UpdateConversationLastMessageParams) error {
+	_, err := q.db.Exec(ctx, updateConversationLastMessage, arg.ID, arg.LastMessageContent, arg.LastMessageAt)
+	return err
+}
+
 const upsertConversation = `-- name: UpsertConversation :one
 INSERT INTO conversations (id)
 VALUES ($1)
 ON CONFLICT (id) DO UPDATE SET created_at = conversations.created_at
-RETURNING id, created_at
+RETURNING id, created_at, last_message_content, last_message_at
 `
 
 func (q *Queries) UpsertConversation(ctx context.Context, id pgtype.UUID) (Conversation, error) {
 	row := q.db.QueryRow(ctx, upsertConversation, id)
 	var i Conversation
-	err := row.Scan(&i.ID, &i.CreatedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.LastMessageContent,
+		&i.LastMessageAt,
+	)
 	return i, err
 }

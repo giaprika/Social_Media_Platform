@@ -9,8 +9,17 @@ import (
 )
 
 type Conversation struct {
-	ID        pgtype.UUID        `json:"id"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	LastMessageContent pgtype.Text        `json:"last_message_content"`
+	LastMessageAt      pgtype.Timestamptz `json:"last_message_at"`
+}
+
+type ConversationParticipant struct {
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	LastReadAt     pgtype.Timestamptz `json:"last_read_at"`
+	JoinedAt       pgtype.Timestamptz `json:"joined_at"`
 }
 
 type Message struct {
