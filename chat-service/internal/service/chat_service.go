@@ -12,6 +12,7 @@ import (
 	"chat-service/internal/repository"
 	"chat-service/pkg/idempotency"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
@@ -36,7 +37,18 @@ type ChatService struct {
 	idempotencyCheck idempotency.Checker
 	logger           *zap.Logger
 
-	getMessagesFn func(ctx context.Context, arg repository.GetMessagesParams) ([]repository.Message, error)
+	// Injectable functions for testing
+	getMessagesFn               func(ctx context.Context, arg repository.GetMessagesParams) ([]repository.Message, error)
+	getConversationsForUserFn   func(ctx context.Context, arg repository.GetConversationsForUserParams) ([]repository.GetConversationsForUserRow, error)
+	markAsReadFn                func(ctx context.Context, arg repository.MarkAsReadParams) error
+	beginTxFn                   func(ctx context.Context) (repository.DBTX, error)
+	upsertConversationFn   func(ctx context.Context, qtx *repository.Queries, id pgtype.UUID) (repository.Conversation, error)
+	addParticipantFn       func(ctx context.Context, qtx *repository.Queries, params repository.AddParticipantParams) error
+	insertMessageFn        func(ctx context.Context, qtx *repository.Queries, params repository.InsertMessageParams) (repository.Message, error)
+	updateLastMessageFn    func(ctx context.Context, qtx *repository.Queries, params repository.UpdateConversationLastMessageParams) error
+	insertOutboxFn         func(ctx context.Context, qtx *repository.Queries, params repository.InsertOutboxParams) error
+	commitTxFn             func(ctx context.Context, tx repository.DBTX) error
+	rollbackTxFn           func(ctx context.Context, tx repository.DBTX) error
 }
 
 // NewChatService creates a new ChatService instance
@@ -150,22 +162,31 @@ func (s *ChatService) sendMessageTx(ctx context.Context, req *chatv1.SendMessage
 	}
 
 	// Begin transaction
-	tx, err := s.db.Begin(ctx)
+	tx, err := s.beginTx(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx) // Rollback if not committed
+	defer s.rollbackTx(ctx, tx) // Rollback if not committed
 
-	qtx := s.queries.WithTx(tx)
+	// Create queries with transaction context
+	// For testing, we pass the tx directly to the injectable functions
+	// For production, WithTx expects pgx.Tx, so we type assert
+	var qtx *repository.Queries
+	if pgxTx, ok := tx.(pgx.Tx); ok {
+		qtx = s.queries.WithTx(pgxTx)
+	} else {
+		// For testing with mocked tx, create a new Queries with the DBTX
+		qtx = repository.New(tx)
+	}
 
 	// 1. Upsert conversation (ensure it exists)
-	_, err = qtx.UpsertConversation(ctx, conversationUUID)
+	_, err = s.upsertConversation(ctx, qtx, conversationUUID)
 	if err != nil {
 		return "", fmt.Errorf("failed to upsert conversation: %w", err)
 	}
 
 	// 2. Add sender as participant (idempotent with ON CONFLICT DO NOTHING)
-	err = qtx.AddParticipant(ctx, repository.AddParticipantParams{
+	err = s.addParticipant(ctx, qtx, repository.AddParticipantParams{
 		ConversationID: conversationUUID,
 		UserID:         senderUUID,
 	})
@@ -174,7 +195,7 @@ func (s *ChatService) sendMessageTx(ctx context.Context, req *chatv1.SendMessage
 	}
 
 	// 3. Insert message
-	message, err := qtx.InsertMessage(ctx, repository.InsertMessageParams{
+	message, err := s.insertMessage(ctx, qtx, repository.InsertMessageParams{
 		ConversationID: conversationUUID,
 		SenderID:       senderUUID,
 		Content:        req.Content,
@@ -184,7 +205,7 @@ func (s *ChatService) sendMessageTx(ctx context.Context, req *chatv1.SendMessage
 	}
 
 	// 4. Update conversation last message
-	err = qtx.UpdateConversationLastMessage(ctx, repository.UpdateConversationLastMessageParams{
+	err = s.updateLastMessage(ctx, qtx, repository.UpdateConversationLastMessageParams{
 		ID: conversationUUID,
 		LastMessageContent: pgtype.Text{
 			String: req.Content,
@@ -203,7 +224,7 @@ func (s *ChatService) sendMessageTx(ctx context.Context, req *chatv1.SendMessage
 	}
 
 	// 6. Insert outbox event
-	err = qtx.InsertOutbox(ctx, repository.InsertOutboxParams{
+	err = s.insertOutbox(ctx, qtx, repository.InsertOutboxParams{
 		AggregateType: "message",
 		AggregateID:   message.ID,
 		Payload:       payload,
@@ -213,7 +234,7 @@ func (s *ChatService) sendMessageTx(ctx context.Context, req *chatv1.SendMessage
 	}
 
 	// Commit transaction
-	if err = tx.Commit(ctx); err != nil {
+	if err = s.commitTx(ctx, tx); err != nil {
 		return "", fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
@@ -361,7 +382,7 @@ func (s *ChatService) GetConversations(ctx context.Context, req *chatv1.GetConve
 		Limit:   limit,
 	}
 
-	conversations, err := s.queries.GetConversationsForUser(ctx, params)
+	conversations, err := s.getConversationsForUser(ctx, params)
 	if err != nil {
 		s.logger.Error("failed to fetch conversations",
 			zap.Error(err),
@@ -423,7 +444,7 @@ func (s *ChatService) MarkAsRead(ctx context.Context, req *chatv1.MarkAsReadRequ
 		return nil, status.Error(codes.InvalidArgument, "invalid user_id")
 	}
 
-	err = s.queries.MarkAsRead(ctx, repository.MarkAsReadParams{
+	err = s.markAsRead(ctx, repository.MarkAsReadParams{
 		ConversationID: conversationUUID,
 		UserID:         userUUID,
 	})
@@ -441,11 +462,97 @@ func (s *ChatService) MarkAsRead(ctx context.Context, req *chatv1.MarkAsReadRequ
 	}, nil
 }
 
+func (s *ChatService) markAsRead(ctx context.Context, params repository.MarkAsReadParams) error {
+	if s.markAsReadFn != nil {
+		return s.markAsReadFn(ctx, params)
+	}
+	return s.queries.MarkAsRead(ctx, params)
+}
+
 func (s *ChatService) getMessages(ctx context.Context, params repository.GetMessagesParams) ([]repository.Message, error) {
 	if s.getMessagesFn != nil {
 		return s.getMessagesFn(ctx, params)
 	}
 	return s.queries.GetMessages(ctx, params)
+}
+
+func (s *ChatService) getConversationsForUser(ctx context.Context, params repository.GetConversationsForUserParams) ([]repository.GetConversationsForUserRow, error) {
+	if s.getConversationsForUserFn != nil {
+		return s.getConversationsForUserFn(ctx, params)
+	}
+	return s.queries.GetConversationsForUser(ctx, params)
+}
+
+// beginTx starts a database transaction, using injectable function if available
+func (s *ChatService) beginTx(ctx context.Context) (repository.DBTX, error) {
+	if s.beginTxFn != nil {
+		return s.beginTxFn(ctx)
+	}
+	return s.db.Begin(ctx)
+}
+
+// upsertConversation upserts a conversation, using injectable function if available
+func (s *ChatService) upsertConversation(ctx context.Context, qtx *repository.Queries, id pgtype.UUID) (repository.Conversation, error) {
+	if s.upsertConversationFn != nil {
+		return s.upsertConversationFn(ctx, qtx, id)
+	}
+	return qtx.UpsertConversation(ctx, id)
+}
+
+// addParticipant adds a participant to a conversation, using injectable function if available
+func (s *ChatService) addParticipant(ctx context.Context, qtx *repository.Queries, params repository.AddParticipantParams) error {
+	if s.addParticipantFn != nil {
+		return s.addParticipantFn(ctx, qtx, params)
+	}
+	return qtx.AddParticipant(ctx, params)
+}
+
+// insertMessage inserts a message, using injectable function if available
+func (s *ChatService) insertMessage(ctx context.Context, qtx *repository.Queries, params repository.InsertMessageParams) (repository.Message, error) {
+	if s.insertMessageFn != nil {
+		return s.insertMessageFn(ctx, qtx, params)
+	}
+	return qtx.InsertMessage(ctx, params)
+}
+
+// updateLastMessage updates the last message of a conversation, using injectable function if available
+func (s *ChatService) updateLastMessage(ctx context.Context, qtx *repository.Queries, params repository.UpdateConversationLastMessageParams) error {
+	if s.updateLastMessageFn != nil {
+		return s.updateLastMessageFn(ctx, qtx, params)
+	}
+	return qtx.UpdateConversationLastMessage(ctx, params)
+}
+
+// insertOutbox inserts an outbox event, using injectable function if available
+func (s *ChatService) insertOutbox(ctx context.Context, qtx *repository.Queries, params repository.InsertOutboxParams) error {
+	if s.insertOutboxFn != nil {
+		return s.insertOutboxFn(ctx, qtx, params)
+	}
+	return qtx.InsertOutbox(ctx, params)
+}
+
+// commitTx commits a transaction, using injectable function if available
+func (s *ChatService) commitTx(ctx context.Context, tx repository.DBTX) error {
+	if s.commitTxFn != nil {
+		return s.commitTxFn(ctx, tx)
+	}
+	// Type assert to pgx.Tx to call Commit
+	if pgxTx, ok := tx.(interface{ Commit(context.Context) error }); ok {
+		return pgxTx.Commit(ctx)
+	}
+	return fmt.Errorf("transaction does not support Commit")
+}
+
+// rollbackTx rolls back a transaction, using injectable function if available
+func (s *ChatService) rollbackTx(ctx context.Context, tx repository.DBTX) error {
+	if s.rollbackTxFn != nil {
+		return s.rollbackTxFn(ctx, tx)
+	}
+	// Type assert to pgx.Tx to call Rollback
+	if pgxTx, ok := tx.(interface{ Rollback(context.Context) error }); ok {
+		return pgxTx.Rollback(ctx)
+	}
+	return fmt.Errorf("transaction does not support Rollback")
 }
 
 func sanitizeLimit(limit int32) int32 {
