@@ -15,19 +15,22 @@ const getMessages = `-- name: GetMessages :many
 SELECT id, conversation_id, sender_id, content, created_at
 FROM messages
 WHERE conversation_id = $1
-	AND ($2 IS NULL OR created_at < $2)
+	AND (
+		$2 IS NULL
+		OR created_at < $2
+	)
 ORDER BY created_at DESC
 LIMIT $3
 `
 
 type GetMessagesParams struct {
 	ConversationID pgtype.UUID `json:"conversation_id"`
-	Column2        interface{} `json:"column_2"`
+	Before         interface{} `json:"before"`
 	Limit          int32       `json:"limit"`
 }
 
 func (q *Queries) GetMessages(ctx context.Context, arg GetMessagesParams) ([]Message, error) {
-	rows, err := q.db.Query(ctx, getMessages, arg.ConversationID, arg.Column2, arg.Limit)
+	rows, err := q.db.Query(ctx, getMessages, arg.ConversationID, arg.Before, arg.Limit)
 	if err != nil {
 		return nil, err
 	}

@@ -35,6 +35,8 @@ type ChatService struct {
 	queries          *repository.Queries
 	idempotencyCheck idempotency.Checker
 	logger           *zap.Logger
+
+	getMessagesFn func(ctx context.Context, arg repository.GetMessagesParams) ([]repository.Message, error)
 }
 
 // NewChatService creates a new ChatService instance
@@ -43,12 +45,14 @@ func NewChatService(
 	idempotencyCheck idempotency.Checker,
 	logger *zap.Logger,
 ) *ChatService {
-	return &ChatService{
+	service := &ChatService{
 		db:               db,
 		queries:          repository.New(db),
 		idempotencyCheck: idempotencyCheck,
 		logger:           logger,
 	}
+	service.getMessagesFn = service.queries.GetMessages
+	return service
 }
 
 // SendMessage handles sending a new message
@@ -225,4 +229,115 @@ func uuidToString(uuid pgtype.UUID) string {
 	}
 	return fmt.Sprintf("%x-%x-%x-%x-%x",
 		uuid.Bytes[0:4], uuid.Bytes[4:6], uuid.Bytes[6:8], uuid.Bytes[8:10], uuid.Bytes[10:16])
+}
+
+const (
+	defaultMessagesLimit int32 = 50
+	maxMessagesLimit     int32 = 100
+)
+
+// GetMessages returns list of messages for a conversation with pagination support.
+func (s *ChatService) GetMessages(ctx context.Context, req *chatv1.GetMessagesRequest) (*chatv1.GetMessagesResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+
+	if req.ConversationId == "" {
+		return nil, status.Error(codes.InvalidArgument, "conversation_id is required")
+	}
+
+	conversationUUID, err := parseUUID(req.ConversationId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
+	}
+
+	limit := sanitizeLimit(req.Limit)
+
+	var before interface{}
+	if req.BeforeTimestamp != "" {
+		beforeTs, err := parseTimestampToPgtype(req.BeforeTimestamp)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid before_timestamp, must be RFC3339")
+		}
+		before = beforeTs
+	}
+
+	params := repository.GetMessagesParams{
+		ConversationID: conversationUUID,
+		Before:         before,
+		Limit:          limit,
+	}
+
+	messages, err := s.getMessages(ctx, params)
+	if err != nil {
+		s.logger.Error("failed to fetch messages",
+			zap.Error(err),
+			zap.String("conversation_id", req.ConversationId),
+		)
+		return nil, status.Error(codes.Internal, "failed to fetch messages")
+	}
+
+	respMessages := make([]*chatv1.ChatMessage, 0, len(messages))
+	for _, msg := range messages {
+		respMessages = append(respMessages, &chatv1.ChatMessage{
+			Id:             uuidToString(msg.ID),
+			ConversationId: uuidToString(msg.ConversationID),
+			SenderId:       uuidToString(msg.SenderID),
+			Content:        msg.Content,
+			CreatedAt:      formatTimestamp(msg.CreatedAt),
+		})
+	}
+
+	nextCursor := ""
+	if len(messages) > 0 {
+		nextCursor = formatTimestamp(messages[len(messages)-1].CreatedAt)
+	}
+
+	return &chatv1.GetMessagesResponse{
+		Messages:   respMessages,
+		NextCursor: nextCursor,
+	}, nil
+}
+
+func (s *ChatService) getMessages(ctx context.Context, params repository.GetMessagesParams) ([]repository.Message, error) {
+	if s.getMessagesFn != nil {
+		return s.getMessagesFn(ctx, params)
+	}
+	return s.queries.GetMessages(ctx, params)
+}
+
+func sanitizeLimit(limit int32) int32 {
+	if limit <= 0 {
+		return defaultMessagesLimit
+	}
+	if limit > maxMessagesLimit {
+		return maxMessagesLimit
+	}
+	return limit
+}
+
+func parseTimestampToPgtype(value string) (pgtype.Timestamptz, error) {
+	var ts pgtype.Timestamptz
+	if value == "" {
+		return ts, nil
+	}
+
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		parsed, err = time.Parse(time.RFC3339, value)
+		if err != nil {
+			return ts, err
+		}
+	}
+
+	ts.Valid = true
+	ts.Time = parsed
+	return ts, nil
+}
+
+func formatTimestamp(ts pgtype.Timestamptz) string {
+	if !ts.Valid {
+		return ""
+	}
+	return ts.Time.Format(time.RFC3339Nano)
 }

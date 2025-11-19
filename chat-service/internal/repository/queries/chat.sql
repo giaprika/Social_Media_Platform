@@ -6,10 +6,13 @@ RETURNING *;
 -- name: GetMessages :many
 SELECT *
 FROM messages
-WHERE conversation_id = $1
-	AND ($2 IS NULL OR created_at < $2)
+WHERE conversation_id = sqlc.arg('conversation_id')
+	AND (
+		sqlc.narg('before') IS NULL
+		OR created_at < sqlc.narg('before')
+	)
 ORDER BY created_at DESC
-LIMIT $3;
+LIMIT sqlc.arg('limit');
 
 -- name: UpsertConversation :one
 INSERT INTO conversations (id)

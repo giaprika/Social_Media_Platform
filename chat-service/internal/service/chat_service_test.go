@@ -14,6 +14,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // MockIdempotencyChecker is a mock implementation of idempotency.Checker
@@ -463,4 +465,168 @@ func TestSendMessage_ContextCancellation(t *testing.T) {
 
 	assert.Nil(t, resp)
 	assert.Error(t, err)
+}
+
+func TestGetMessages_ValidationErrors(t *testing.T) {
+	service := &ChatService{logger: zap.NewNop()}
+
+	tests := []struct {
+		name    string
+		req     *chatv1.GetMessagesRequest
+		errCode codes.Code
+	}{
+		{
+			name:    "nil request",
+			req:     nil,
+			errCode: codes.InvalidArgument,
+		},
+		{
+			name: "empty conversation",
+			req: &chatv1.GetMessagesRequest{
+				ConversationId: "",
+			},
+			errCode: codes.InvalidArgument,
+		},
+		{
+			name: "invalid uuid",
+			req: &chatv1.GetMessagesRequest{
+				ConversationId: "not-a-uuid",
+			},
+			errCode: codes.InvalidArgument,
+		},
+		{
+			name: "invalid timestamp",
+			req: &chatv1.GetMessagesRequest{
+				ConversationId:  "550e8400-e29b-41d4-a716-446655440000",
+				BeforeTimestamp: "invalid",
+			},
+			errCode: codes.InvalidArgument,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, err := service.GetMessages(context.Background(), tt.req)
+			assert.Nil(t, resp)
+			assert.Error(t, err)
+			assert.Equal(t, tt.errCode, status.Code(err))
+		})
+	}
+}
+
+func TestGetMessages_Success(t *testing.T) {
+	logger := zap.NewNop()
+	ts := time.Now().UTC()
+
+	service := &ChatService{
+		logger: logger,
+	}
+
+	service.getMessagesFn = func(ctx context.Context, arg repository.GetMessagesParams) ([]repository.Message, error) {
+		assert.Equal(t, defaultMessagesLimit, arg.Limit)
+		assert.Nil(t, arg.Before)
+
+		message := repository.Message{
+			ID:             mustParseUUID(t, "550e8400-e29b-41d4-a716-446655440000"),
+			ConversationID: mustParseUUID(t, "660e8400-e29b-41d4-a716-446655440000"),
+			SenderID:       mustParseUUID(t, "770e8400-e29b-41d4-a716-446655440000"),
+			Content:        "Hello world",
+		}
+		message.CreatedAt.Scan(ts)
+
+		return []repository.Message{message}, nil
+	}
+
+	req := &chatv1.GetMessagesRequest{
+		ConversationId: "660e8400-e29b-41d4-a716-446655440000",
+	}
+
+	resp, err := service.GetMessages(context.Background(), req)
+	assert.NoError(t, err)
+	assert.Len(t, resp.Messages, 1)
+	assert.Equal(t, "Hello world", resp.Messages[0].Content)
+	assert.NotEmpty(t, resp.NextCursor)
+}
+
+func TestGetMessages_WithBeforeTimestampAndLimit(t *testing.T) {
+	logger := zap.NewNop()
+
+	var capturedParams repository.GetMessagesParams
+
+	service := &ChatService{
+		logger: logger,
+	}
+
+	service.getMessagesFn = func(ctx context.Context, arg repository.GetMessagesParams) ([]repository.Message, error) {
+		capturedParams = arg
+		return []repository.Message{}, nil
+	}
+
+	req := &chatv1.GetMessagesRequest{
+		ConversationId:  "550e8400-e29b-41d4-a716-446655440000",
+		Limit:           200,
+		BeforeTimestamp: "2025-01-02T15:04:05Z",
+	}
+
+	resp, err := service.GetMessages(context.Background(), req)
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+	assert.Equal(t, maxMessagesLimit, capturedParams.Limit)
+	assert.NotNil(t, capturedParams.Before)
+}
+
+func TestGetMessages_DBError(t *testing.T) {
+	logger := zap.NewNop()
+
+	service := &ChatService{
+		logger: logger,
+	}
+
+	service.getMessagesFn = func(ctx context.Context, arg repository.GetMessagesParams) ([]repository.Message, error) {
+		return nil, errors.New("db error")
+	}
+
+	req := &chatv1.GetMessagesRequest{
+		ConversationId: "550e8400-e29b-41d4-a716-446655440000",
+	}
+
+	resp, err := service.GetMessages(context.Background(), req)
+	assert.Nil(t, resp)
+	assert.Equal(t, codes.Internal, status.Code(err))
+}
+
+func TestSanitizeLimit(t *testing.T) {
+	assert.Equal(t, defaultMessagesLimit, sanitizeLimit(0))
+	assert.Equal(t, defaultMessagesLimit, sanitizeLimit(-5))
+	assert.Equal(t, int32(25), sanitizeLimit(25))
+	assert.Equal(t, maxMessagesLimit, sanitizeLimit(1000))
+}
+
+func TestParseTimestampToPgtype(t *testing.T) {
+	ts, err := parseTimestampToPgtype("2025-01-02T15:04:05Z")
+	assert.NoError(t, err)
+	assert.True(t, ts.Valid)
+
+	ts2, err := parseTimestampToPgtype("2025-01-02T15:04:05.123456789Z")
+	assert.NoError(t, err)
+	assert.True(t, ts2.Valid)
+
+	_, err = parseTimestampToPgtype("invalid")
+	assert.Error(t, err)
+}
+
+func TestFormatTimestamp(t *testing.T) {
+	var ts pgtype.Timestamptz
+	assert.Equal(t, "", formatTimestamp(ts))
+
+	ts.Scan(time.Date(2025, 1, 2, 15, 4, 5, 0, time.UTC))
+	result := formatTimestamp(ts)
+	assert.Contains(t, result, "2025-01-02T15:04:05")
+}
+
+func mustParseUUID(t *testing.T, value string) pgtype.UUID {
+	t.Helper()
+	uuid, err := parseUUID(value)
+	assert.NoError(t, err)
+	return uuid
 }
