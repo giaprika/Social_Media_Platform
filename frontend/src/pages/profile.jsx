@@ -1,132 +1,128 @@
-import { useState } from "react";
-
-const tabs = ["posts", "about", "settings"];
+import { useState, useEffect } from "react";
+import { useParams } from "react-router-dom";
+import useAuth from "src/hooks/useAuth";
+import { useToast } from "src/components/ui";
+import ProfileHeader from "src/components/profile/ProfileHeader";
+import ProfileTabs from "src/components/profile/ProfileTabs";
+import ProfileContent from "src/components/profile/ProfileContent";
+import ProfileSidebar from "src/components/profile/ProfileSidebar";
 
 export default function Profile() {
-  const [activeTab, setActiveTab] = useState("posts");
+  const { userId } = useParams();
+  const { user: currentUser } = useAuth();
+  const toast = useToast();
+  
+  const [activeTab, setActiveTab] = useState("overview");
+  const [loading, setLoading] = useState(false);
+  const [posts, setPosts] = useState([]);
+  
+  // Determine if viewing own profile
+  const isOwnProfile = !userId || userId === currentUser?.id;
+  
+  // Mock user data
+  const profileUser = {
+    id: currentUser?.id || "1",
+    username: currentUser?.username || "socialuser",
+    displayName: currentUser?.displayName || currentUser?.fullName || "SocialUser",
+    avatar: currentUser?.avatar,
+    bio: "Passionate about technology, design, and coffee ☕",
+  };
 
-  const userStats = {
-    posts: 42,
-    followers: 1234,
-    following: 567,
+  const stats = {
+    followers: 0,
+    karma: 1,
+    contributions: 0,
+    redditAge: new Date(2024, 0, 15),
+    goldEarned: 0,
+    activeIn: 0,
+  };
+
+  useEffect(() => {
+    // Load posts based on active tab
+    setLoading(true);
+    setTimeout(() => {
+      setPosts([]); // Empty for now
+      setLoading(false);
+    }, 500);
+  }, [activeTab, userId]);
+
+  const handleUpvote = (postId) => {
+    // TODO: Implement
+  };
+
+  const handleDownvote = (postId) => {
+    // TODO: Implement
+  };
+
+  const handleComment = (postId) => {
+    // TODO: Implement
+  };
+
+  const handleShare = (postId) => {
+    toast.success("Đã sao chép link!");
+  };
+
+  const handleSave = (postId) => {
+    // TODO: Implement
+  };
+
+  const handleAuthorClick = (authorId) => {
+    // TODO: Navigate to author profile
+  };
+
+  const handleFollow = (authorId, shouldFollow) => {
+    toast.success(shouldFollow ? "Đã follow!" : "Đã unfollow!");
+  };
+
+  const handleCommunityClick = (community) => {
+    toast.info(`Navigating to s/${community}`);
   };
 
   return (
-    <div className="mx-auto max-w-2xl">
-      <div className="mb-6 overflow-hidden rounded-lg border border-border bg-card">
-        <div className="h-32 bg-gradient-to-r from-primary to-primary/50" />
-
-        <div className="px-6 pb-6">
-          <div className="-mt-16 mb-4 flex items-end gap-4">
-            <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-card bg-primary text-3xl font-bold text-primary-foreground">
-              JD
-            </div>
-            <div className="flex-1">
-              <h1 className="text-2xl font-bold text-foreground">John Doe</h1>
-              <p className="text-muted-foreground">@johndoe</p>
-            </div>
-            <button
-              type="button"
-              className="rounded-full bg-primary px-6 py-2 font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
-            >
-              Edit Profile
-            </button>
+    <div className="bg-background">
+      {/* Profile Header và Tabs - Gắn liền với nhau */}
+      <div className="bg-card">
+        {/* Profile Header - Scroll với content */}
+        <div className="border-b border-border">
+          <div className="max-w-5xl mx-auto px-6 py-4">
+            <ProfileHeader user={profileUser} isOwnProfile={isOwnProfile} />
           </div>
+        </div>
 
-          <p className="mb-4 text-foreground">
-            Passionate about technology, design, and coffee ☕
-          </p>
-
-          <div className="flex gap-6">
-            <div>
-              <p className="text-lg font-bold text-foreground">{userStats.posts}</p>
-              <p className="text-sm text-muted-foreground">Posts</p>
-            </div>
-            <div>
-              <p className="text-lg font-bold text-foreground">{userStats.followers}</p>
-              <p className="text-sm text-muted-foreground">Followers</p>
-            </div>
-            <div>
-              <p className="text-lg font-bold text-foreground">{userStats.following}</p>
-              <p className="text-sm text-muted-foreground">Following</p>
-            </div>
+        {/* Profile Tabs - Sticky ngay dưới global header khi scroll */}
+        <div className="sticky top-16 lg:top-20 z-30 border-b border-border bg-card">
+          <div className="max-w-5xl mx-auto px-6">
+            <ProfileTabs activeTab={activeTab} onTabChange={setActiveTab} />
           </div>
         </div>
       </div>
 
-      <div className="mb-6 flex gap-4 border-b border-border">
-        {tabs.map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => setActiveTab(tab)}
-            className={`border-b-2 px-4 py-3 font-semibold capitalize transition-colors ${
-              activeTab === tab
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {tab}
-          </button>
-        ))}
+      {/* Content Area with Sidebar */}
+      <div className="flex gap-6 bg-background max-w-7xl mx-auto px-3 sm:px-4 lg:px-6">
+        {/* Main Content */}
+        <div className="flex-1 min-w-0">
+          <ProfileContent
+            activeTab={activeTab}
+            posts={posts}
+            loading={loading}
+            onUpvote={handleUpvote}
+            onDownvote={handleDownvote}
+            onComment={handleComment}
+            onShare={handleShare}
+            onSave={handleSave}
+            onAuthorClick={handleAuthorClick}
+            onFollow={handleFollow}
+            onCommunityClick={handleCommunityClick}
+          />
+        </div>
+
+        {/* Profile Sidebar - Thống kê user, achievements, settings */}
+        <div className="hidden xl:block w-80 flex-shrink-0 py-4 pr-6">
+          <div className="sticky top-24">
+            <ProfileSidebar user={profileUser} stats={stats} />
+          </div>
+        </div>
       </div>
-
-      {activeTab === "posts" && (
-        <div className="space-y-4">
-          <div className="rounded-lg border border-border bg-card p-4">
-            <h3 className="mb-2 font-bold text-foreground">My First Post</h3>
-            <p className="text-muted-foreground">
-              This is a sample post from your profile.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {activeTab === "about" && (
-        <div className="rounded-lg border border-border bg-card p-6">
-          <h3 className="mb-4 font-bold text-foreground">About</h3>
-          <div className="space-y-3 text-muted-foreground">
-            <p>
-              <span className="font-semibold text-foreground">Location:</span>{" "}
-              San Francisco, CA
-            </p>
-            <p>
-              <span className="font-semibold text-foreground">Joined:</span>{" "}
-              January 2024
-            </p>
-            <p>
-              <span className="font-semibold text-foreground">Website:</span>{" "}
-              johndoe.com
-            </p>
-          </div>
-        </div>
-      )}
-
-      {activeTab === "settings" && (
-        <div className="rounded-lg border border-border bg-card p-6">
-          <h3 className="mb-4 font-bold text-foreground">Profile Settings</h3>
-          <div className="space-y-4">
-            <button
-              type="button"
-              className="w-full rounded-lg bg-muted px-4 py-2 text-left text-foreground transition-colors hover:bg-muted/80"
-            >
-              Change Password
-            </button>
-            <button
-              type="button"
-              className="w-full rounded-lg bg-muted px-4 py-2 text-left text-foreground transition-colors hover:bg-muted/80"
-            >
-              Privacy Settings
-            </button>
-            <button
-              type="button"
-              className="w-full rounded-lg bg-destructive/10 px-4 py-2 text-left text-destructive transition-colors hover:bg-destructive/20"
-            >
-              Delete Account
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

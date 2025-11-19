@@ -22,11 +22,7 @@ import useAuth from "src/hooks/useAuth";
 import { useTheme } from "src/contexts/ThemeContext";
 import NotificationDropdown from "./NotificationDropdown";
 
-const navItems = [
-  { id: "home", label: "Home", to: PATHS.FEED },
-  { id: "popular", label: "Popular", to: PATHS.FEED },
-  { id: "explore", label: "Explore", to: PATHS.FEED },
-];
+// Navigation items removed - search bar moved to left
 
 const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onToggleChat, onToggleSidebar, onCreatePost }) => {
   const navigate = useNavigate();
@@ -40,13 +36,6 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
 
   const displayName = user?.displayName || user?.fullName || user?.username || "SocialUser";
   const userHandle = user?.username ? `u/${user.username}` : "u/socialuser";
-
-  const handleNavClick = (item) => {
-    onActiveNavChange?.(item.id);
-    if (item.to) {
-      navigate(item.to);
-    }
-  };
   
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -86,13 +75,6 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
   };
 
   const profileMenuItems = [
-    {
-      id: "view-profile",
-      label: "View Profile",
-      description: userHandle,
-      icon: UserCircleIcon,
-      action: () => navigate(PATHS.PROFILE),
-    },
     {
       id: "edit-avatar",
       label: "Edit Avatar",
@@ -206,7 +188,7 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
 
   return (
     <header className="fixed top-0 left-0 right-0 lg:left-72 z-40 border-b border-border bg-card">
-      <div className="relative flex h-16 items-center gap-2 sm:gap-4 lg:gap-6 px-3 sm:px-4 lg:px-6">
+      <div className="relative flex h-16 items-center gap-3 sm:gap-4 lg:gap-6 px-3 sm:px-4 lg:px-6">
         <button
           type="button"
           onClick={onToggleSidebar}
@@ -216,23 +198,8 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
           <Bars3Icon className="h-6 w-6" />
         </button>
 
-        <nav className="hidden md:flex items-center gap-2 text-sm font-medium text-muted-foreground">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => handleNavClick(item)}
-              className={clsx(
-                "rounded-full px-3 lg:px-4 py-2 transition-colors",
-                activeNav === item.id ? "bg-primary text-primary-foreground" : "hover:bg-muted hover:text-foreground"
-              )}
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
-
-        <div className="relative flex-1 max-w-md lg:max-w-none">
+        {/* Search bar on the left */}
+        <div className="relative flex-1 max-w-md lg:max-w-lg">
           <MagnifyingGlassIcon className="pointer-events-none absolute left-3 lg:left-4 top-1/2 h-4 w-4 lg:h-5 lg:w-5 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
@@ -248,7 +215,8 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
           />
         </div>
 
-        <div className="flex items-center gap-1 sm:gap-2 lg:gap-3">
+        {/* Action buttons on the right */}
+        <div className="flex items-center gap-1 sm:gap-2 lg:gap-3 ml-auto">
           <button
             type="button"
             onClick={onCreatePost}
@@ -304,15 +272,23 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
             className="absolute right-2 sm:right-4 lg:right-6 top-[calc(100%+0.75rem)] w-72 max-w-[calc(100vw-1rem)] rounded-2xl border border-border bg-card shadow-xl z-50"
           >
             <div className="space-y-1 p-3">
-              <div className="flex items-center gap-3 rounded-2xl bg-muted px-3 py-3">
+              {/* Profile Header - Clickable */}
+              <button
+                type="button"
+                onClick={() => {
+                  navigate(PATHS.PROFILE);
+                  closeMenu();
+                }}
+                className="w-full flex items-center gap-3 rounded-2xl bg-muted px-3 py-3 transition-colors hover:bg-muted/70 cursor-pointer"
+              >
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary font-semibold text-primary-foreground">
                   {displayName.charAt(0).toUpperCase()}
                 </div>
-                <div className="flex min-w-0 flex-col">
+                <div className="flex min-w-0 flex-col text-left">
                   <span className="text-sm font-semibold text-foreground">{displayName}</span>
-                  <span className="text-xs text-muted-foreground">{userHandle}</span>
+                  <span className="text-xs text-muted-foreground hover:text-foreground transition-colors">{userHandle}</span>
                 </div>
-              </div>
+              </button>
 
               {profileMenuItems.map((item) => renderMenuItem(item))}
             </div>

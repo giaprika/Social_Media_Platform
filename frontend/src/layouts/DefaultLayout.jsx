@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Outlet, useNavigate } from "react-router-dom";
+import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import clsx from "clsx";
 import Header from "src/components/layout/Header";
 import Sidebar from "src/components/layout/Sidebar";
@@ -9,10 +9,14 @@ import { PATHS } from "src/constants/paths";
 
 const DefaultLayout = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [activeNav, setActiveNav] = useState("home");
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [recentPosts, setRecentPosts] = useState([]);
+  
+  // Kiểm tra xem có đang ở trang profile không
+  const isProfilePage = location.pathname.includes("/profile");
 
   const handleCreatePost = () => {
     // Navigate to feed and trigger create post modal
@@ -51,7 +55,7 @@ const DefaultLayout = () => {
       {/* Sidebar with responsive classes */}
       <div
         className={clsx(
-          "lg:translate-x-0 transition-transform duration-300",
+          "fixed left-0 top-0 z-30 lg:translate-x-0 transition-transform duration-300",
           isSidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -59,7 +63,10 @@ const DefaultLayout = () => {
       </div>
 
       {/* Main content */}
-      <div className="lg:ml-72 xl:mr-80 min-h-screen bg-background">
+      <div className={clsx(
+        "lg:ml-72 min-h-screen bg-background",
+        !isProfilePage && "xl:mr-80"
+      )}>
         <Header
           activeNav={activeNav}
           onActiveNavChange={setActiveNav}
@@ -73,11 +80,13 @@ const DefaultLayout = () => {
         </main>
       </div>
 
-      {/* Recent Posts Sidebar */}
-      <RecentPostsSidebar
-        posts={recentPosts}
-        onClear={() => setRecentPosts([])}
-      />
+      {/* Recent Posts Sidebar - Ẩn khi ở trang profile */}
+      {!isProfilePage && (
+        <RecentPostsSidebar
+          posts={recentPosts}
+          onClear={() => setRecentPosts([])}
+        />
+      )}
 
       <ChatPanel isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
     </div>

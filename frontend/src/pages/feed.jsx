@@ -3,6 +3,7 @@ import { useNavigate, useLocation, useOutletContext } from "react-router-dom";
 import PostCard from "src/components/post/PostCard";
 import CreatePostModal from "src/components/post/CreatePostModal";
 import CommentSection from "src/components/post/CommentSection";
+import FeedTabs from "src/components/feed/FeedTabs";
 import Modal from "src/components/ui/Modal";
 import { useToast } from "src/components/ui";
 import { useNotifications } from "../hooks/useNotifications";
@@ -77,6 +78,7 @@ export default function Feed() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedPostId, setSelectedPostId] = useState(null);
   const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("forYou");
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
@@ -252,18 +254,21 @@ export default function Feed() {
       ]
     : [];
 
+  const handleTabChange = (tabId) => {
+    setActiveTab(tabId);
+    // TODO: Load different posts based on tab
+  };
+
+  // Filter posts based on active tab
+  const filteredPosts = activeTab === "following" 
+    ? posts.filter(post => post.isFollowing) 
+    : posts;
+
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl sm:text-3xl font-bold text-foreground">
-          Home Feed
-        </h1>
-        <button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 lg:hidden"
-        >
-          Tạo bài viết
-        </button>
+      {/* Tabs Navigation */}
+      <div className="-mx-3 sm:-mx-4 lg:-mx-6 mb-4">
+        <FeedTabs activeTab={activeTab} onTabChange={handleTabChange} />
       </div>
 
       <CreatePostModal
@@ -303,14 +308,24 @@ export default function Feed() {
               <PostCard key={i} loading />
             ))}
           </>
-        ) : posts.length === 0 ? (
+        ) : filteredPosts.length === 0 ? (
           <div className="rounded-lg border border-border bg-card p-12 text-center">
-            <p className="text-muted-foreground">
-              Chưa có bài viết nào. Hãy tạo bài viết đầu tiên!
+            <p className="text-muted-foreground mb-2">
+              {activeTab === "following" 
+                ? "Chưa có bài viết từ người bạn follow."
+                : "Chưa có bài viết nào. Hãy tạo bài viết đầu tiên!"}
             </p>
+            {activeTab === "following" && (
+              <button
+                onClick={() => setActiveTab("forYou")}
+                className="text-sm text-primary hover:underline"
+              >
+                Xem For You feed →
+              </button>
+            )}
           </div>
         ) : (
-          posts.map((post) => (
+          filteredPosts.map((post) => (
             <PostCard
               key={post.id}
               post={post}
