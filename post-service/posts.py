@@ -9,6 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from supabase import create_client
+from fastapi.responses import JSONResponse
+from fastapi.requests import Request
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 load_dotenv()
 
@@ -45,12 +49,6 @@ class CreatePostRequest(BaseModel):
     visibility: Optional[str] = None
     shared_type: Optional[str] = None
     post_type: Optional[str] = None
-
-from fastapi.responses import JSONResponse
-from fastapi.requests import Request
-from fastapi.exceptions import RequestValidationError
-from starlette.exceptions import HTTPException as StarletteHTTPException
-
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):

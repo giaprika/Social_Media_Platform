@@ -1,138 +1,172 @@
+"""
+Main Application - Posts & Comments & Reactions API
+RESTful API tuân thủ OpenAPI specification
+"""
 import os
-from typing import List, Optional
-
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
+import sys
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from dotenv import load_dotenv
-from supabase import create_client
+
+# Add routes to path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# Import routers
+from routes import posts, comments, reactions
 
 load_dotenv()
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")  # Prefer service key on server
-STORAGE_BUCKET = os.getenv("STORAGE_BUCKET_NAME", "posts")
+# Create FastAPI app
+app = FastAPI(
+    title="Social Media Post & Interaction API",
+    description="""
+API dành cho dịch vụ Bài viết (Post) và Tương tác (Comment, Reaction)
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-	raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY in environment")
+## User Identification
+Mọi request cần có header `X-User-ID` chứa UUID của user.
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+**Để test trong Swagger UI:**
+1. Mở bất kỳ endpoint nào (POST, PATCH, DELETE)
+2. Click **"Try it out"**
+3. Trong phần **Parameters**, điền `X-User-ID` với UUID hợp lệ
+4. Ví dụ: `9b72d69d-32a4-44c7-b2f9-3f4a3b6e89f1`
 
-app = FastAPI(title="Supabase Upload API (Python)")
+**Test UUID mẫu:**
+- `9b72d69d-32a4-44c7-b2f9-3f4a3b6e89f1`
+- `a1b2c3d4-e5f6-7890-abcd-ef1234567890`
+- `12345678-1234-1234-1234-123456789abc`
 
+**Lưu ý:** Không cần authentication/authorization, chỉ cần user_id để tracking.
+""",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    servers=[
+        {"url": "http://localhost:8000", "description": "Local Development Server"},
+        {"url": "http://127.0.0.1:8000", "description": "Local Development Server (IP)"}
+    ]
+)
+
+# CORS middleware
 app.add_middleware(
-	CORSMiddleware,
-	allow_origins=[
-		"http://localhost:5173",
-		"http://127.0.0.1:5173",
-	],
-	allow_credentials=True,
-	allow_methods=["*"],
-	allow_headers=["*"],
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:8000"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
-def sanitize_filename(name: str) -> str:
-	return "".join(ch if ch.isalnum() or ch in [".", "_", "-"] else "_" for ch in name)
+# ============= EXCEPTION HANDLERS =============
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Xử lý các lỗi HTTPException (404, 400, 403, ...)"""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "status": "error",
+            "code": f"HTTP_{exc.status_code}",
+            "message": exc.detail or "HTTP Error",
+            "details": []
+        },
+    )
 
 
-def public_url_for(path: str) -> str:
-	# Build the known pattern for public buckets to avoid SDK differences
-	return f"{SUPABASE_URL}/storage/v1/object/public/{STORAGE_BUCKET}/{path}"
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Xử lý lỗi validation từ Pydantic (thiếu field, sai kiểu, ...)"""
+    errors = []
+    for err in exc.errors():
+        field = ".".join(str(loc) for loc in err.get("loc", []))
+        errors.append({
+            "field": field,
+            "message": err.get("msg", "Validation error"),
+        })
+    
+    return JSONResponse(
+        status_code=400,
+        content={
+            "status": "error",
+            "code": "INVALID_INPUT",
+            "message": "Một hoặc nhiều trường đầu vào không hợp lệ",
+            "details": errors,
+        },
+    )
 
 
-def ensure_bucket_exists() -> None:
-	try:
-		info = supabase.storage.get_bucket(STORAGE_BUCKET)
-		# If bucket not found, info may be None or raise; try create
-		if not info:
-			supabase.storage.create_bucket(
-				STORAGE_BUCKET,
-				{
-					"public": True,
-					"fileSizeLimit": 20 * 1024 * 1024,
-					"allowedMimeTypes": ["image/png", "image/jpeg", "image/webp", "image/gif"],
-				},
-			)
-	except Exception:
-		# Try to create anyway (idempotent enough for dev)
-		try:
-			supabase.storage.create_bucket(
-				STORAGE_BUCKET,
-				{
-					"public": True,
-					"fileSizeLimit": 20 * 1024 * 1024,
-					"allowedMimeTypes": ["image/png", "image/jpeg", "image/webp", "image/gif"],
-				},
-			)
-		except Exception:
-			# ignore if already exists or no permission
-			pass
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    """Xử lý các lỗi còn lại (runtime, database, ...)"""
+    return JSONResponse(
+        status_code=500,
+        content={
+            "status": "error",
+            "code": "INTERNAL_ERROR",
+            "message": "Internal Server Error",
+            "details": [{"message": str(exc)}]
+        },
+    )
 
 
-ensure_bucket_exists()
+# ============= HEALTH CHECK =============
+@app.get("/api/v1/health", tags=["Health"])
+def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "success",
+        "message": "Server is healthy",
+        "data": {
+            "service": "Posts & Interactions API",
+            "version": "1.0.0"
+        }
+    }
 
 
-@app.get("/health")
-def health():
-	return {"ok": True, "bucket": STORAGE_BUCKET}
+# ============= INCLUDE ROUTERS =============
+# Posts routes: /api/v1/posts
+app.include_router(posts.router, prefix="/api/v1")
+
+# Comments routes: /api/v1/posts/{post_id}/comments
+app.include_router(comments.router, prefix="/api/v1")
+
+# Reactions routes: /api/v1/posts/{post_id}/reactions và /api/v1/comments/{comment_id}/reactions
+app.include_router(reactions.router, prefix="/api/v1")
 
 
-def upload_files(files: List[UploadFile], user_id: Optional[str]) -> List[str]:
-	urls: List[str] = []
-	for f in files:
-		if not f.content_type or not f.content_type.startswith("image/"):
-			raise HTTPException(status_code=400, detail=f"Unsupported file type: {f.content_type}")
-		prefix = f"{user_id}/" if user_id else "anonymous/"
-		path = f"{prefix}{int(__import__('time').time() * 1000)}-{sanitize_filename(f.filename or 'image')}"
-		data = f.file.read()
-		# Reset file pointer for good measure (FastAPI may handle close automatically)
-		try:
-			supabase.storage.from_(STORAGE_BUCKET).upload(path, data)
-		except Exception as e:
-			raise HTTPException(status_code=500, detail=f"Upload failed for {f.filename}: {e}")
-		urls.append(public_url_for(path))
-	return urls
+# ============= ROOT ENDPOINT =============
+@app.get("/", tags=["Root"])
+def root():
+    """Root endpoint với thông tin API"""
+    return {
+        "message": "Welcome to Social Media API",
+        "version": "1.0.0",
+        "documentation": "/docs",
+        "openapi": "/openapi.json",
+        "_links": {
+            "posts": {"href": "/api/v1/posts", "method": "GET"},
+            "health": {"href": "/api/v1/health", "method": "GET"},
+        }
+    }
 
 
-@app.post("/upload")
-async def upload(
-	images: List[UploadFile] = File(...),
-	user_id: Optional[str] = Form(None),
-	content: Optional[str] = Form(None),  # not used in this endpoint, kept for parity
-):
-	urls = upload_files(images, user_id)
-	return {"urls": urls}
-
-
-@app.post("/upload-and-create-post")
-async def upload_and_create_post(
-	images: List[UploadFile] = File(...),
-	user_id: Optional[str] = Form(None),
-	content: Optional[str] = Form(None),
-	visibility: Optional[str] = Form(None),
-	shared_type: Optional[str] = Form(None),
-	post_type: Optional[str] = Form(None),
-):
-	urls = upload_files(images, user_id)
-
-	payload = {"media_urls": urls}
-	if user_id:
-		payload["user_id"] = user_id
-	if content:
-		payload["content"] = content
-	if visibility:
-		payload["visibility"] = visibility
-	if shared_type:
-		payload["shared_type"] = shared_type
-	if post_type:
-		payload["post_type"] = post_type
-
-	try:
-		resp = supabase.table("posts").insert(payload).execute()
-		# supabase-py returns dict with data attribute
-		data = resp.data if hasattr(resp, "data") else resp
-		return {"post": data[0] if isinstance(data, list) and data else data, "urls": urls}
-	except Exception as e:
-		# Return URLs even if DB insertion fails so you can still verify Storage
-		raise HTTPException(status_code=400, detail=f"DB insert failed: {e}")
+# ============= RUN APPLICATION =============
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(
+        "app:app",
+        host="0.0.0.0",
+        port=port,
+        reload=True,
+        log_level="info"
+    )
 

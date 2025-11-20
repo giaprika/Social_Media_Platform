@@ -2,22 +2,18 @@ openapi: 3.0.3
 info:
   title: Social Media Post & Interaction API
   description: |
-    API dành cho dịch vụ Bài viết (Post) và Tương tác (Comment, Reaction)
+    API dành cho dịch vụ Bài viết (Post), Bình luận (Comment) và Tương tác (Reaction)
+    Phiên bản không yêu cầu xác thực JWT, chỉ truyền header X-User-ID (UUID) cho các thao tác ghi.
   version: 1.0.0
 servers:
-  - url: <https://api.socialmedia.com/v1>
-    description: Production Server
-
-# Định nghĩa Bảo mật (Sử dụng JWT Bearer Token)
-security:
-  - bearerAuth: []
+  - url: http://localhost:8000/api/v1
+    description: Local Development Server
 
 paths:
   ## POST PATHS
   /posts:
     get:
-      tags:
-        - Posts
+      tags: [Posts]
       summary: Lấy danh sách bài viết (Truy vấn tổng hợp)
       parameters:
         - $ref: '#/components/parameters/Limit'
@@ -33,12 +29,12 @@ paths:
           description: Lọc theo ID người dùng đăng bài.
         - name: status
           in: query
-          schema: { type: string, enum: [true, false] }
-          description: Lọc theo trạng thái kiểm duyệt.
+          schema: { type: boolean }
+          description: Lọc theo trạng thái kích hoạt.
         - name: tag
           in: query
           schema: { type: array, items: { type: string } }
-          description: Lọc theo hashtag.
+          description: Lọc theo hashtag (tồn tại trong tags array).
         - $ref: '#/components/parameters/SortBy'
         - $ref: '#/components/parameters/Order'
       responses:
@@ -51,15 +47,14 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
     post:
-      tags:
-        - Posts
-      summary: Tạo bài viết mới
-      security:
-        - bearerAuth: []
+      tags: [Posts]
+      summary: Tạo bài viết mới (multipart)
+      description: |\n        Tạo bài viết mới với nội dung và danh sách file media (ảnh/video).\n        Trường `tags` gửi dạng JSON array trong multipart form.\n      parameters:
+        - $ref: '#/components/parameters/XUserId'
       requestBody:
-        required: true
+        required: false
         content:
-          application/json:
+          multipart/form-data:
             schema:
               $ref: '#/components/schemas/PostCreate'
       responses:
@@ -69,13 +64,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PostSingleResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
   /posts/{post_id}:
     get:
-      tags:
-        - Posts
+      tags: [Posts]
       summary: Xem chi tiết một bài viết cụ thể
       parameters:
         - $ref: '#/components/parameters/PostId'
@@ -89,17 +83,15 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     patch:
-      tags:
-        - Posts
-      summary: Chỉnh sửa một phần bài viết
-      security:
-        - bearerAuth: []
-      parameters:
+      tags: [Posts]
+      summary: Chỉnh sửa một phần bài viết (multipart)
+      description: |\n        Khi PATCH luôn xóa toàn bộ media cũ trước, sau đó nếu có files mới sẽ upload.\n        Nếu không gửi files => media_urls sẽ bị xóa (set null).\n      parameters:
         - $ref: '#/components/parameters/PostId'
+        - $ref: '#/components/parameters/XUserId'
       requestBody:
-        required: true
+        required: false
         content:
-          application/json:
+          multipart/form-data:
             schema:
               $ref: '#/components/schemas/PostUpdate'
       responses:
@@ -109,15 +101,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PostSingleResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '403':
           $ref: '#/components/responses/Forbidden'
     delete:
-      tags:
-        - Posts
+      tags: [Posts]
       summary: Xóa bài viết
-      security:
-        - bearerAuth: []
       parameters:
+        - $ref: '#/components/parameters/PostId'
+        - $ref: '#/components/parameters/XUserId'
+      responses:
+        '204':
+          description: Xóa bài viết thành công (No Content).
+        '403':
+          $ref: '#/components/responses/Forbidden'
         - $ref: '#/components/parameters/PostId'
       responses:
         '204':
@@ -128,15 +126,14 @@ paths:
   ## REACTION PATHS (Cho Bài viết)
   /posts/{post_id}/reactions:
     get:
-      tags:
-        - Reactions
+      tags: [Reactions]
       summary: Lấy danh sách Reactions của bài viết
       parameters:
         - $ref: '#/components/parameters/PostId'
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Offset'
         - $ref: '#/components/parameters/Cursor'
-        - name: react_type
+        - name: reaction_type
           in: query
           schema: { type: string, enum: [like, love, haha, wow, sad, angry] }
           description: Lọc theo loại Reaction.
@@ -148,13 +145,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/ReactionListResponse'
     post:
-      tags:
-        - Reactions
+      tags: [Reactions]
       summary: Thêm hoặc Cập nhật Reaction bài viết (UPSERT)
-      security:
-        - bearerAuth: []
+      description: Tạo mới hoặc cập nhật reaction_type cho bài viết. Nếu đã tồn tại sẽ update thay vì tăng reacts_count.
       parameters:
         - $ref: '#/components/parameters/PostId'
+        - $ref: '#/components/parameters/XUserId'
       requestBody:
         required: true
         content:
@@ -168,16 +164,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReactionSingleResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
     delete:
-      tags:
-        - Reactions
+      tags: [Reactions]
       summary: Bỏ Reaction bài viết
-      security:
-        - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/PostId'
+        - $ref: '#/components/parameters/XUserId'
       responses:
         '204':
           description: Bỏ Reaction thành công.
@@ -187,8 +183,7 @@ paths:
   ## COMMENT PATHS
   /posts/{post_id}/comments:
     get:
-      tags:
-        - Comments
+      tags: [Comments]
       summary: Lấy danh sách Comments của bài viết
       parameters:
         - $ref: '#/components/parameters/PostId'
@@ -198,7 +193,7 @@ paths:
         - name: user_id
           in: query
           schema: { type: string }
-          description: Lọc Comments theo người dùng.
+          description: Lọc Comments theo user_id.
       responses:
         '200':
           description: Danh sách Comments được trả về thành công.
@@ -207,17 +202,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/CommentListResponse'
     post:
-      tags:
-        - Comments
-      summary: Tạo Comment mới
-      security:
-        - bearerAuth: []
+      tags: [Comments]
+      summary: Tạo Comment mới (multipart)
+      description: Tạo comment với nội dung text và/hoặc media files. Nếu có parent_id thì là reply.
       parameters:
         - $ref: '#/components/parameters/PostId'
+        - $ref: '#/components/parameters/XUserId'
       requestBody:
-        required: true
+        required: false
         content:
-          application/json:
+          multipart/form-data:
             schema:
               $ref: '#/components/schemas/CommentCreate'
       responses:
@@ -227,11 +221,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CommentSingleResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /posts/{post_id}/comments/{comment_id}:
     get:
-      tags:
-        - Comments
+      tags: [Comments]
       summary: Lấy chi tiết một Comment
       parameters:
         - $ref: '#/components/parameters/PostId'
@@ -246,18 +243,17 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     patch:
-      tags:
-        - Comments
-      summary: Chỉnh sửa một phần Comment
-      security:
-        - bearerAuth: []
+      tags: [Comments]
+      summary: Chỉnh sửa Comment (multipart)
+      description: Xóa toàn bộ media cũ trước khi upload media mới. Không gửi files sẽ xóa media.
       parameters:
         - $ref: '#/components/parameters/PostId'
         - $ref: '#/components/parameters/CommentId'
+        - $ref: '#/components/parameters/XUserId'
       requestBody:
-        required: true
+        required: false
         content:
-          application/json:
+          multipart/form-data:
             schema:
               $ref: '#/components/schemas/CommentUpdate'
       responses:
@@ -267,29 +263,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CommentSingleResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
     delete:
-      tags:
-        - Comments
+      tags: [Comments]
       summary: Xóa Comment
-      security:
-        - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/PostId'
         - $ref: '#/components/parameters/CommentId'
+        - $ref: '#/components/parameters/XUserId'
       responses:
         '204':
           description: Xóa Comment thành công.
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   ## REACTION PATHS (Cho Comment)
   /comments/{comment_id}/reactions:
     get:
-      tags:
-        - Reactions
+      tags: [Reactions]
       summary: Lấy danh sách Reactions của Comment
       parameters:
         - $ref: '#/components/parameters/CommentId'
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Offset'
+        - name: reaction_type
+          in: query
+          schema: { type: string, enum: [like, love, haha, wow, sad, angry] }
+          description: Lọc theo loại Reaction.
       responses:
         '200':
           description: Danh sách Reactions được trả về thành công.
@@ -298,19 +303,18 @@ paths:
               schema:
                 $ref: '#/components/schemas/ReactionListResponse'
     post:
-      tags:
-        - Reactions
+      tags: [Reactions]
       summary: Thêm hoặc Cập nhật Reaction Comment (UPSERT)
-      security:
-        - bearerAuth: []
+      description: Tạo mới hoặc cập nhật reaction_type cho comment. Nếu đã tồn tại sẽ update thay vì tăng reacts_count.
       parameters:
         - $ref: '#/components/parameters/CommentId'
+        - $ref: '#/components/parameters/XUserId'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CommentReactionUpsert'
+              $ref: '#/components/schemas/ReactionUpsert'
       responses:
         '200':
           description: Reaction được tạo/cập nhật thành công.
@@ -318,24 +322,69 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReactionSingleResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
     delete:
-      tags:
-        - Reactions
+      tags: [Reactions]
       summary: Bỏ Reaction Comment
-      security:
-        - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/CommentId'
+        - $ref: '#/components/parameters/XUserId'
       responses:
         '204':
           description: Bỏ Reaction thành công.
+        '404':
+          $ref: '#/components/responses/NotFound'
           
 components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+  # PARAMETERS
+  parameters:
+    PostId:
+      name: post_id
+      in: path
+      required: true
+      schema: { type: string }
+      description: ID của bài viết.
+    CommentId:
+      name: comment_id
+      in: path
+      required: true
+      schema: { type: string }
+      description: ID của Comment.
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, default: 20 }
+      description: Số lượng bản ghi tối đa.
+    Offset:
+      name: offset
+      in: query
+      schema: { type: integer, default: 0 }
+      description: Vị trí bắt đầu (bỏ qua X bản ghi).
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+      description: ID của bản ghi cuối cùng đã lấy (cursor-based pagination).
+    SortBy:
+      name: sort_by
+      in: query
+      schema: { type: string, default: created_at }
+      description: Trường sắp xếp.
+    Order:
+      name: order
+      in: query
+      schema: { type: string, enum: [asc, desc], default: desc }
+      description: Chiều sắp xếp.
+    XUserId:
+      name: X-User-ID
+      in: header
+      required: true
+      schema: { type: string, description: UUID của người dùng thực hiện thao tác ghi. }
+      description: Header bắt buộc cho thao tác tạo/sửa/xóa.
+
 
   # PARAMETERS
   parameters:
@@ -432,36 +481,47 @@ components:
             $ref: '#/components/schemas/ErrorDetail'
             
     # --- POST SCHEMAS ---
-    PostCreate: # POST /posts
+    PostCreate: # POST /posts (multipart)
       type: object
-      required: [content] # Giả định content hoặc media phải có, nhưng chỉ content là text cần thiết.
       properties:
-        content: { type: string }
-        media_ids: { type: array, items: { type: string }, description: List ID Media từ Media Service. }
-        tags: { type: array, items: { type: string } }
+        content: { type: string, description: Nội dung text của bài viết (tùy chọn nếu có media). }
+        tags: { type: string, description: JSON array string các hashtag gửi trong multipart (server sẽ parse). }
         post_share_id: { type: string, description: ID bài viết được chia sẻ. }
         group_id: { type: string, description: ID Group đăng bài. }
         visibility: { type: string, enum: [public, friends, private], default: public }
-        # user_id được lấy từ JWT (không nên gửi tường minh trong Body)
-    
-    PostUpdate: # PATCH /posts/{id}
+        files:
+          type: array
+          description: Danh sách file media upload.
+          items:
+            type: string
+            format: binary
+
+    PostUpdate: # PATCH /posts/{post_id} (multipart)
       type: object
       properties:
-        content: { type: string }
-        media_ids: { type: array, items: { type: string }, description: Ghi đè list ID Media cũ. }
-        tags: { type: array, items: { type: string } }
+        content: { type: string, description: Nội dung mới (tùy chọn). }
+        tags: { type: string, description: JSON array string mới. }
         visibility: { type: string, enum: [public, friends, private] }
+        files:
+          type: array
+          description: Danh sách file media mới (xóa toàn bộ media cũ trước). Không gửi => xóa media.
+          items:
+            type: string
+            format: binary
 
     PostObject: # Đối tượng bài viết được trả về
       type: object
       properties:
-        id: { type: string }
+        post_id: { type: string }
         user_id: { type: string }
-        content: { type: string }
-        media_ids: { type: array, items: { type: string } }
-        likes_count: { type: integer }
+        content: { type: string, nullable: true }
+        media_urls: { type: array, items: { type: string }, nullable: true }
+        reacts_count: { type: integer }
         comments_count: { type: integer }
-        # ... các trường khác
+        tags: { type: array, items: { type: string }, nullable: true }
+        visibility: { type: string, enum: [public, friends, private], nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
 
     PostSingleResponse:
       allOf:
@@ -479,20 +539,20 @@ components:
                 $ref: '#/components/schemas/PostObject'
 
     # --- REACTION SCHEMAS ---
-    ReactionUpsert: # POST /posts/{id}/reactions
+    ReactionUpsert: # POST /posts/{post_id}/reactions hoặc /comments/{comment_id}/reactions
       type: object
-      required: [react_type]
+      required: [reaction_type]
       properties:
-        react_type: { type: string, enum: [like, love, haha, wow, sad, angry] }
-        # user_id được lấy từ JWT
-        
+        reaction_type: { type: string, enum: [like, love, haha, wow, sad, angry] }
+
     ReactionObject:
       type: object
       properties:
-        id: { type: string }
+        reaction_id: { type: string }
         user_id: { type: string }
-        post_id: { type: string }
-        react_type: { type: string }
+        post_id: { type: string, nullable: true }
+        comment_id: { type: string, nullable: true }
+        reaction_type: { type: string }
 
     ReactionSingleResponse:
       allOf:
@@ -511,30 +571,45 @@ components:
                 $ref: '#/components/schemas/ReactionObject'
 
     # --- COMMENT SCHEMAS ---
-    CommentCreate: # POST /posts/{id}/comments
+    CommentCreate: # POST /posts/{post_id}/comments (multipart)
       type: object
-      required: [content]
       properties:
-        content: { type: string }
-        media_ids: { type: array, items: { type: string } }
-        tags: { type: array, items: { type: string } }
+        content: { type: string, description: Nội dung comment (có thể rỗng nếu chỉ gửi media). }
         parent_id: { type: string, description: ID Comment cha nếu là Reply. }
+        tags: { type: string, description: JSON array string các hashtag (multipart). }
+        files:
+          type: array
+          items:
+            type: string
+            format: binary
+          description: Danh sách file media upload.
 
-    CommentUpdate: # PATCH /posts/{id}/comments/{comment_id}
+    CommentUpdate: # PATCH /posts/{post_id}/comments/{comment_id} (multipart)
       type: object
       properties:
-        content: { type: string }
-        media_ids: { type: array, items: { type: string } }
-        tags: { type: array, items: { type: string } }
+        content: { type: string, description: Nội dung mới (tùy chọn). }
+        tags: { type: string, description: JSON array string mới. }
+        files:
+          type: array
+          items:
+            type: string
+            format: binary
+          description: Danh sách file media mới (xóa toàn bộ media cũ trước). Không gửi => xóa media.
         
     CommentObject:
       type: object
       properties:
-        id: { type: string }
+        comment_id: { type: string }
         user_id: { type: string }
         post_id: { type: string }
-        content: { type: string }
+        parent_id: { type: string, nullable: true }
+        content: { type: string, nullable: true }
+        media_urls: { type: array, items: { type: string }, nullable: true }
+        reacts_count: { type: integer }
         replies_count: { type: integer }
+        tags: { type: array, items: { type: string }, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
         
     CommentSingleResponse:
       allOf:
@@ -552,12 +627,7 @@ components:
               items:
                 $ref: '#/components/schemas/CommentObject'
 
-    CommentReactionUpsert: # POST /comments/{id}/reactions
-      type: object
-      required: [react_type]
-      properties:
-        react_type: { type: string, enum: [like, love, haha, wow, sad, angry] }
-        # user_id được lấy từ JWT (và comment_id từ URL)
+    # CommentReactionUpsert removed: dùng chung ReactionUpsert với reaction_type
   
   # RESPONSES
   responses:
