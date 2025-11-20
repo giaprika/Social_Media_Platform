@@ -78,4 +78,11 @@ export class UserService {
   static async saveRefreshToken(userId, refreshToken, expiresAt) {
     await recordToken(userId, refreshToken, expiresAt);
   }
+
+  static async searchUsersByName(fullName) {
+    if (!fullName || fullName.trim() === "") {
+      throw new Error("Search name cannot be empty.");
+    }
+    return await UserRepository.searchUsersByName(fullName.trim());
+  }
 }

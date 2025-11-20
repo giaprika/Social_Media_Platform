@@ -1,49 +1,45 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import { io } from "socket.io-client";
+
+const GATEWAY_URL = process.env.REACT_APP_GATEWAY_URL || "http://localhost:8000";
 
 export const useNotifications = (token) => {
   const [notifications, setNotifications] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [socket, setSocket] = useState(null);
 
   useEffect(() => {
-    if (!token) {
-      setNotifications([]);
-      return;
-    }
+    if (!token) return;
 
-    const fetchNotifications = async () => {
-      try {
-        setLoading(true);
-        // TODO: Replace with actual API call
-        // const response = await fetch('/api/notifications', {
-        //   headers: {
-        //     Authorization: `Bearer ${token}`
-        //   }
-        // });
-        // const data = await response.json();
-        
-        // Mock notifications for now
-        const mockNotifications = [];
-        
-        setNotifications(mockNotifications);
-        setError(null);
-      } catch (err) {
-        console.error("Failed to fetch notifications:", err);
-        setError(err.message);
-        setNotifications([]);
-      } finally {
-        setLoading(false);
-      }
+    const newSocket = io(GATEWAY_URL, {
+      auth: { token },
+      withCredentials: true,
+    });
+
+    newSocket.on("connect", () => {
+      console.log("Socket connected:", newSocket.id);
+    });
+
+    newSocket.on("notification", (data) => {
+      console.log("New notification received:", data);
+      setNotifications((prev) => [data, ...prev]);
+      // Hiển thị toast (ví dụ: react-toastify)
+      // toast.info(data.title);
+    });
+
+    newSocket.on("disconnect", () => {
+      console.log("Socket disconnected");
+    });
+
+    newSocket.on("connect_error", (err) => {
+      console.error("Socket connection error:", err.message);
+    });
+
+    setSocket(newSocket);
+
+    return () => {
+      newSocket.close();
     };
-
-    fetchNotifications();
-
-    // Poll for new notifications every 30 seconds
-    const interval = setInterval(fetchNotifications, 30000);
-
-    return () => clearInterval(interval);
   }, [token]);
 
-  return { notifications, loading, error };
+  return { notifications, socket };
 };
-

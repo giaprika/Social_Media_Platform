@@ -9,7 +9,7 @@ dotenv.config();
 class UserService {
   async registerUserService(userData) {
     try {
-      const response = await userServiceInstance.post(`/register`, userData);
+      const response = await userServiceInstance.post(`/`, userData);
       return response.data;
     } catch (error) {
       logger.error("Error while registering user in user service", {
@@ -29,7 +29,7 @@ class UserService {
       return createdUser;
     } catch (error) {
       if (createdUser?.id) {
-        await userServiceInstance.delete(`/deleteUser/${createdUser.id}`, {
+        await userServiceInstance.delete(`/${createdUser.id}`, {
           userData: userData,
         });
       }
@@ -39,7 +39,7 @@ class UserService {
 
   async loginUser(email, password) {
     try {
-      const response = await userServiceInstance.post("/login", {
+      const response = await userServiceInstance.post("/logining", {
         email,
         password,
       });
@@ -56,7 +56,7 @@ class UserService {
 
   async saveRefreshToken(userId, refreshToken, expiresAt) {
     try {
-      await userServiceInstance.post("/saveRefreshToken", {
+      await userServiceInstance.post("/refresh-token", {
         userId,
         refreshToken,
         expiresAt,

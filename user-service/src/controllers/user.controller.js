@@ -37,8 +37,7 @@ export class UserController {
 
   static async getUserById(req, res) {
     try {
-      console.log("req.user:", req.user);
-      const userId = req.user.id;
+      const userId = req.headers["x-user-id"];
       const user = await UserService.findUserById(userId);
       if (!user) {
         return res.status(404).json({ error: "Không tìm thấy người dùng" });
@@ -66,6 +65,31 @@ export class UserController {
       res.status(200).json({ message: "Refresh token saved successfully" });
     } catch (error) {
       res.status(400).json({ error: error.message });
+    }
+  }
+
+  static async searchUsers(req, res) {
+    try {
+      const { q } = req.query;
+      if (!q)
+        return res.status(400).json({ error: "Search query 'q' is required" });
+      const users = await UserService.searchUsersByName(q);
+      res.status(200).json(users);
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  static async getUserByIdPublic(req, res) {
+    try {
+      const userId = req.params.id;
+      const user = await UserService.findUserById(userId);
+      if (!user) {
+        return res.status(404).json({ error: "Không tìm thấy người dùng" });
+      }
+      res.status(200).json(user);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
     }
   }
 }

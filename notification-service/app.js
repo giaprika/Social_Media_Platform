@@ -2,8 +2,7 @@ import express from "express";
 import helmet from "helmet";
 import morgan from "morgan";
 import cors from "cors";
-import userRoutes from "./src/routes/user.routes.js";
-import relationshipsRoutes from "./src/routes/relationships.routes.js";
+import userRoutes from "./src/routes/notification.routes.js";
 
 const app = express();
 
@@ -21,22 +20,11 @@ app.use(morgan("dev"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Health check route
-app.get("/", (req, res) => {
-  res.json({ 
-    service: "user-service", 
-    status: "running",
-    timestamp: new Date().toISOString()
-  });
-});
-
 // Swagger UI setup
 import setupSwagger from "./src/swagger/swagger.js";
 setupSwagger(app);
-
 // Routes
-app.use("/users", userRoutes);
-app.use("/users/relationships", relationshipsRoutes);
+app.use("/notifications", userRoutes);
 
 // Middleware xử lý lỗi
 app.use((err, req, res, next) => {
@@ -51,5 +39,8 @@ app.use((err, req, res, next) => {
 app.use((req, res) => {
   res.status(404).json({ message: "API không tồn tại" });
 });
+
+
+
 
 export default app;

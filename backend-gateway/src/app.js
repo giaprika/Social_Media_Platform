@@ -7,6 +7,7 @@ import router from "./routes/v1.js";
 import bodyParser from "body-parser";
 import cookieParser from "cookie-parser";
 import fileupload from "express-fileupload";
+import internalRoutes from "./routes/internal.js";
 
 // Load environment variables
 dotenv.config();
@@ -65,6 +66,9 @@ app.use((req, res, next) => {
   });
 });
 
+// Additional body parser for internal routes
+app.use("/internal", bodyParser.json());
+
 // Request logging
 app.use((req, res, next) => {
   req.correlationId = req.headers["x-correlation-id"] || Date.now().toString();
@@ -77,6 +81,9 @@ app.use((req, res, next) => {
 });
 
 app.use(router);
+
+// Internal routes (must be before 404 handler)
+app.use("/internal", internalRoutes);
 
 // Health check
 app.get("/health", (req, res) => {

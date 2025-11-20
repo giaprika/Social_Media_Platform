@@ -75,4 +75,15 @@ export class UserRepository {
     );
     return result.rows;
   }
+
+  static async searchUsersByName(fullName) {
+    const result = await db.query(
+      `SELECT id, email, full_name, avatar_url, birth_date, gender, created_at, metadata 
+       FROM users 
+       WHERE full_name ILIKE $1
+       ORDER BY full_name ASC`,
+      [`%${fullName}%`]
+    );
+    return result.rows;
+  }
 }
