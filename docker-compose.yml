@@ -70,6 +70,40 @@ services:
   #   networks:
   #     - social-network
 
+  postgres-community:
+    image: postgres:15-alpine
+    container_name: postgres-community
+    environment:
+      POSTGRES_DB: community_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-community-data:/var/lib/postgresql/data
+      - ./community-service/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: >
+      sh -c "
+        docker-entrypoint.sh postgres &
+        sleep 5 &&
+        until pg_isready -U postgres; do sleep 1; done &&
+        psql -U postgres -d community_db -tAc \"SELECT 1 FROM information_schema.tables WHERE table_name='communities'\" | grep -q 1 ||
+        (echo 'Initializing database...' && psql -U postgres -d community_db -f /docker-entrypoint-initdb.d/init.sql && echo 'Database initialized!') &&
+        wait
+      "
+    ports:
+      - "5435:5432"
+    networks:
+      - social-network
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'pg_isready -U postgres && psql -U postgres -d community_db -tAc "SELECT 1 FROM information_schema.tables WHERE table_name=''communities''" | grep -q 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
   # ============================================
   # Backend Services
   # ============================================
@@ -86,6 +120,7 @@ services:
       USER_SERVICE_URL: http://user-service:8001
       # NOTIFICATION_SERVICE_URL: http://notification-service:8002
       # POST_SERVICE_URL: http://post-service:8003
+      COMMUNITY_SERVICE_URL: http://community-service:8004
       CORS_ORIGIN: http://localhost:3000
     ports:
       - "8000:8000"
@@ -166,6 +201,40 @@ services:
   #   networks:
   #     - social-network
 
+  community-service:
+    build:
+      context: ./community-service
+      dockerfile: Dockerfile
+    container_name: community-service
+    environment:
+      NODE_ENV: production
+      PORT: 8004
+      DB_HOST: postgres-community
+      DB_PORT: 5432
+      DB_NAME: community_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_MAX_CONNECTIONS: 10
+      DB_SSL: "false"
+    ports:
+      - "8004:8004"
+    depends_on:
+      postgres-community:
+        condition: service_healthy
+    networks:
+      - social-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "require(''http'').get(''http://localhost:8004'', (r) => {process.exit(r.statusCode ? 0 : 1)})"',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
   # ============================================
   # Frontend (Optional - có thể chạy ngoài)
   # ============================================
@@ -191,5 +260,6 @@ networks:
 
 volumes:
   postgres-social-data:
+  postgres-community-data:
   # postgres-notification-data:  # Uncomment khi cần notification service
   # postgres-posts-data:  # Uncomment khi cần post service
