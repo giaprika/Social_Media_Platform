@@ -24,27 +24,6 @@ export class CommunityRepository {
   }
 
   /**
-   * Search communities by name or slug
-   */
-  static async search(q) {
-    if (!q) {
-      const result = await db.query(
-        `SELECT * FROM communities WHERE deleted_at IS NULL ORDER BY created_at DESC`
-      );
-      return result.rows;
-    }
-
-    const result = await db.query(
-      `SELECT * FROM communities 
-       WHERE deleted_at IS NULL 
-       AND (name ILIKE $1 OR slug ILIKE $1 OR description ILIKE $1)
-       ORDER BY created_at DESC`,
-      [`%${q}%`]
-    );
-    return result.rows;
-  }
-
-  /**
    * Create a new community
    */
   static async create(communityData) {
