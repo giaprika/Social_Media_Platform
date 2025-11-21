@@ -9,4 +9,5 @@ __pycache__/
 *.pyd
 *.pyc
 
-**/.env*
+**/.env
+!**/.env.example
