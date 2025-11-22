@@ -1,0 +1,20 @@
+# File: chat-service/.golangci.yml
+run:
+  timeout: 5m
+  tests: false # Có thể bật true nếu muốn lint cả file test
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck    # Kiểm tra việc bỏ qua error
+    - gosimple    # Gợi ý code đơn giản hơn
+    - govet       # Bắt lỗi cú pháp, format chuẩn của Go
+    - ineffassign # Bắt biến gán nhưng không dùng
+    - staticcheck # Phân tích tĩnh (giống go vet nhưng mạnh hơn)
+    - typecheck   # Kiểm tra kiểu dữ liệu
+    - unused      # Bắt biến/hàm không dùng
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
