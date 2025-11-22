@@ -65,7 +65,6 @@ jobs:
           version: latest
           working-directory: chat-service
           args: --config=.golangci.yml
-          cache: true
 
       # --- TESTING ---
       - name: Run tests
