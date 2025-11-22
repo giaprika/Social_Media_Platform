@@ -54,14 +54,24 @@
     - _Requirements: 2.1, 3.1, 4.1, 5.1_
 
 - [ ] 3. Create test fixtures and verification helpers
-  - [ ] 3.1 Implement test data generation helpers
+  - [x] 3.1 Implement test data generation helpers
+
+
+
+
+
     - Create `GenerateTestIDs` function for unique UUIDs per test
     - Create `CreateTestUser` helper (if needed for fixtures)
     - Create `CreateTestConversation` helper to insert conversation with participants
     - Create `CreateTestMessage` helper to insert messages directly
     - _Requirements: 8.2, 8.3_
 
-  - [ ] 3.2 Implement database verification helpers
+  - [x] 3.2 Implement database verification helpers
+
+
+
+
+
     - Create `AssertMessageExists` to verify message in database
     - Create `AssertOutboxEntryExists` to verify outbox entry
     - Create `AssertConversationParticipants` to verify participants
@@ -69,7 +79,12 @@
     - Create `GetMessageFromDB` to fetch and verify message details
     - _Requirements: 7.1, 7.3, 8.4_
 
-  - [ ] 3.3 Implement cleanup helpers
+  - [x] 3.3 Implement cleanup helpers
+
+
+
+
+
     - Create `CleanupConversation` to delete conversation and related data
     - Create `CleanupAllTestData` to truncate all tables
     - Use CASCADE deletes where appropriate
@@ -77,7 +92,12 @@
     - _Requirements: 8.1_
 
 - [ ] 4. Implement SendMessage integration tests
-  - [ ] 4.1 Write TestSendMessage_Success
+  - [x] 4.1 Write TestSendMessage_Success
+
+
+
+
+
     - Generate test IDs for users and conversation
     - Send message via HTTP POST with authentication header
     - Verify 200 OK response with message_id and status "SENT"
@@ -87,7 +107,12 @@
     - Cleanup test data
     - _Requirements: 2.1, 7.1, 7.3_
 
-  - [ ] 4.2 Write TestSendMessage_Idempotency
+  - [x] 4.2 Write TestSendMessage_Idempotency
+
+
+
+
+
     - Send message with specific idempotency key
     - Send same message again with same idempotency key
     - Verify first request returns 200 OK
@@ -96,21 +121,36 @@
     - Verify Redis idempotency key is set
     - _Requirements: 2.2_
 
-  - [ ] 4.3 Write TestSendMessage_Unauthenticated
+  - [x] 4.3 Write TestSendMessage_Unauthenticated
+
+
+
+
+
     - Send message without x-user-id header
     - Verify 401 Unauthenticated error response
     - Verify no message created in database
     - Verify no outbox entry created
     - _Requirements: 2.3_
 
-  - [ ] 4.4 Write TestSendMessage_ValidationErrors
+  - [x] 4.4 Write TestSendMessage_ValidationErrors
+
+
+
+
+
     - Test invalid conversation_id format (400 Bad Request)
     - Test empty content (400 Bad Request)
     - Test missing idempotency_key (400 Bad Request)
     - Verify no database changes for validation errors
     - _Requirements: 2.4_
 
-  - [ ] 4.5 Write TestSendMessage_TransactionalOutbox
+  - [x] 4.5 Write TestSendMessage_TransactionalOutbox
+
+
+
+
+
     - Send message successfully
     - Query outbox table for entry
     - Verify outbox payload contains all required fields (message_id, conversation_id, sender_id, content, created_at)
@@ -119,7 +159,12 @@
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_
 
 - [ ] 5. Implement GetMessages integration tests
-  - [ ] 5.1 Write TestGetMessages_Success
+  - [x] 5.1 Write TestGetMessages_Success
+
+
+
+
+
     - Create conversation with 5 test messages
     - Get messages via HTTP GET
     - Verify 200 OK response
@@ -127,7 +172,12 @@
     - Verify message fields (id, conversation_id, sender_id, content, created_at)
     - _Requirements: 3.1_
 
-  - [ ] 5.2 Write TestGetMessages_Pagination
+  - [x] 5.2 Write TestGetMessages_Pagination
+
+
+
+
+
     - Create conversation with 10 messages
     - Get messages with limit=3
     - Verify only 3 messages returned
@@ -136,19 +186,34 @@
     - Verify next 3 messages returned
     - _Requirements: 3.2, 3.3_
 
-  - [ ] 5.3 Write TestGetMessages_EmptyConversation
+  - [x] 5.3 Write TestGetMessages_EmptyConversation
+
+
+
+
+
     - Create conversation with no messages
     - Get messages
     - Verify 200 OK response with empty messages array
     - Verify next_cursor is empty
     - _Requirements: 3.4_
 
-  - [ ] 5.4 Write TestGetMessages_ValidationErrors
+  - [x] 5.4 Write TestGetMessages_ValidationErrors
+
+
+
+
+
     - Test invalid conversation_id format (400 Bad Request)
     - Test invalid before_timestamp format (400 Bad Request)
     - _Requirements: 3.5_
 
-  - [ ] 5.5 Write TestGetMessages_LimitSanitization
+  - [x] 5.5 Write TestGetMessages_LimitSanitization
+
+
+
+
+
     - Test limit=0 (should default to 50)
     - Test limit=200 (should cap at 100)
     - Test negative limit (should default to 50)

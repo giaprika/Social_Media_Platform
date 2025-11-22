@@ -179,37 +179,37 @@ func (ts *TestServer) MakeRequest(method, path string, body interface{}, headers
 
 // SendMessageResponse represents the response from SendMessage API
 type SendMessageResponse struct {
-	MessageID string `json:"message_id"`
+	MessageID string `json:"messageId"` // grpc-gateway uses camelCase
 	Status    string `json:"status"`
 }
 
 // ChatMessage represents a single chat message
 type ChatMessage struct {
 	ID             string `json:"id"`
-	ConversationID string `json:"conversation_id"`
-	SenderID       string `json:"sender_id"`
+	ConversationID string `json:"conversationId"` // grpc-gateway uses camelCase
+	SenderID       string `json:"senderId"`       // grpc-gateway uses camelCase
 	Content        string `json:"content"`
-	CreatedAt      string `json:"created_at"`
+	CreatedAt      string `json:"createdAt"` // grpc-gateway uses camelCase
 }
 
 // GetMessagesResponse represents the response from GetMessages API
 type GetMessagesResponse struct {
 	Messages   []ChatMessage `json:"messages"`
-	NextCursor string        `json:"next_cursor"`
+	NextCursor string        `json:"nextCursor"` // grpc-gateway uses camelCase
 }
 
 // Conversation represents a conversation with metadata
 type Conversation struct {
 	ID                 string `json:"id"`
-	LastMessageContent string `json:"last_message_content"`
-	LastMessageAt      string `json:"last_message_at"`
-	UnreadCount        int32  `json:"unread_count"`
+	LastMessageContent string `json:"lastMessageContent"` // grpc-gateway uses camelCase
+	LastMessageAt      string `json:"lastMessageAt"`      // grpc-gateway uses camelCase
+	UnreadCount        int32  `json:"unreadCount"`        // grpc-gateway uses camelCase
 }
 
 // GetConversationsResponse represents the response from GetConversations API
 type GetConversationsResponse struct {
 	Conversations []Conversation `json:"conversations"`
-	NextCursor    string         `json:"next_cursor"`
+	NextCursor    string         `json:"nextCursor"` // grpc-gateway uses camelCase
 }
 
 // MarkAsReadResponse represents the response from MarkAsRead API
