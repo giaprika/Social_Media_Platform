@@ -35,6 +35,10 @@ var (
 func TestMain(m *testing.M) {
 	ctx := context.Background()
 
+	// Measure total setup time
+	setupStart := time.Now()
+	log.Println("=== Starting test infrastructure setup ===")
+
 	// Setup test infrastructure
 	var err error
 	testInfra, err = SetupTestInfrastructure(ctx)
@@ -48,13 +52,38 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Failed to create test server: %v", err)
 	}
 
+	setupDuration := time.Since(setupStart)
+	log.Printf("=== Test infrastructure setup completed in %v ===", setupDuration)
+	log.Println("=== Containers will be reused across all tests ===")
+
 	// Run tests
+	testStart := time.Now()
+	log.Println("=== Starting test execution ===")
 	code := m.Run()
+	testDuration := time.Since(testStart)
+	log.Printf("=== Test execution completed in %v ===", testDuration)
 
 	// Teardown
+	log.Println("=== Starting test infrastructure teardown ===")
+	teardownStart := time.Now()
 	testServer.Close()
 	if err := testInfra.Teardown(ctx); err != nil {
 		log.Printf("Failed to teardown test infrastructure: %v", err)
+	}
+	teardownDuration := time.Since(teardownStart)
+	log.Printf("=== Test infrastructure teardown completed in %v ===", teardownDuration)
+
+	// Log total time
+	totalDuration := time.Since(setupStart)
+	log.Printf("=== Total test suite time: %v (setup: %v, tests: %v, teardown: %v) ===", 
+		totalDuration, setupDuration, testDuration, teardownDuration)
+
+	// Verify performance target: full suite should complete in <60 seconds
+	if totalDuration > 60*time.Second {
+		log.Printf("[WARNING] Test suite exceeded 60 second target (took %v)", totalDuration)
+		log.Printf("[WARNING] Consider optimizing slow tests or infrastructure setup")
+	} else {
+		log.Printf("[SUCCESS] Test suite completed within 60 second target")
 	}
 
 	os.Exit(code)
@@ -151,6 +180,8 @@ func SetupTestInfrastructure(ctx context.Context) (*TestInfrastructure, error) {
 	infra := &TestInfrastructure{}
 
 	// Start PostgreSQL container
+	log.Println("Starting PostgreSQL container...")
+	postgresStart := time.Now()
 	postgresContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "postgres:16-alpine",
@@ -167,9 +198,14 @@ func SetupTestInfrastructure(ctx context.Context) (*TestInfrastructure, error) {
 		Started: true,
 	})
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("PostgreSQL container failed to start within 60 seconds timeout: %w", err)
+		}
 		return nil, fmt.Errorf("failed to start PostgreSQL container: %w", err)
 	}
 	infra.PostgresContainer = postgresContainer
+	postgresDuration := time.Since(postgresStart)
+	log.Printf("PostgreSQL container started in %v", postgresDuration)
 
 	// Get PostgreSQL connection details
 	postgresHost, err := postgresContainer.Host(ctx)
@@ -195,11 +231,15 @@ func SetupTestInfrastructure(ctx context.Context) (*TestInfrastructure, error) {
 		return nil, fmt.Errorf("failed to parse database config: %w", err)
 	}
 
-	// Configure pool settings
+	// Configure pool settings with timeouts
 	poolConfig.MaxConns = 10
 	poolConfig.MinConns = 2
 	poolConfig.MaxConnLifetime = time.Hour
 	poolConfig.MaxConnIdleTime = 30 * time.Minute
+	poolConfig.ConnConfig.ConnectTimeout = 10 * time.Second // Connection timeout
+	poolConfig.ConnConfig.RuntimeParams = map[string]string{
+		"statement_timeout": "5000", // 5 second query timeout
+	}
 
 	infra.DBPool, err = pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
@@ -212,6 +252,8 @@ func SetupTestInfrastructure(ctx context.Context) (*TestInfrastructure, error) {
 	}
 
 	// Start Redis container
+	log.Println("Starting Redis container...")
+	redisStart := time.Now()
 	redisContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "redis:7-alpine",
@@ -222,9 +264,14 @@ func SetupTestInfrastructure(ctx context.Context) (*TestInfrastructure, error) {
 		Started: true,
 	})
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("Redis container failed to start within 30 seconds timeout: %w", err)
+		}
 		return nil, fmt.Errorf("failed to start Redis container: %w", err)
 	}
 	infra.RedisContainer = redisContainer
+	redisDuration := time.Since(redisStart)
+	log.Printf("Redis container started in %v", redisDuration)
 
 	// Get Redis connection details
 	redisHost, err := redisContainer.Host(ctx)
@@ -257,11 +304,17 @@ func SetupTestInfrastructure(ctx context.Context) (*TestInfrastructure, error) {
 	}
 
 	// Run database migrations
+	log.Println("Running database migrations...")
+	migrationStart := time.Now()
 	if err := RunMigrations(ctx, infra.DBPool); err != nil {
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
+	migrationDuration := time.Since(migrationStart)
+	log.Printf("Database migrations completed in %v", migrationDuration)
 
 	log.Println("Test infrastructure setup completed successfully")
+	log.Println("NOTE: Containers are started once and reused across all tests for optimal performance")
+	log.Println("NOTE: Only test data is cleaned up between tests, not containers")
 	return infra, nil
 }
 

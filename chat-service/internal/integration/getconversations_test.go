@@ -19,6 +19,7 @@ import (
 // - Each conversation has last_message_content and last_message_at
 // - Conversations are returned in correct order (by last_message_at descending)
 func TestGetConversations_Success(t *testing.T) {
+	t.Parallel() // Safe to run in parallel - uses unique UUIDs
 	ctx := context.Background()
 
 	// Setup: Generate test IDs for users and conversations
@@ -136,6 +137,7 @@ func TestGetConversations_Success(t *testing.T) {
 // - After marking all as read, unread_count=0
 // - Unread count updates correctly after marking messages as read
 func TestGetConversations_UnreadCount(t *testing.T) {
+	t.Parallel() // Safe to run in parallel - uses unique UUIDs
 	ctx := context.Background()
 
 	// Setup: Generate test IDs
@@ -235,6 +237,7 @@ func TestGetConversations_UnreadCount(t *testing.T) {
 // - Both users can see shared conversations they participate in
 // - GetConversations properly filters by participant
 func TestGetConversations_OnlyUserConversations(t *testing.T) {
+	t.Parallel() // Safe to run in parallel - uses unique UUIDs
 	ctx := context.Background()
 
 	// Setup: Generate test IDs
@@ -340,6 +343,7 @@ func TestGetConversations_OnlyUserConversations(t *testing.T) {
 // - Conversations are returned in correct order (by last_message_at descending)
 // - Pagination cursor works correctly
 func TestGetConversations_Pagination(t *testing.T) {
+	t.Parallel() // Safe to run in parallel - uses unique UUIDs
 	ctx := context.Background()
 
 	// Setup: Generate test IDs
@@ -486,6 +490,7 @@ func TestGetConversations_Pagination(t *testing.T) {
 // - GetConversations without x-user-id header returns 401 Unauthenticated error
 // - No conversations are returned without authentication
 func TestGetConversations_Unauthenticated(t *testing.T) {
+	t.Parallel() // Safe to run in parallel - no database setup needed
 	// Execute: Get conversations without x-user-id header
 	// Pass empty string as userID to simulate missing authentication header
 	result, resp, err := testServer.GetConversations("", 0, "")

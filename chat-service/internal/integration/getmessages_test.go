@@ -19,6 +19,7 @@ import (
 // - All 5 messages are returned in descending order by created_at
 // - Message fields (id, conversation_id, sender_id, content, created_at) are correct
 func TestGetMessages_Success(t *testing.T) {
+	t.Parallel() // Safe to run in parallel - uses unique UUIDs
 	ctx := context.Background()
 
 	// Setup: Generate test IDs for users and conversation
@@ -101,6 +102,7 @@ func TestGetMessages_Success(t *testing.T) {
 // - The next_cursor can be used as before_timestamp for the next page
 // - The correct messages are returned on the second page
 func TestGetMessages_Pagination(t *testing.T) {
+	t.Parallel() // Safe to run in parallel - uses unique UUIDs
 	ctx := context.Background()
 
 	// Setup: Generate test IDs for users and conversation
@@ -214,6 +216,7 @@ func TestGetMessages_Pagination(t *testing.T) {
 // - The messages array is empty
 // - The next_cursor is empty (no pagination needed)
 func TestGetMessages_EmptyConversation(t *testing.T) {
+	t.Parallel() // Safe to run in parallel - uses unique UUIDs
 	ctx := context.Background()
 
 	// Setup: Generate test IDs for users and conversation
@@ -255,6 +258,7 @@ func TestGetMessages_EmptyConversation(t *testing.T) {
 // - Invalid conversation_id format returns 400 Bad Request
 // - Invalid before_timestamp format returns 400 Bad Request
 func TestGetMessages_ValidationErrors(t *testing.T) {
+	t.Parallel() // Safe to run in parallel - uses unique UUIDs
 	ctx := context.Background()
 
 	// Setup: Generate test IDs
@@ -333,6 +337,7 @@ func TestGetMessages_ValidationErrors(t *testing.T) {
 // - negative limit defaults to 50
 // - Correct number of messages returned in each case
 func TestGetMessages_LimitSanitization(t *testing.T) {
+	t.Parallel() // Safe to run in parallel - uses unique UUIDs
 	ctx := context.Background()
 
 	// Setup: Generate test IDs for users and conversation

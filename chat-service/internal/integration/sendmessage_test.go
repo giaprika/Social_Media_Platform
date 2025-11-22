@@ -18,6 +18,7 @@ import (
 // - Outbox entry is created with correct payload
 // - Conversation last_message_content and last_message_at are updated
 func TestSendMessage_Success(t *testing.T) {
+	t.Parallel() // Safe to run in parallel - uses unique UUIDs
 	ctx := context.Background()
 
 	// Setup: Generate test IDs for users and conversation
@@ -91,6 +92,7 @@ func TestSendMessage_Success(t *testing.T) {
 // - Only one message exists in database
 // - Redis idempotency key is set after first request
 func TestSendMessage_Idempotency(t *testing.T) {
+	t.Parallel() // Safe to run in parallel - uses unique UUIDs and idempotency keys
 	ctx := context.Background()
 
 	// Setup: Generate test IDs for users and conversation
@@ -175,6 +177,7 @@ func TestSendMessage_Idempotency(t *testing.T) {
 // - No message is created in the database
 // - No outbox entry is created
 func TestSendMessage_Unauthenticated(t *testing.T) {
+	t.Parallel() // Safe to run in parallel - uses unique UUIDs
 	ctx := context.Background()
 
 	// Setup: Generate test IDs for conversation
@@ -237,6 +240,7 @@ func TestSendMessage_Unauthenticated(t *testing.T) {
 // - Missing idempotency_key returns 400 Bad Request
 // - No database changes occur for validation errors
 func TestSendMessage_ValidationErrors(t *testing.T) {
+	t.Parallel() // Safe to run in parallel - uses unique UUIDs
 	ctx := context.Background()
 
 	// Setup: Generate test IDs
@@ -305,10 +309,15 @@ func TestSendMessage_ValidationErrors(t *testing.T) {
 			err := testInfra.DBPool.QueryRow(ctx, countQuery, testIDs.ConversationAB).Scan(&initialMessageCount)
 			require.NoError(t, err, "Failed to count initial messages")
 
-			// Get initial outbox count
+			// Get initial outbox count for this specific conversation
 			var initialOutboxCount int
-			outboxQuery := `SELECT COUNT(*) FROM outbox WHERE aggregate_type = 'message'`
-			err = testInfra.DBPool.QueryRow(ctx, outboxQuery).Scan(&initialOutboxCount)
+			outboxQuery := `
+				SELECT COUNT(*) 
+				FROM outbox 
+				WHERE aggregate_type = 'message' 
+				AND payload->>'conversation_id' = $1
+			`
+			err = testInfra.DBPool.QueryRow(ctx, outboxQuery, testIDs.ConversationAB).Scan(&initialOutboxCount)
 			require.NoError(t, err, "Failed to count initial outbox entries")
 
 			// Execute: Send message with validation error
@@ -333,9 +342,9 @@ func TestSendMessage_ValidationErrors(t *testing.T) {
 			require.NoError(t, err, "Failed to count final messages")
 			assert.Equal(t, initialMessageCount, finalMessageCount, "No messages should be created for validation errors")
 
-			// Verify: No new outbox entries were created
+			// Verify: No new outbox entries were created for this conversation
 			var finalOutboxCount int
-			err = testInfra.DBPool.QueryRow(ctx, outboxQuery).Scan(&finalOutboxCount)
+			err = testInfra.DBPool.QueryRow(ctx, outboxQuery, testIDs.ConversationAB).Scan(&finalOutboxCount)
 			require.NoError(t, err, "Failed to count final outbox entries")
 			assert.Equal(t, initialOutboxCount, finalOutboxCount, "No outbox entries should be created for validation errors")
 		})
@@ -350,6 +359,7 @@ func TestSendMessage_ValidationErrors(t *testing.T) {
 // - Outbox entry has processed=false (ProcessedAt is nil)
 // - Outbox entry has aggregate_type="message" and aggregate_id matches message_id
 func TestSendMessage_TransactionalOutbox(t *testing.T) {
+	t.Parallel() // Safe to run in parallel - uses unique UUIDs
 	ctx := context.Background()
 
 	// Setup: Generate test IDs for users and conversation

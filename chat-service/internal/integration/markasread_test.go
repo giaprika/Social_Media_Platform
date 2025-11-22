@@ -20,6 +20,7 @@ import (
 // - Database is queried to verify last_read_at timestamp is updated
 // - All messages are now considered "read" (created before last_read_at)
 func TestMarkAsRead_Success(t *testing.T) {
+	t.Parallel() // Safe to run in parallel - uses unique UUIDs
 	ctx := context.Background()
 
 	// Setup: Generate test IDs for users and conversation
@@ -112,6 +113,7 @@ func TestMarkAsRead_Success(t *testing.T) {
 // - User A's last_read_at remains unchanged
 // - User A still sees messages as unread
 func TestMarkAsRead_OnlyUserMessages(t *testing.T) {
+	t.Parallel() // Safe to run in parallel - uses unique UUIDs
 	ctx := context.Background()
 
 	// Setup: Generate test IDs for users and conversation
@@ -222,6 +224,7 @@ func TestMarkAsRead_OnlyUserMessages(t *testing.T) {
 // - last_read_at timestamp remains valid (may be updated to current time)
 // - No errors occur when marking already-read messages as read
 func TestMarkAsRead_AlreadyRead(t *testing.T) {
+	t.Parallel() // Safe to run in parallel - uses unique UUIDs
 	ctx := context.Background()
 
 	// Setup: Generate test IDs for users and conversation
@@ -327,6 +330,7 @@ func TestMarkAsRead_AlreadyRead(t *testing.T) {
 // - Response returns 401 Unauthenticated error
 // - No database changes occur
 func TestMarkAsRead_Unauthenticated(t *testing.T) {
+	t.Parallel() // Safe to run in parallel - uses unique UUIDs
 	ctx := context.Background()
 
 	// Setup: Generate test IDs for conversation
@@ -394,6 +398,7 @@ func TestMarkAsRead_Unauthenticated(t *testing.T) {
 // - Empty conversation_id returns 400 Bad Request
 // - No database changes occur for validation errors
 func TestMarkAsRead_ValidationErrors(t *testing.T) {
+	t.Parallel() // Safe to run in parallel - uses unique UUIDs
 	ctx := context.Background()
 
 	// Setup: Generate test IDs

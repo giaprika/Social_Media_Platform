@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"time"
 
 	chatv1 "chat-service/api/chat/v1"
 	"chat-service/internal/middleware"
@@ -149,7 +150,7 @@ func (ts *TestServer) MakeRequest(method, path string, body interface{}, headers
 		reqBody = bytes.NewBuffer(nil)
 	}
 	
-	// Create HTTP request
+	// Create HTTP request without context (use client timeout instead)
 	req, err := http.NewRequest(method, ts.HTTPServer.URL+path, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -165,8 +166,10 @@ func (ts *TestServer) MakeRequest(method, path string, body interface{}, headers
 		req.Header.Set(key, value)
 	}
 	
-	// Execute request
-	client := &http.Client{}
+	// Execute request with timeout (using client timeout to avoid context cancellation issues)
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
