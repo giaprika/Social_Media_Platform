@@ -21,3 +21,11 @@ plugins:
   - plugin: grpc-gateway
     out: api
     opt: paths=source_relative
+
+  # 4. Sinh OpenAPI spec (Swagger)
+  - plugin: openapiv2
+    out: docs/api
+    opt:
+      - logtostderr=true
+      - allow_merge=true
+      - merge_file_name=chat-service
