@@ -7,8 +7,6 @@ CREATE TABLE IF NOT EXISTS notifications(
     title_template      VARCHAR(200) NOT NULL,
     body_template       TEXT NOT NULL,
 
-    description         TEXT,
-
     is_readed           BOOLEAN NOT NULL DEFAULT FALSE,
     link_url           VARCHAR(500),
 

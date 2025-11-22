@@ -1,4 +1,4 @@
-from config.database import create_connection
+from config.database import create_connection, conn
 import base64
 import psycopg2
 import json
@@ -11,7 +11,7 @@ def query_user_validations_count(user_id: str) -> int:
     Returns:
         int: The number of violations.
     """
-    conn = create_connection()
+    # conn = create_connection()
     if conn is None:
         print("Database connection failed.")
         return 0
@@ -26,8 +26,8 @@ def query_user_validations_count(user_id: str) -> int:
     except Exception as e:
         print(f"Error querying violations: {e}")
         return 0
-    finally:
-        conn.close()
+    # finally:
+    #     conn.close()
 
 def create_violation_record(user_id: str, violation_type: str, description: str, text_content: str, image_content: base64) -> None:
     """
@@ -58,5 +58,5 @@ def create_violation_record(user_id: str, violation_type: str, description: str,
     except Exception as e:
         print(f"Error creating violation record: {e}")
         return json.dumps({"status": "error", "message": str(e)})
-    finally:
-        conn.close()
+    # finally:
+    #     conn.close()

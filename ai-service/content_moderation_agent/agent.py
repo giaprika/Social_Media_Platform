@@ -21,7 +21,7 @@ def set_user_id_before_tool_callback(callback_context: CallbackContext):
         print(f"Setting user_id in context: {user_id}")
         set_user_id(user_id)
     try:
-        text_content = callback_context.user_content.parts[0].text
+        text_content = callback_context.user_content.parts[0].text # type: ignore
         if text_content:
             from config.context import set_text_content
             print(f"Setting text_content in context: {text_content}")
@@ -30,7 +30,7 @@ def set_user_id_before_tool_callback(callback_context: CallbackContext):
         print(f"Error setting content in context: {e}")
 
     try:
-        image_content = callback_context.user_content.parts[1].inline_data.data
+        image_content = callback_context.user_content.parts[1].inline_data.data # type: ignore
         if image_content:
             from config.context import set_image_content
             print(f"Setting image_content in context: {image_content}")
@@ -60,8 +60,8 @@ root_agent = Agent(
     
     When you find content that violates these guidelines, call report_user_violation tool. Finally, return only json result example:
     {
-        "accepted" : True or False, // True if content is acceptable, False if it violates guidelines
-        "result": "Detailed explanation of the decision", // Banned or Warning if accepted is False or approval message if accepted is True
+        "result": "Banned or Warning or accepted.", 
+        "message": "Detailed explanation of the decision."
     }
     """,
     tools=[report_user_violation],
