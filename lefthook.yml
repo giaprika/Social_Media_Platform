@@ -1,0 +1,17 @@
+# FILE: lefthook.yml (Ở thư mục gốc dự án)
+
+pre-push:
+  parallel: true
+  commands:
+    lint:
+      root: chat-service/ # <--- THÊM DÒNG NÀY
+      run: golangci-lint run ./... --config=.golangci.yml
+    test:
+      root: chat-service/ # <--- THÊM DÒNG NÀY
+      run: go test ./...
+    check-gen:
+      root: chat-service/ # <--- THÊM DÒNG NÀY
+      # Lưu ý: git diff --exit-code phải chạy ở root mới bắt được thay đổi
+      # nhưng make gen thì cần chạy trong chat-service.
+      # Sửa lệnh này một chút cho chuẩn:
+      run: make gen && git diff --exit-code
