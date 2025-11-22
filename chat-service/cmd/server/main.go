@@ -36,7 +36,7 @@ func main() {
 	// 2. Init Logger
 	middleware.InitLogger()
 	logger := middleware.Logger
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	logger.Info("starting chat service", zap.String("env", cfg.Environment))
 

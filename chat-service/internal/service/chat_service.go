@@ -166,7 +166,7 @@ func (s *ChatService) sendMessageTx(ctx context.Context, req *chatv1.SendMessage
 	if err != nil {
 		return "", fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer s.rollbackTx(ctx, tx) // Rollback if not committed
+	defer func() { _ = s.rollbackTx(ctx, tx) }() // Rollback if not committed
 
 	// Create queries with transaction context
 	// For testing, we pass the tx directly to the injectable functions

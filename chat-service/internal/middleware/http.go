@@ -98,9 +98,7 @@ func GatewayErrorHandler(logger *zap.Logger) runtime.ErrorHandlerFunc {
 
 		if len(st.Details()) > 0 {
 			resp.Error.Details = make([]interface{}, 0, len(st.Details()))
-			for _, detail := range st.Details() {
-				resp.Error.Details = append(resp.Error.Details, detail)
-			}
+			resp.Error.Details = append(resp.Error.Details, st.Details()...)
 		}
 
 		payload, marshalErr := marshaler.Marshal(resp)
