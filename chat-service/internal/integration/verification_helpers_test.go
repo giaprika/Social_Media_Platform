@@ -328,3 +328,23 @@ func AssertRedisIdempotencyKeyNotExists(t *testing.T, infra *TestInfrastructure,
 	require.NoError(t, err, "Failed to check if Redis key exists")
 	assert.Equal(t, int64(0), exists, "Idempotency key %s should NOT exist in Redis", idempotencyKey)
 }
+
+// GetLastReadAt retrieves the last_read_at timestamp for a user in a conversation
+func GetLastReadAt(ctx context.Context, db *pgxpool.Pool, conversationID, userID string) (time.Time, error) {
+	var lastReadAt time.Time
+	query := `
+		SELECT last_read_at 
+		FROM conversation_participants 
+		WHERE conversation_id = $1 AND user_id = $2
+	`
+	
+	err := db.QueryRow(ctx, query, conversationID, userID).Scan(&lastReadAt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return time.Time{}, fmt.Errorf("user %s is not a participant in conversation %s", userID, conversationID)
+		}
+		return time.Time{}, fmt.Errorf("failed to get last_read_at: %w", err)
+	}
+
+	return lastReadAt, nil
+}
