@@ -1,0 +1,10 @@
+# lefthook.yml
+pre-push:
+  parallel: true
+  commands:
+    lint:
+      run: golangci-lint run ./... --config=.golangci.yml
+    test:
+      run: go test ./...
+    check-gen:
+      run: make gen && git diff --exit-code
