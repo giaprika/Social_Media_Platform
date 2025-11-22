@@ -82,12 +82,15 @@ func CreateTestConversation(ctx context.Context, db *pgxpool.Pool, conversationI
 		return nil, fmt.Errorf("failed to insert conversation: %w", err)
 	}
 
-	// Insert participants
+	// Insert participants with last_read_at set to 1 hour ago
+	// This ensures that test messages created with CreateMultipleTestMessages
+	// (which start from 10 minutes ago) will be unread
+	lastReadAt := time.Now().Add(-1 * time.Hour)
 	for _, participantID := range participantIDs {
 		_, err = tx.Exec(ctx, `
 			INSERT INTO conversation_participants (conversation_id, user_id, joined_at, last_read_at)
-			VALUES ($1, $2, NOW(), NOW())
-		`, conversationID, participantID)
+			VALUES ($1, $2, NOW(), $3)
+		`, conversationID, participantID, lastReadAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to insert participant %s: %w", participantID, err)
 		}
@@ -196,20 +199,23 @@ func CreateTestMessageWithTimestamp(ctx context.Context, db *pgxpool.Pool, messa
 // This is a convenience helper for tests that need multiple messages
 func CreateMultipleTestMessages(ctx context.Context, db *pgxpool.Pool, conversationID, senderID string, count int) ([]*TestMessage, error) {
 	messages := make([]*TestMessage, 0, count)
+	// Start from 10 minutes ago to ensure messages are in the past
+	// This allows MarkAsRead with NOW() to work correctly
+	baseTime := time.Now().Add(-10 * time.Minute)
 	
 	for i := 0; i < count; i++ {
 		messageID := uuid.New().String()
 		content := fmt.Sprintf("Test message %d", i+1)
 		
-		msg, err := CreateTestMessage(ctx, db, messageID, conversationID, senderID, content)
+		// Use explicit timestamps with 1 second intervals to ensure ordering
+		createdAt := baseTime.Add(time.Duration(i) * time.Second)
+		
+		msg, err := CreateTestMessageWithTimestamp(ctx, db, messageID, conversationID, senderID, content, createdAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create message %d: %w", i, err)
 		}
 		
 		messages = append(messages, msg)
-		
-		// Add a small delay to ensure different timestamps
-		time.Sleep(10 * time.Millisecond)
 	}
 	
 	return messages, nil
