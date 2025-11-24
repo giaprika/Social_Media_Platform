@@ -27,11 +27,10 @@ def ban_user(user_id: str, reason: str) -> None:
     print(f"User {user_id} has been banned for reason: {reason}")
     return json.dumps({"status": "user_banned", "user_id": user_id, "reason": reason}) # type: ignore
 
-def report_user_violation( violation_type: str, description: str) -> None:
+def report_user_violation( description: str) -> None:
     """
     Reports a user violation and takes appropriate action based on the number of violations.
     Args:
-        violation_type (str): The type of violation (e.g., "text", "image").
         description (str): A description of the violation.
     """
     try:
@@ -39,7 +38,7 @@ def report_user_violation( violation_type: str, description: str) -> None:
         image_content = get_image_content()
         user_id = get_user_id()
         user_id = "9b72d69d-32a4-44c7-b2f9-3f4a3b6e89f9" # For testing purpose only, remove this line in production
-        violation_detail = create_violation_record(user_id, violation_type, description, text_content, image_content) # type: ignore
+        violation_detail = create_violation_record(user_id, description, text_content, image_content) # type: ignore
         violation_count = query_user_validations_count(user_id)
         print(f"User {user_id} violation reported: {violation_count}")
         if violation_count >= 10:

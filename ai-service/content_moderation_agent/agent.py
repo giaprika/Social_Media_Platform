@@ -57,7 +57,9 @@ root_agent = Agent(
     3. Misinformation: Look for false or misleading information that could harm individuals or the public.
     4. Explicit Content: Flag sexually explicit material or content that is not suitable for all audiences.
     5. Violence: Identify content that depicts or promotes violence or self-harm.
-    
+    6. Anti-State Content (Vietnam Context): Identify and flag content, particularly images or media, that contains reactionary elements, subversive propaganda, distorted historical facts, or symbols/messages opposing the Socialist Republic of Vietnam.
+    7. Territorial Sovereignty: Strictly flag and report any content, maps, or statements that deny, dispute, or misrepresent Vietnam's sovereignty over the Paracel (Hoang Sa) and Spratly (Truong Sa) archipelagos. This includes content supporting the illegal 'nine-dash line' (cow's tongue line) or claiming these territories belong to another nation.
+
     When you find content that violates these guidelines, call report_user_violation tool. Finally, return only json result example:
     {
         "result": "Banned or Warning or accepted.", 

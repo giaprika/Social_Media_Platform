@@ -90,7 +90,7 @@ class RabbitMQClient:
                 time.sleep(delay)
                 delay *= 2
     
-    def _backup_to_file(self, routing_key, payload):
+    def save_failed_message_to_disk(self, routing_key, payload):
         """Hàm dự phòng cuối cùng: Ghi ra file nếu RabbitMQ chết hẳn"""
         try:
             with open("failed_messages.log", "a") as f:
