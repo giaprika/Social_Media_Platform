@@ -48,6 +48,16 @@ const config = {
       excludeList: [],
       timeout: 5000,
     },
+    posts: {
+      target: process.env.POST_SERVICE_URL || "http://localhost:8000",
+      pathRewrite: {
+        "^/api/service/posts": "/api/v1",
+      },
+      excludeList: [
+        "/health",
+      ],
+      timeout: 5000,
+    },
   },
 };
 
