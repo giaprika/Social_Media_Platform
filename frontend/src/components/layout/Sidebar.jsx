@@ -7,6 +7,7 @@ import {
   BookOpenIcon,
   ChatBubbleBottomCenterTextIcon,
   ChevronDownIcon,
+  Cog6ToothIcon,
   CursorArrowRaysIcon,
   FireIcon,
   GlobeAltIcon,
@@ -14,11 +15,11 @@ import {
   MusicalNoteIcon,
   QuestionMarkCircleIcon,
   RectangleGroupIcon,
+  ShieldCheckIcon,
   Squares2X2Icon,
   UserGroupIcon,
 } from "@heroicons/react/24/outline";
 import { PATHS } from "src/constants/paths";
-import useAuth from "src/hooks/useAuth";
 
 const navSections = [
   {
@@ -66,6 +67,8 @@ const navSections = [
       { id: "help-center", label: "Help Center", to: PATHS.SETTINGS, icon: QuestionMarkCircleIcon },
       { id: "blog", label: "Blog", external: "https://redditblog.com", icon: BookOpenIcon },
       { id: "contact", label: "Contact", to: PATHS.SETTINGS, icon: ChatBubbleBottomCenterTextIcon },
+      { id: "privacy-policy", label: "Privacy Policy", to: PATHS.SETTINGS, icon: ShieldCheckIcon },
+      { id: "settings", label: "Settings", to: PATHS.SETTINGS, icon: Cog6ToothIcon },
     ],
   },
 ];
@@ -73,7 +76,6 @@ const navSections = [
 const Sidebar = ({ activeNav, onActiveNavChange }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { logout } = useAuth();
   const [collapsed, setCollapsed] = useState({ games: true, custom: true, communities: false });
 
   const flattenedNavItems = useMemo(
@@ -116,14 +118,6 @@ const Sidebar = ({ activeNav, onActiveNavChange }) => {
       ...prev,
       [sectionKey]: !prev[sectionKey],
     }));
-  };
-
-  const handleLogout = async () => {
-    try {
-      await logout();
-    } finally {
-      navigate(PATHS.LOGIN, { replace: true });
-    }
   };
 
   const renderItem = (item) => {
@@ -226,28 +220,6 @@ const Sidebar = ({ activeNav, onActiveNavChange }) => {
             </div>
           );
         })}
-      </div>
-
-      {/* Footer Section - Sticky at bottom */}
-      <div className="flex-shrink-0 border-t border-border px-4 py-6 bg-card">
-        <div className="space-y-2 text-sm text-muted-foreground">
-          <button
-            type="button"
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <QuestionMarkCircleIcon className="h-5 w-5" />
-            Help Center
-          </button>
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left font-medium text-destructive transition-colors hover:bg-destructive/10"
-          >
-            <span className="text-lg">🚪</span>
-            Logout
-          </button>
-          <p className="pt-2 text-xs text-muted-foreground">© {new Date().getFullYear()} SocialApp. All rights reserved.</p>
-        </div>
       </div>
     </aside>
   );
