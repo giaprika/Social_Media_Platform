@@ -2,8 +2,7 @@ import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { vi } from "date-fns/locale";
 import {
-  ArrowUpIcon,
-  ArrowDownIcon,
+  HeartIcon,
   ChatBubbleOvalLeftIcon,
   ShareIcon,
   BookmarkIcon,
@@ -11,8 +10,7 @@ import {
   CheckIcon,
 } from "@heroicons/react/24/outline";
 import {
-  ArrowUpIcon as ArrowUpIconSolid,
-  ArrowDownIcon as ArrowDownIconSolid,
+  HeartIcon as HeartIconSolid,
   BookmarkIcon as BookmarkIconSolid,
 } from "@heroicons/react/24/solid";
 import clsx from "clsx";
@@ -75,11 +73,8 @@ const PostCard = ({
     onFollow?.(post.author?.id || post.authorId, !isFollowing);
   };
 
-  const upvotes = post.upvotes || 0;
-  const downvotes = post.downvotes || 0;
-  const netVotes = upvotes - downvotes;
-  const hasUpvoted = post.hasUpvoted || false;
-  const hasDownvoted = post.hasDownvoted || false;
+  const likes = post.likes || post.upvotes || 0;
+  const hasLiked = post.hasLiked || post.hasUpvoted || false;
   const community = post.community || "general";
 
   return (
@@ -182,53 +177,30 @@ const PostCard = ({
 
         {/* Actions Bar - Horizontal Layout */}
         <div className="flex items-center gap-1 pt-2 border-t border-border">
-          {/* Upvote/Downvote Group */}
-          <div className="flex items-center rounded-full bg-muted/50">
-            <button
-              type="button"
-              onClick={() => onUpvote?.(post.id)}
-              className={clsx(
-                "rounded-l-full px-2.5 py-1.5 transition-colors",
-                hasUpvoted
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-muted hover:text-primary"
-              )}
-              aria-label="Upvote"
-            >
-              {hasUpvoted ? (
-                <ArrowUpIconSolid className="h-5 w-5" />
-              ) : (
-                <ArrowUpIcon className="h-5 w-5" />
-              )}
-            </button>
-            <span
-              className={clsx(
-                "px-2 text-xs font-bold min-w-[2.5rem] text-center",
-                hasUpvoted && "text-primary",
-                hasDownvoted && "text-destructive",
-                !hasUpvoted && !hasDownvoted && "text-foreground"
-              )}
-            >
-              {netVotes > 0 ? `${netVotes}` : netVotes}
+          {/* Like Button */}
+          <button
+            type="button"
+            onClick={() => onUpvote?.(post.id)}
+            className={clsx(
+              "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+              hasLiked
+                ? "bg-destructive/10 text-destructive"
+                : "text-muted-foreground hover:bg-muted hover:text-destructive"
+            )}
+            aria-label="Like"
+          >
+            {hasLiked ? (
+              <HeartIconSolid className="h-5 w-5" />
+            ) : (
+              <HeartIcon className="h-5 w-5" />
+            )}
+            <span className={clsx(
+              "font-bold",
+              hasLiked && "text-destructive"
+            )}>
+              {likes > 0 ? likes : ""}
             </span>
-            <button
-              type="button"
-              onClick={() => onDownvote?.(post.id)}
-              className={clsx(
-                "rounded-r-full px-2.5 py-1.5 transition-colors",
-                hasDownvoted
-                  ? "bg-destructive/10 text-destructive"
-                  : "text-muted-foreground hover:bg-muted hover:text-destructive"
-              )}
-              aria-label="Downvote"
-            >
-              {hasDownvoted ? (
-                <ArrowDownIconSolid className="h-5 w-5" />
-              ) : (
-                <ArrowDownIcon className="h-5 w-5" />
-              )}
-            </button>
-          </div>
+          </button>
 
           {/* Comment Button */}
           <button

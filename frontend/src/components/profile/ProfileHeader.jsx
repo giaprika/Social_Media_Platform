@@ -14,10 +14,10 @@ const ProfileHeader = ({ user, isOwnProfile = false }) => {
           <img
             src={avatar}
             alt={displayName}
-            className="h-16 w-16 rounded-full object-cover ring-2 ring-card"
+            className="h-20 w-20 rounded-full object-cover ring-2 ring-border/30"
           />
         ) : (
-          <div className="h-16 w-16 rounded-full bg-primary flex items-center justify-center text-2xl font-bold text-primary-foreground ring-2 ring-card">
+          <div className="h-20 w-20 rounded-full bg-primary flex items-center justify-center text-2xl font-bold text-primary-foreground ring-2 ring-border/30">
             {displayName.charAt(0).toUpperCase()}
           </div>
         )}
@@ -25,7 +25,7 @@ const ProfileHeader = ({ user, isOwnProfile = false }) => {
 
       {/* User Info */}
       <div className="flex-1 min-w-0">
-        <h1 className="text-xl font-bold text-foreground mb-0.5">
+        <h1 className="text-2xl font-bold text-foreground mb-1">
           {displayName}
         </h1>
         <p className="text-sm text-muted-foreground">
@@ -36,7 +36,7 @@ const ProfileHeader = ({ user, isOwnProfile = false }) => {
       {/* Share Button */}
       <button
         type="button"
-        className="flex items-center gap-2 px-4 py-2 rounded-full bg-muted text-foreground hover:bg-muted/80 transition-colors"
+        className="flex items-center gap-2 px-4 py-2 rounded-full bg-muted/50 text-foreground hover:bg-muted transition-colors border border-border/30"
       >
         <ShareIcon className="h-4 w-4" />
         <span className="text-sm font-medium">Share</span>

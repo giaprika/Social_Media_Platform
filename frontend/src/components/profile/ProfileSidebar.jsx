@@ -1,29 +1,46 @@
+import { useState, useEffect } from "react";
 import { 
-  BanknotesIcon,
   CakeIcon,
   DocumentTextIcon,
-  TrophyIcon,
-  UserGroupIcon,
+  HeartIcon,
   UserPlusIcon,
-  ChatBubbleLeftIcon,
   ClockIcon,
   ShareIcon,
 } from "@heroicons/react/24/outline";
-import { formatDistanceToNow } from "date-fns";
-import { vi } from "date-fns/locale";
+import { differenceInDays, differenceInMonths, differenceInYears } from "date-fns";
+import { getUserStats } from "src/api/user";
 
-const ProfileSidebar = ({ user, stats }) => {
+const ProfileSidebar = ({ user, stats: initialStats }) => {
   const username = user?.username || "username";
-  
-  // Mock stats
-  const userStats = stats || {
-    followers: 0,
-    karma: 1,
-    contributions: 0,
-    redditAge: new Date(2024, 0, 15),
-    goldEarned: 0,
-    activeIn: 0,
-  };
+  const [stats, setStats] = useState(initialStats);
+  const [loading, setLoading] = useState(!initialStats);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      if (!user?.id) return;
+      
+      try {
+        setLoading(true);
+        const response = await getUserStats(user.id);
+        setStats(response.data);
+      } catch (error) {
+        console.error("Error fetching user stats:", error);
+        // Fallback to default stats if API fails
+        setStats({
+          followers: 0,
+          likes: 0,
+          contributions: 0,
+          created_at: user?.created_at || new Date().toISOString(),
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (!initialStats && user?.id) {
+      fetchStats();
+    }
+  }, [user?.id, initialStats]);
 
   const formatNumber = (num) => {
     if (num >= 1000000) {
@@ -35,15 +52,44 @@ const ProfileSidebar = ({ user, stats }) => {
     return num.toString();
   };
 
-  const getAccountAge = () => {
+  const getSocialAge = () => {
+    if (!stats?.created_at) return "0 ngày";
+    
     try {
-      return formatDistanceToNow(userStats.redditAge, {
-        addSuffix: false,
-        locale: vi,
-      });
+      const createdDate = new Date(stats.created_at);
+      const now = new Date();
+      
+      const totalDays = differenceInDays(now, createdDate);
+      
+      if (totalDays < 0) return "0 ngày";
+      if (totalDays === 0) return "Hôm nay";
+      
+      const years = Math.floor(totalDays / 365);
+      const remainingDaysAfterYears = totalDays % 365;
+      const months = Math.floor(remainingDaysAfterYears / 30);
+      const days = remainingDaysAfterYears % 30;
+      
+      if (years > 0) {
+        const parts = [`${years} ${years === 1 ? 'năm' : 'năm'}`];
+        if (months > 0) parts.push(`${months} ${months === 1 ? 'tháng' : 'tháng'}`);
+        return parts.join(' ');
+      } else if (months > 0) {
+        const parts = [`${months} ${months === 1 ? 'tháng' : 'tháng'}`];
+        if (days > 0) parts.push(`${days} ${days === 1 ? 'ngày' : 'ngày'}`);
+        return parts.join(' ');
+      } else {
+        return `${totalDays} ${totalDays === 1 ? 'ngày' : 'ngày'}`;
+      }
     } catch {
-      return "1 năm";
+      return "0 ngày";
     }
+  };
+
+  const userStats = stats || {
+    followers: 0,
+    likes: 0,
+    contributions: 0,
+    created_at: user?.created_at || new Date().toISOString(),
   };
 
   return (
@@ -73,14 +119,14 @@ const ProfileSidebar = ({ user, stats }) => {
             </span>
           </div>
 
-          {/* Karma */}
+          {/* Likes */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <TrophyIcon className="h-4 w-4 text-warning" />
-              <span className="text-sm text-muted-foreground">Karma</span>
+              <HeartIcon className="h-4 w-4 text-destructive" />
+              <span className="text-sm text-muted-foreground">Likes</span>
             </div>
             <span className="text-sm font-semibold text-foreground">
-              {formatNumber(userStats.karma)}
+              {loading ? "..." : formatNumber(userStats.likes || 0)}
             </span>
           </div>
 
@@ -95,14 +141,14 @@ const ProfileSidebar = ({ user, stats }) => {
             </span>
           </div>
 
-          {/* Reddit Age */}
+          {/* Social Age */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <CakeIcon className="h-4 w-4 text-accent" />
-              <span className="text-sm text-muted-foreground">Reddit Age</span>
+              <span className="text-sm text-muted-foreground">Social Age</span>
             </div>
             <span className="text-sm font-semibold text-foreground">
-              {getAccountAge()}
+              {loading ? "..." : getSocialAge()}
             </span>
           </div>
 
@@ -113,18 +159,7 @@ const ProfileSidebar = ({ user, stats }) => {
               <span className="text-sm text-muted-foreground">Active in</span>
             </div>
             <span className="text-sm font-semibold text-foreground">
-              {userStats.activeIn} {userStats.activeIn === 1 ? 'community' : 'communities'} &gt;
-            </span>
-          </div>
-
-          {/* Gold Earned */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <BanknotesIcon className="h-4 w-4 text-warning" />
-              <span className="text-sm text-muted-foreground">Gold earned</span>
-            </div>
-            <span className="text-sm font-semibold text-foreground">
-              {userStats.goldEarned}
+              {userStats.activeIn || 0} {(userStats.activeIn || 0) === 1 ? 'community' : 'communities'} &gt;
             </span>
           </div>
         </div>
@@ -144,18 +179,9 @@ const ProfileSidebar = ({ user, stats }) => {
         </div>
 
         <div className="p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-2xl">🎖️</span>
-            <span className="text-2xl">🥇</span>
-            <span className="text-2xl">🌟</span>
-            <span className="text-sm text-muted-foreground">+4 more</span>
+          <div className="flex items-center justify-center py-6 text-muted-foreground">
+            <span className="text-sm">0 unlocked</span>
           </div>
-          <p className="text-xs text-muted-foreground">
-            New Share, Banana Beginner, Banana Baby, +4 more
-          </p>
-          <p className="text-xs font-medium text-muted-foreground mt-1">
-            7 unlocked
-          </p>
         </div>
       </div>
 
