@@ -11,6 +11,9 @@ router.post("/refresh-token", UserController.saveRefreshToken);
 router.get("/", UserController.searchUsers);
 router.get("/me", UserController.getUserById);
 router.get("/:id", UserController.getUserByIdPublic);
+
+// Routes cần xác thực (nên thêm middleware sau)
+router.patch("/:id/status", UserController.updateUserStatus);
 router.delete("/:id", UserController.deleteUser);
 
 export default router;

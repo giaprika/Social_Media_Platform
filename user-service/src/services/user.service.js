@@ -66,6 +66,15 @@ export class UserService {
       throw new Error("Email hoặc mật khẩu không đúng.");
     }
 
+    // Check if user is banned
+    if (user.status === 'banned') {
+      throw new Error("Tài khoản của bạn đã bị khóa.");
+    }
+
+    if (user.status === 'suspended') {
+      throw new Error("Tài khoản của bạn đã bị tạm khóa.");
+    }
+
     const isMatch = await comparePassword(password, user.hashed_password);
     if (!isMatch) {
       throw new Error("Email hoặc mật khẩu không đúng.");
@@ -84,5 +93,20 @@ export class UserService {
       throw new Error("Search name cannot be empty.");
     }
     return await UserRepository.searchUsersByName(fullName.trim());
+  }
+
+  static async updateUserStatus(userId, status) {
+    const validStatuses = ['active', 'banned', 'suspended'];
+    if (!validStatuses.includes(status)) {
+      throw new Error(`Trạng thái không hợp lệ. Chỉ chấp nhận: ${validStatuses.join(', ')}`);
+    }
+
+    const existingUser = await UserRepository.findUserById(userId);
+    if (!existingUser) {
+      throw new Error("Người dùng không tồn tại.");
+    }
+
+    const updatedUser = await UserRepository.updateUserStatus(userId, status);
+    return updatedUser;
   }
 }
