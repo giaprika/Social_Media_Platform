@@ -29,12 +29,11 @@ def query_user_validations_count(user_id: str) -> int:
     # finally:
     #     conn.close()
 
-def create_violation_record(user_id: str, violation_type: str, description: str, text_content: str, image_content: base64) -> None:
+def create_violation_record(user_id: str, description: str, text_content: str, image_content: base64) -> None:
     """
     Creates a new violation record in the database.
     Args:
         user_id (str): The ID of the user who committed the violation.
-        violation_type (str): The type of violation (e.g., "text", "image").
         description (str): A description of the violation.
         text_content (str): The text content that violated the policy.
         image_content (base64): The image content that violated the policy.
@@ -50,11 +49,11 @@ def create_violation_record(user_id: str, violation_type: str, description: str,
         INSERT INTO violations (user_id, violation_type, description, text_content, image_content)
         VALUES (%s, %s, %s, %s, %s);
         """
-        cursor.execute(insert_query, (user_id, violation_type, description, text_content, image_content))
+        cursor.execute(insert_query, (user_id, description, text_content, image_content))
         conn.commit()
         cursor.close()
         print("Violation record created successfully.")
-        return json.dumps({"status": "violation_record_created", "user_id": user_id, "violation_type": violation_type})
+        return json.dumps({"status": "violation_record_created", "user_id": user_id, "description": description}) # type: ignore
     except Exception as e:
         print(f"Error creating violation record: {e}")
         return json.dumps({"status": "error", "message": str(e)})

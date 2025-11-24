@@ -92,4 +92,23 @@ export class UserController {
       res.status(500).json({ error: error.message });
     }
   }
+
+  static async updateUserStatus(req, res) {
+    try {
+      const userId = req.params.id;
+      const { status } = req.body;
+      
+      if (!status) {
+        return res.status(400).json({ error: "Trạng thái (status) là bắt buộc" });
+      }
+
+      const updatedUser = await UserService.updateUserStatus(userId, status);
+      res.status(200).json({ 
+        message: "Cập nhật trạng thái thành công",
+        user: updatedUser 
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  }
 }
