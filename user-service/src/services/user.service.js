@@ -15,6 +15,7 @@ export class UserService {
       avatar_url = null,
       birth_date,
       gender,
+      username,
       metadata = {},
     } = userData;
 
@@ -23,11 +24,45 @@ export class UserService {
       throw new Error("Đã có người sử dụng email này.");
     }
 
+    // Generate username from email if not provided or empty
+    let generatedUsername = username?.trim();
+    if (!generatedUsername || generatedUsername.length === 0) {
+      const emailPrefix = email.split("@")[0];
+      // Remove special characters and make it lowercase
+      generatedUsername = emailPrefix.toLowerCase().replace(/[^a-z0-9]/g, "");
+      // Ensure minimum length
+      if (generatedUsername.length < 3) {
+        generatedUsername = generatedUsername + "123";
+      }
+      // Ensure username is unique by appending random number if needed
+      let counter = 1;
+      let finalUsername = generatedUsername;
+      while (await UserRepository.findUserByUsername(finalUsername)) {
+        finalUsername = `${generatedUsername}${counter}`;
+        counter++;
+        // Prevent infinite loop
+        if (counter > 1000) {
+          finalUsername = `${generatedUsername}${Date.now()}`;
+          break;
+        }
+      }
+      generatedUsername = finalUsername;
+    } else {
+      // Normalize username: lowercase and trim
+      generatedUsername = generatedUsername.toLowerCase().trim();
+      // Check if provided username is already taken
+      const existingUsername = await UserRepository.findUserByUsername(generatedUsername);
+      if (existingUsername) {
+        throw new Error("Tên người dùng này đã được sử dụng.");
+      }
+    }
+
     const hashedPassword = await hashPassword(password);
     const userId = uuidv4();
 
     const newUser = {
       id: userId,
+      username: generatedUsername,
       email,
       hashed_password: hashedPassword,
       full_name,
@@ -108,5 +143,116 @@ export class UserService {
 
     const updatedUser = await UserRepository.updateUserStatus(userId, status);
     return updatedUser;
+  }
+
+  static async getUserStats(userId) {
+    const user = await UserRepository.findUserById(userId);
+    if (!user) {
+      throw new Error("Người dùng không tồn tại.");
+    }
+
+    // Get followers count
+    const followersCount = await UserRepository.getFollowersCount(userId);
+
+    // TODO: Get likes from post-service and comment-service
+    // For now, return 0 if services are not available
+    let totalLikes = 0;
+    let contributions = 0;
+
+    try {
+      // Try to get stats from post-service if available
+      // This will be implemented when post-service is ready
+      // const postServiceUrl = process.env.POST_SERVICE_URL;
+      // if (postServiceUrl) {
+      //   const response = await axios.get(`${postServiceUrl}/users/${userId}/stats`);
+      //   totalLikes = response.data.totalLikes || 0;
+      //   contributions = response.data.postsCount || 0;
+      // }
+    } catch (error) {
+      // If post-service is not available, use default values
+      console.log("Post service not available, using default stats");
+    }
+
+    return {
+      followers: followersCount,
+      likes: totalLikes,
+      contributions: contributions,
+      created_at: user.created_at,
+    };
+  }
+
+  static async updateUser(userId, updateData) {
+    const existingUser = await UserRepository.findUserById(userId);
+    if (!existingUser) {
+      throw new Error("Người dùng không tồn tại.");
+    }
+
+    // Check if email is being updated and if it's already taken
+    if (updateData.email && updateData.email !== existingUser.email) {
+      const emailExists = await UserRepository.findUserByEmail(updateData.email);
+      if (emailExists) {
+        throw new Error("Email này đã được sử dụng bởi tài khoản khác.");
+      }
+    }
+
+    // Check if username is being updated and if it's already taken
+    if (updateData.username && updateData.username !== existingUser.username) {
+      const usernameExists = await UserRepository.findUserByUsername(updateData.username);
+      if (usernameExists) {
+        throw new Error("Tên người dùng này đã được sử dụng.");
+      }
+      // Validate username format
+      if (!/^[a-zA-Z0-9_]+$/.test(updateData.username)) {
+        throw new Error("Tên người dùng chỉ được chứa chữ cái, số và dấu gạch dưới.");
+      }
+      if (updateData.username.length < 3 || updateData.username.length > 20) {
+        throw new Error("Tên người dùng phải có từ 3 đến 20 ký tự.");
+      }
+    }
+
+    const updatedUser = await UserRepository.updateUser(userId, updateData);
+    return updatedUser;
+  }
+
+  static async updatePassword(userId, currentPassword, newPassword) {
+    const existingUser = await UserRepository.findUserById(userId);
+    if (!existingUser) {
+      throw new Error("Người dùng không tồn tại.");
+    }
+
+    // Get current password hash
+    const currentPasswordHash = await UserRepository.getUserPassword(userId);
+    if (!currentPasswordHash) {
+      throw new Error("Không tìm thấy mật khẩu hiện tại.");
+    }
+
+    // Verify current password
+    const isMatch = await comparePassword(currentPassword, currentPasswordHash);
+    if (!isMatch) {
+      throw new Error("Mật khẩu hiện tại không đúng.");
+    }
+
+    // Hash new password
+    const hashedNewPassword = await hashPassword(newPassword);
+    
+    // Update password
+    const updatedUser = await UserRepository.updatePassword(userId, hashedNewPassword);
+    return updatedUser;
+  }
+
+  static async getUserSettings(userId) {
+    const existingUser = await UserRepository.findUserById(userId);
+    if (!existingUser) {
+      throw new Error("Người dùng không tồn tại.");
+    }
+    return await UserRepository.getUserSettings(userId);
+  }
+
+  static async updateUserSettings(userId, settings) {
+    const existingUser = await UserRepository.findUserById(userId);
+    if (!existingUser) {
+      throw new Error("Người dùng không tồn tại.");
+    }
+    return await UserRepository.updateUserSettings(userId, settings);
   }
 }

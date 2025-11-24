@@ -14,6 +14,8 @@ router.get("/:id/stats", UserController.getUserStats);
 router.get("/:id/settings", UserController.getUserSettings);
 router.get("/:id", UserController.getUserByIdPublic);
 
+// Routes cần xác thực (nên thêm middleware sau)
+// Đặt routes cụ thể trước routes generic để tránh conflict
 router.patch("/:id/settings", UserController.updateUserSettings);
 router.patch("/:id/password", UserController.updatePassword);
 router.patch("/:id/status", UserController.updateUserStatus);
