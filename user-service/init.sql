@@ -1,6 +1,6 @@
 CREATE TABLE users (
   id UUID PRIMARY KEY,
-  email VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NOT NULL UNIQUE,
   hashed_password VARCHAR(255) NOT NULL,
   full_name VARCHAR(255) NOT NULL,
   avatar_url VARCHAR(512),
@@ -33,3 +33,23 @@ CREATE TABLE relationships (
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
+
+-- ============================================
+-- SEED DATA: Test User
+-- ============================================
+-- Test Account for Development:
+-- Email: test@socialapp.com
+-- Password: Test123456
+-- ============================================
+INSERT INTO users (id, email, hashed_password, full_name, birth_date, gender, created_at, metadata)
+VALUES (
+  'fa0fe1b0-7b9b-4351-a5e0-5ba54ece726e',
+  'test@socialapp.com',
+  '$2b$10$ofSJ0SbMoblFbRimT/XoA.y.VJHSLjpUhiHyw3R50rOpdoq2iCOya',
+  'Test User',
+  '1990-01-01',
+  'other',
+  CURRENT_TIMESTAMP,
+  '{"is_test_user": true}'::jsonb
+)
+ON CONFLICT (email) DO NOTHING;

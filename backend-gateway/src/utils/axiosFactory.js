@@ -96,6 +96,7 @@ const createAxiosInstance = (options = {}) => {
 };
 
 const userServiceInstance = createAxiosInstance({
+  baseURL: (config.userServiceUrl || config.services.users.target || "http://localhost:8001") + "/users",
   timeout: config.services.users.timeout,
   serviceName: "users",
 });

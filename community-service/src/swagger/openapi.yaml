@@ -1,0 +1,965 @@
+openapi: 3.0.3
+info:
+  title: Community Service API
+  description: API specification for the community-service in the Social_Media_Platform project. Manages communities, memberships, invitations, and pinned posts.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8004
+    description: Local development server
+paths:
+  /communities:
+    get:
+      summary: List communities
+      description: Get list of communities with optional filtering and pagination
+      tags:
+        - Communities
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Search query (name, description, slug)
+        - name: category
+          in: query
+          schema:
+            type: string
+          description: Filter by category
+        - name: tag
+          in: query
+          schema:
+            type: string
+          description: Filter by tag
+        - name: visibility
+          in: query
+          schema:
+            type: string
+            enum: [public, private]
+          description: Filter by visibility
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+          description: Number of results per page
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+          description: Number of results to skip
+        - name: sort_by
+          in: query
+          schema:
+            type: string
+            enum: [created_at, member_count, post_count]
+            default: created_at
+          description: Sort field
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+          description: Sort order
+      responses:
+        "200":
+          description: List of communities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Community"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    post:
+      summary: Create a new community
+      description: Create a new community. The creator becomes the owner.
+      tags:
+        - Communities
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCommunityRequest"
+      responses:
+        "201":
+          description: Community created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Community"
+        "400":
+          description: Invalid input or slug already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /communities/{id}:
+    get:
+      summary: Get community by ID
+      description: Get detailed information about a community
+      tags:
+        - Communities
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Community ID
+      responses:
+        "200":
+          description: Community found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Community"
+        "404":
+          description: Community not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    patch:
+      summary: Update community
+      description: Update community information. Only owner or admin can update.
+      tags:
+        - Communities
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Community ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCommunityRequest"
+      responses:
+        "200":
+          description: Community updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Community"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - not owner or admin
+        "404":
+          description: Community not found
+
+    delete:
+      summary: Delete community
+      description: Delete a community. Only owner can delete.
+      tags:
+        - Communities
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Community ID
+      responses:
+        "204":
+          description: Community deleted successfully
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - not owner
+        "404":
+          description: Community not found
+
+  /communities/{id}/members:
+    get:
+      summary: List community members
+      description: Get list of members in a community
+      tags:
+        - Memberships
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Community ID
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [owner, admin, moderator, member]
+          description: Filter by role
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, approved, rejected, banned]
+          description: Filter by status
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        "200":
+          description: List of members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Membership"
+        "404":
+          description: Community not found
+
+    post:
+      summary: Join community
+      description: Request to join a community. Behavior depends on join_type (open, approval, invite_only)
+      tags:
+        - Memberships
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Community ID
+      responses:
+        "201":
+          description: Join request successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Membership"
+        "400":
+          description: Invalid request (e.g., already a member, invite required)
+        "401":
+          description: Unauthorized
+        "404":
+          description: Community not found
+
+    delete:
+      summary: Leave community
+      description: Leave a community. Cannot leave if you are the owner.
+      tags:
+        - Memberships
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Community ID
+      responses:
+        "204":
+          description: Successfully left community
+        "400":
+          description: Cannot leave (e.g., owner cannot leave)
+        "401":
+          description: Unauthorized
+        "404":
+          description: Community or membership not found
+
+  /communities/{id}/members/{userId}:
+    patch:
+      summary: Update member role or status
+      description: Update a member's role or status. Only owner/admin can update roles. Only moderators can update status.
+      tags:
+        - Memberships
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Community ID
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: User ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMembershipRequest"
+      responses:
+        "200":
+          description: Membership updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Membership"
+        "400":
+          description: Invalid input
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - insufficient permissions
+        "404":
+          description: Community or membership not found
+
+    delete:
+      summary: Remove or ban member
+      description: Remove or ban a member from community. Only moderators can perform this action.
+      tags:
+        - Memberships
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Community ID
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: User ID
+      responses:
+        "204":
+          description: Member removed/banned successfully
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - insufficient permissions
+        "404":
+          description: Community or membership not found
+
+  /communities/{id}/invitations:
+    get:
+      summary: List community invitations
+      description: Get list of invitations for a community. Only moderators can view all invitations.
+      tags:
+        - Invitations
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Community ID
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, accepted, expired, revoked]
+          description: Filter by status
+      responses:
+        "200":
+          description: List of invitations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Invitation"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - insufficient permissions
+        "404":
+          description: Community not found
+
+    post:
+      summary: Create invitation
+      description: Create an invitation to join the community. Can invite by user ID or email.
+      tags:
+        - Invitations
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Community ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInvitationRequest"
+      responses:
+        "201":
+          description: Invitation created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invitation"
+        "400":
+          description: Invalid input
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - cannot invite
+        "404":
+          description: Community not found
+
+  /invitations/{token}:
+    post:
+      summary: Accept invitation
+      description: Accept an invitation by token (for email invitations) or invitation ID
+      tags:
+        - Invitations
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Invitation token
+      responses:
+        "200":
+          description: Invitation accepted, membership created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Membership"
+        "400":
+          description: Invalid or expired invitation
+        "401":
+          description: Unauthorized
+        "404":
+          description: Invitation not found
+
+    delete:
+      summary: Revoke invitation
+      description: Revoke an invitation. Only inviter or moderators can revoke.
+      tags:
+        - Invitations
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Invitation token
+      responses:
+        "204":
+          description: Invitation revoked successfully
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - cannot revoke
+        "404":
+          description: Invitation not found
+
+  /communities/{id}/pinned:
+    get:
+      summary: Get pinned posts
+      description: Get list of pinned posts in a community, ordered by order_index
+      tags:
+        - Pinned Posts
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Community ID
+      responses:
+        "200":
+          description: List of pinned posts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PinnedPost"
+        "404":
+          description: Community not found
+
+    post:
+      summary: Pin a post
+      description: Pin a post in the community. Only admins/moderators can pin posts.
+      tags:
+        - Pinned Posts
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Community ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePinnedPostRequest"
+      responses:
+        "201":
+          description: Post pinned successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PinnedPost"
+        "400":
+          description: Invalid input or post already pinned
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - not admin/moderator
+        "404":
+          description: Community or post not found
+
+  /communities/{id}/pinned/{postId}:
+    delete:
+      summary: Unpin a post
+      description: Unpin a post from the community. Only admins/moderators can unpin.
+      tags:
+        - Pinned Posts
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Community ID
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Post ID (from post-service)
+      responses:
+        "204":
+          description: Post unpinned successfully
+        "401":
+          description: Unauthorized
+        "403":
+          description: Forbidden - not admin/moderator
+        "404":
+          description: Community or pinned post not found
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Community:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        name:
+          type: string
+          example: "Programming Community"
+        slug:
+          type: string
+          example: "programming"
+        description:
+          type: string
+          nullable: true
+          example: "A community for programmers"
+        avatar_url:
+          type: string
+          nullable: true
+          example: "https://example.com/avatar.png"
+        banner_url:
+          type: string
+          nullable: true
+          example: "https://example.com/banner.png"
+        owner_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174001"
+        visibility:
+          type: string
+          enum: [public, private]
+          example: "public"
+        join_type:
+          type: string
+          enum: [open, approval, invite_only]
+          example: "open"
+        post_permissions:
+          type: string
+          enum: [all, approved_only, moderators_only]
+          example: "all"
+        tags:
+          type: array
+          items:
+            type: string
+          example: ["programming", "coding", "tech"]
+        category:
+          type: string
+          nullable: true
+          example: "Technology"
+        rules:
+          type: array
+          items:
+            type: object
+          example: [{"title": "Be respectful", "description": "No harassment"}]
+        settings:
+          type: object
+          additionalProperties: true
+          example: {}
+        member_count:
+          type: integer
+          example: 150
+        post_count:
+          type: integer
+          example: 500
+        active_member_count:
+          type: integer
+          example: 75
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-01-16T12:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2025-01-16T12:00:00Z"
+
+    CreateCommunityRequest:
+      type: object
+      required:
+        - name
+        - slug
+      properties:
+        name:
+          type: string
+          example: "Programming Community"
+        slug:
+          type: string
+          example: "programming"
+        description:
+          type: string
+          nullable: true
+        avatar_url:
+          type: string
+          nullable: true
+        banner_url:
+          type: string
+          nullable: true
+        visibility:
+          type: string
+          enum: [public, private]
+          default: "public"
+        join_type:
+          type: string
+          enum: [open, approval, invite_only]
+          default: "open"
+        post_permissions:
+          type: string
+          enum: [all, approved_only, moderators_only]
+          default: "all"
+        tags:
+          type: array
+          items:
+            type: string
+        category:
+          type: string
+          nullable: true
+        rules:
+          type: array
+          items:
+            type: object
+        settings:
+          type: object
+          additionalProperties: true
+
+    UpdateCommunityRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        avatar_url:
+          type: string
+          nullable: true
+        banner_url:
+          type: string
+          nullable: true
+        visibility:
+          type: string
+          enum: [public, private]
+        join_type:
+          type: string
+          enum: [open, approval, invite_only]
+        post_permissions:
+          type: string
+          enum: [all, approved_only, moderators_only]
+        tags:
+          type: array
+          items:
+            type: string
+        category:
+          type: string
+          nullable: true
+        rules:
+          type: array
+          items:
+            type: object
+        settings:
+          type: object
+          additionalProperties: true
+
+    Membership:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        community_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174001"
+        user_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174002"
+        role:
+          type: string
+          enum: [owner, admin, moderator, member]
+          example: "member"
+        status:
+          type: string
+          enum: [pending, approved, rejected, banned]
+          example: "approved"
+        flair:
+          type: string
+          nullable: true
+          example: "Expert"
+        joined_at:
+          type: string
+          format: date-time
+          example: "2025-01-16T12:00:00Z"
+        invited_by:
+          type: string
+          format: uuid
+          nullable: true
+          example: "123e4567-e89b-12d3-a456-426614174003"
+        invited_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2025-01-16T12:00:00Z"
+
+    UpdateMembershipRequest:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [admin, moderator, member]
+          description: Cannot change to owner or change owner's role
+        status:
+          type: string
+          enum: [pending, approved, rejected, banned]
+        flair:
+          type: string
+          nullable: true
+
+    Invitation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        community_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174001"
+        inviter_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174002"
+        invitee_id:
+          type: string
+          format: uuid
+          nullable: true
+          example: "123e4567-e89b-12d3-a456-426614174003"
+        invitee_email:
+          type: string
+          format: email
+          nullable: true
+          example: "user@example.com"
+        token:
+          type: string
+          example: "abc123def456"
+        status:
+          type: string
+          enum: [pending, accepted, expired, revoked]
+          example: "pending"
+        expires_at:
+          type: string
+          format: date-time
+          example: "2025-02-16T12:00:00Z"
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-01-16T12:00:00Z"
+
+    CreateInvitationRequest:
+      type: object
+      required:
+        - invitee_id
+      oneOf:
+        - required: [invitee_id]
+        - required: [invitee_email]
+      properties:
+        invitee_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: User ID to invite (if user exists)
+        invitee_email:
+          type: string
+          format: email
+          nullable: true
+          description: Email to invite (if user doesn't exist yet)
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Expiration date (default: 7 days from now)
+
+    PinnedPost:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        community_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174001"
+        post_id:
+          type: string
+          example: "post-123"
+        pinned_by:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174002"
+        pinned_at:
+          type: string
+          format: date-time
+          example: "2025-01-16T12:00:00Z"
+        order_index:
+          type: integer
+          example: 0
+
+    CreatePinnedPostRequest:
+      type: object
+      required:
+        - post_id
+      properties:
+        post_id:
+          type: string
+          example: "post-123"
+        order_index:
+          type: integer
+          default: 0
+          description: Order for multiple pinned posts (lower = higher priority)
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Error message here"
+        message:
+          type: string
+          example: "Detailed error message"
+
+tags:
+  - name: Communities
+    description: Community management operations
+  - name: Memberships
+    description: Membership management operations
+  - name: Invitations
+    description: Invitation management operations
+  - name: Pinned Posts
+    description: Pinned post management operations
+

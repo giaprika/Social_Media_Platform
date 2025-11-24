@@ -2,25 +2,95 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Dark Theme (Default) */
 :root {
-  --background: 11 11 11;
-  --foreground: 215 218 220;
-  --card: 30 30 31;
-  --card-foreground: 215 218 220;
-  --primary: 255 69 0;
+  /* Background colors - Darker, more elegant */
+  --background: 16 16 18;
+  --foreground: 240 240 240;
+  
+  /* Card colors */
+  --card: 28 28 32;
+  --card-foreground: 240 240 240;
+  
+  /* Primary - Blue/Indigo (thay cam) */
+  --primary: 88 101 242;
   --primary-foreground: 255 255 255;
-  --secondary: 129 131 132;
-  --secondary-foreground: 215 218 220;
-  --muted: 52 53 54;
-  --muted-foreground: 129 131 132;
-  --accent: 255 69 0;
+  
+  /* Secondary - Subtle gray */
+  --secondary: 48 48 54;
+  --secondary-foreground: 185 187 190;
+  
+  /* Muted - For backgrounds */
+  --muted: 38 38 43;
+  --muted-foreground: 142 146 151;
+  
+  /* Accent - Lighter blue cho highlights */
+  --accent: 114 137 218;
   --accent-foreground: 255 255 255;
-  --destructive: 255 69 0;
+  
+  /* Destructive - Red (tách riêng) */
+  --destructive: 237 66 69;
   --destructive-foreground: 255 255 255;
-  --border: 52 53 54;
-  --input: 30 30 31;
-  --ring: 255 69 0;
+  
+  /* Success - Green cho notifications */
+  --success: 67 181 129;
+  --success-foreground: 255 255 255;
+  
+  /* Warning - Yellow/Orange nhẹ hơn */
+  --warning: 250 166 26;
+  --warning-foreground: 16 16 18;
+  
+  /* Borders & Inputs */
+  --border: 48 48 54;
+  --input: 28 28 32;
+  --ring: 88 101 242;
+  
+  /* Border radius */
   --radius: 0.625rem;
+}
+
+/* Light Theme */
+.light {
+  /* Background colors - Clean white/gray */
+  --background: 255 255 255;
+  --foreground: 17 24 39;
+  
+  /* Card colors */
+  --card: 249 250 251;
+  --card-foreground: 17 24 39;
+  
+  /* Primary - Blue/Indigo (giữ nhất quán) */
+  --primary: 79 70 229;
+  --primary-foreground: 255 255 255;
+  
+  /* Secondary */
+  --secondary: 243 244 246;
+  --secondary-foreground: 75 85 99;
+  
+  /* Muted */
+  --muted: 243 244 246;
+  --muted-foreground: 107 114 128;
+  
+  /* Accent */
+  --accent: 99 102 241;
+  --accent-foreground: 255 255 255;
+  
+  /* Destructive - Red */
+  --destructive: 239 68 68;
+  --destructive-foreground: 255 255 255;
+  
+  /* Success - Green */
+  --success: 34 197 94;
+  --success-foreground: 255 255 255;
+  
+  /* Warning */
+  --warning: 234 179 8;
+  --warning-foreground: 17 24 39;
+  
+  /* Borders & Inputs */
+  --border: 229 231 235;
+  --input: 249 250 251;
+  --ring: 79 70 229;
 }
 
 * {
@@ -47,4 +117,109 @@ button,
 input,
 textarea {
   font: inherit;
+}
+
+/* Smooth transitions for theme changes */
+* {
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+/* Custom Scrollbar Styles */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgb(var(--background));
+  border-radius: 0;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--muted));
+  border-radius: 6px;
+  border: 3px solid rgb(var(--background));
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--muted-foreground) / 0.8);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: rgb(var(--muted-foreground));
+}
+
+/* Firefox Scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--muted)) rgb(var(--background));
+}
+
+/* Light mode scrollbar adjustments */
+.light ::-webkit-scrollbar-thumb {
+  background: rgb(var(--muted-foreground) / 0.3);
+  border: 3px solid rgb(var(--background));
+}
+
+.light ::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--muted-foreground) / 0.5);
+}
+
+.light ::-webkit-scrollbar-thumb:active {
+  background: rgb(var(--muted-foreground) / 0.7);
+}
+
+/* Thin scrollbar utility class */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  border: 2px solid rgb(var(--background));
+}
+
+/* Hide scrollbar but keep functionality */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Custom utility classes for new colors */
+@layer utilities {
+  .text-success {
+    color: rgb(var(--success));
+  }
+  
+  .bg-success {
+    background-color: rgb(var(--success));
+  }
+  
+  .bg-success\/10 {
+    background-color: rgb(var(--success) / 0.1);
+  }
+  
+  .text-warning {
+    color: rgb(var(--warning));
+  }
+  
+  .bg-warning {
+    background-color: rgb(var(--warning));
+  }
+  
+  .bg-warning\/10 {
+    background-color: rgb(var(--warning) / 0.1);
+  }
+  
+  .border-success {
+    border-color: rgb(var(--success));
+  }
+  
+  .border-warning {
+    border-color: rgb(var(--warning));
+  }
 }
