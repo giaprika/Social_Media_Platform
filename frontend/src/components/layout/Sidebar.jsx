@@ -103,7 +103,7 @@ const Sidebar = ({ activeNav, onActiveNavChange }) => {
         updateActiveItem("home");
       }
     }
-  }, [location.pathname, flattenedNavItems, activeItemId]);
+  }, [location.pathname, flattenedNavItems, activeItemId, updateActiveItem]);
 
   useEffect(() => {
     if (activeNav && activeNav !== activeItemId) {
@@ -176,8 +176,9 @@ const Sidebar = ({ activeNav, onActiveNavChange }) => {
   };
 
   return (
-    <aside className="fixed left-0 top-0 flex h-screen w-72 flex-col overflow-y-auto border-r border-border bg-card pt-4">
-      <div className="mb-6 px-4">
+    <aside className="flex h-screen w-72 flex-col border-r border-border bg-card">
+      {/* Logo Section */}
+      <div className="flex-shrink-0 px-4 pt-4 pb-6">
         <button
           type="button"
           onClick={() => navigate(PATHS.FEED)}
@@ -190,7 +191,8 @@ const Sidebar = ({ activeNav, onActiveNavChange }) => {
         </button>
       </div>
 
-      <div className="flex-1 space-y-8 px-4">
+      {/* Scrollable Content */}
+      <div className="flex-1 overflow-y-auto px-4 space-y-8 scrollbar-thin">
         {navSections.map((section) => {
           const isCollapsible = section.collapsible;
           const isCollapsed = collapsed[section.key];
@@ -226,7 +228,8 @@ const Sidebar = ({ activeNav, onActiveNavChange }) => {
         })}
       </div>
 
-      <div className="border-t border-border px-4 py-6">
+      {/* Footer Section - Sticky at bottom */}
+      <div className="flex-shrink-0 border-t border-border px-4 py-6 bg-card">
         <div className="space-y-2 text-sm text-muted-foreground">
           <button
             type="button"

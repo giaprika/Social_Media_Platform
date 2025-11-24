@@ -6,6 +6,7 @@ const PATHS = {
   FEED: "/app/feed",
   PROFILE: "/app/profile",
   SETTINGS: "/app/settings",
+  SEARCH: "/app/search",
 };
 
 export { PATHS };

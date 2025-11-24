@@ -5,6 +5,7 @@ import * as auth from "src/api/auth";
 import useAuth from "src/hooks/useAuth";
 import { PATHS } from "src/constants/paths";
 import { validateEmail, validatePassword } from "src/utils/validate";
+import TestAccountCard from "src/components/TestAccountCard";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -14,6 +15,12 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const handleFillCredentials = (testEmail, testPassword) => {
+    setEmail(testEmail);
+    setPassword(testPassword);
+    setError("");
+  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -52,15 +59,20 @@ const Login = () => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="w-full max-w-md">
-        <div className="mb-8 text-center">
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-8">
+      <div className="w-full max-w-md space-y-6">
+        <div className="text-center">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary">
             <span className="text-xl font-bold text-primary-foreground">S</span>
           </div>
           <h1 className="text-3xl font-bold text-foreground">SocialApp</h1>
           <p className="mt-2 text-muted-foreground">Welcome back</p>
         </div>
+
+        {/* Test Account Card - Only show in development */}
+        {process.env.NODE_ENV === "development" && (
+          <TestAccountCard onFillCredentials={handleFillCredentials} />
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
