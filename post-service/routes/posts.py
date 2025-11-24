@@ -4,7 +4,7 @@ from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Query, Path, Header, UploadFile, File
 from dotenv import load_dotenv
 from supabase import create_client
-from models import (
+from .models import (
     PostCreate, PostUpdate, PostObject, 
     PostSingleResponse, PostListResponse,
     Pagination, Metadata, Link
