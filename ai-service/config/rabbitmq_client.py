@@ -63,7 +63,7 @@ class RabbitMQClient:
                     self._connect()
 
                 # Gửi tin
-                is_delivered = self._channel.basic_publish(
+                self._channel.basic_publish(
                     exchange=self._instance._config['exchange'],
                     routing_key=routing_key,
                     body=json.dumps(payload),
@@ -75,17 +75,9 @@ class RabbitMQClient:
                     mandatory=True
                 )
 
-                print(f"Published message with ID: {message_id}", "is_delivered:", is_delivered)
-                
-                if is_delivered is False:
-                    # Chỉ coi là lỗi nghiêm trọng nếu Server trả lời thẳng thừng là "NO" (False)
-                    logger.warning(f"RabbitMQ NACKed (Rejected) [ID: {message_id}]")
-                    raise Exception("NACK received")
-                else:
-                    # Nếu là True hoặc None -> Coi như thành công để tránh gửi lại (Spam)
-                    logger.info(f"Published OK [ID: {message_id}]")
-                    return True, "Success", message_id
-
+                print(f"Published message with ID: {message_id}")
+                return True, "Message published successfully", message_id
+            
             except Exception as e:
                 retries += 1
                 logger.error(f"Attempt {retries}/{max_retries} logic error: {e}")
