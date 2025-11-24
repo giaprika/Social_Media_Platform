@@ -1,3 +1,5 @@
+CREATE TYPE user_status AS ENUM ('active', 'banned', 'suspended');
+
 CREATE TABLE users (
   id UUID PRIMARY KEY,
   email VARCHAR(255) NOT NULL UNIQUE,
@@ -6,6 +8,7 @@ CREATE TABLE users (
   avatar_url VARCHAR(512),
   birth_date DATE,
   gender VARCHAR(20),
+  status user_status NOT NULL DEFAULT 'active',
   created_at TIMESTAMP,
   metadata JSONB
 );
@@ -41,7 +44,7 @@ CREATE TABLE relationships (
 -- Email: test@socialapp.com
 -- Password: Test123456
 -- ============================================
-INSERT INTO users (id, email, hashed_password, full_name, birth_date, gender, created_at, metadata)
+INSERT INTO users (id, email, hashed_password, full_name, birth_date, gender, status, created_at, metadata)
 VALUES (
   'fa0fe1b0-7b9b-4351-a5e0-5ba54ece726e',
   'test@socialapp.com',
@@ -49,6 +52,7 @@ VALUES (
   'Test User',
   '1990-01-01',
   'other',
+  'active',
   CURRENT_TIMESTAMP,
   '{"is_test_user": true}'::jsonb
 )

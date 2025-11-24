@@ -1,8 +1,10 @@
 import { 
+  BanknotesIcon,
   CakeIcon,
+  DocumentTextIcon,
   TrophyIcon,
   UserGroupIcon,
-  DocumentTextIcon,
+  UserPlusIcon,
   ChatBubbleLeftIcon,
   ClockIcon,
   ShareIcon,
@@ -62,7 +64,10 @@ const ProfileSidebar = ({ user, stats }) => {
         <div className="p-4 space-y-3">
           {/* Followers */}
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Followers</span>
+            <div className="flex items-center gap-2">
+              <UserPlusIcon className="h-4 w-4 text-primary" />
+              <span className="text-sm text-muted-foreground">Followers</span>
+            </div>
             <span className="text-sm font-semibold text-foreground">
               {formatNumber(userStats.followers)}
             </span>
@@ -81,7 +86,10 @@ const ProfileSidebar = ({ user, stats }) => {
 
           {/* Contributions */}
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Contributions</span>
+            <div className="flex items-center gap-2">
+              <DocumentTextIcon className="h-4 w-4 text-info" />
+              <span className="text-sm text-muted-foreground">Contributions</span>
+            </div>
             <span className="text-sm font-semibold text-foreground">
               {formatNumber(userStats.contributions)}
             </span>
@@ -111,7 +119,10 @@ const ProfileSidebar = ({ user, stats }) => {
 
           {/* Gold Earned */}
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Gold earned</span>
+            <div className="flex items-center gap-2">
+              <BanknotesIcon className="h-4 w-4 text-warning" />
+              <span className="text-sm text-muted-foreground">Gold earned</span>
+            </div>
             <span className="text-sm font-semibold text-foreground">
               {userStats.goldEarned}
             </span>

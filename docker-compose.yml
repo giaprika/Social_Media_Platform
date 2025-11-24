@@ -42,19 +42,39 @@ services:
   # ============================================
   # Databases cho services chưa hoàn thiện (commented)
   # ============================================
-  # postgres-notification:
-  #   image: postgres:15-alpine
-  #   container_name: postgres-notification
-  #   environment:
-  #     POSTGRES_DB: notification_db
-  #     POSTGRES_USER: postgres
-  #     POSTGRES_PASSWORD: postgres
-  #   volumes:
-  #     - postgres-notification-data:/var/lib/postgresql/data
-  #   ports:
-  #     - "5433:5432"
-  #   networks:
-  #     - social-network
+  postgres-notification:
+    image: postgres:15-alpine
+    container_name: postgres-notification
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-notification-data:/var/lib/postgresql/data
+      - ./notification-service/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: >
+      sh -c "
+        docker-entrypoint.sh postgres &
+        sleep 5 &&
+        until pg_isready -U postgres; do sleep 1; done &&
+        psql -U postgres -d notification_db -tAc \"SELECT 1 FROM information_schema.tables WHERE table_name='notifications'\" | grep -q 1 ||
+        (echo 'Initializing database...' && psql -U postgres -d notification_db -f /docker-entrypoint-initdb.d/init.sql && echo 'Database initialized!') &&
+        wait
+      "
+    ports:
+      - "5433:5432"
+    networks:
+      - social-network
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'pg_isready -U postgres && psql -U postgres -d notification_db -tAc "SELECT 1 FROM information_schema.tables WHERE table_name=''notifications''" | grep -q 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   # postgres-posts:
   #   image: postgres:15-alpine
@@ -118,7 +138,7 @@ services:
       ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:-your_super_secret_access_token_key}
       REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-your_super_secret_refresh_token_key}
       USER_SERVICE_URL: http://user-service:8001
-      # NOTIFICATION_SERVICE_URL: http://notification-service:8002
+      NOTIFICATION_SERVICE_URL: http://notification-service:8002
       # POST_SERVICE_URL: http://post-service:8003
       COMMUNITY_SERVICE_URL: http://community-service:8004
       CORS_ORIGIN: http://localhost:3000
@@ -126,6 +146,8 @@ services:
       - "8000:8000"
     depends_on:
       - user-service
+      - notification-service
+      - community-service
     networks:
       - social-network
     restart: unless-stopped
@@ -169,25 +191,39 @@ services:
   # ============================================
   # Services chưa hoàn thiện (commented)
   # ============================================
-  # notification-service:
-  #   build:
-  #     context: ./notification-service
-  #     dockerfile: Dockerfile
-  #   container_name: notification-service
-  #   environment:
-  #     NODE_ENV: production
-  #     PORT: 8002
-  #     DB_HOST: postgres-notification
-  #     DB_PORT: 5432
-  #     DB_NAME: notification_db
-  #     DB_USER: postgres
-  #     DB_PASSWORD: postgres
-  #   ports:
-  #     - "8002:8002"
-  #   depends_on:
-  #     - postgres-notification
-  #   networks:
-  #     - social-network
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    container_name: notification-service
+    environment:
+      NODE_ENV: production
+      PORT: 8002
+      DB_HOST: postgres-notification
+      DB_PORT: 5432
+      DB_NAME: notification_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_MAX_CONNECTIONS: 10
+      DB_SSL: "false"
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres-notification:
+        condition: service_healthy
+    networks:
+      - social-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "require(''http'').get(''http://localhost:8002'', (r) => {process.exit(r.statusCode ? 0 : 1)})"',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   # post-service:
   #   build:
@@ -261,5 +297,5 @@ networks:
 volumes:
   postgres-social-data:
   postgres-community-data:
-  # postgres-notification-data:  # Uncomment khi cần notification service
+  postgres-notification-data:
   # postgres-posts-data:  # Uncomment khi cần post service
