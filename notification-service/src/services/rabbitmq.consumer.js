@@ -1,90 +1,109 @@
 import amqp from "amqplib";
-import axios from "axios";
-import { NotificationService } from "../services/notification.service.js"; // Đường dẫn đến file service của bạn
+import Redis from "ioredis"; // Import Redis
+import crypto from "crypto"; // Import Crypto để tạo hash
+import { NotificationService } from "../services/notification.service.js";
 
 const RABBITMQ_URL = process.env.RABBITMQ_URL || "amqp://localhost";
+const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 const EXCHANGE_NAME = "social.events";
 const QUEUE_NAME = "notification.queue";
+
+// Khởi tạo Redis Client
+const redis = new Redis(REDIS_URL);
 
 export class NotificationConsumer {
   static async start() {
     try {
-      // 1. Kết nối RabbitMQ
       const connection = await amqp.connect(RABBITMQ_URL);
       const channel = await connection.createChannel();
 
-      // 2. Khai báo Exchange (đảm bảo tồn tại)
       await channel.assertExchange(EXCHANGE_NAME, "topic", { durable: true });
-
-      // 3. Khai báo Queue riêng cho Notification Service
       const q = await channel.assertQueue(QUEUE_NAME, { durable: true });
 
-      // 4. Bind Queue vào các Routing Key cần nghe
-      // Nghe event tạo bài viết mới
       await channel.bindQueue(q.queue, EXCHANGE_NAME, "post.created");
-      // Nghe event cảnh báo spam từ Python AI Agent
       await channel.bindQueue(q.queue, EXCHANGE_NAME, "violation.events");
+
+      // QUAN TRỌNG: Chỉ nhận 1 message tại 1 thời điểm để xử lý tuần tự (nếu cần)
+      // await channel.prefetch(1); 
 
       console.log(`[*] Waiting for messages in ${q.queue}.`);
 
-      // 5. Xử lý tin nhắn đến
       channel.consume(q.queue, async (msg) => {
         if (!msg) return;
 
-        const content = JSON.parse(msg.content.toString());
+        const contentString = msg.content.toString();
+        const content = JSON.parse(contentString);
         const routingKey = msg.fields.routingKey;
+
+        // --- BẮT ĐẦU XỬ LÝ TRÙNG LẶP ---
         
+        // Bước 1: Tạo ID duy nhất cho tin nhắn này
+        // Nếu message có ID từ producer thì dùng luôn
+        // Nếu không hash toàn bộ nội dung để tạo ID
+        const messageId = msg.properties.messageId || this.generateSignature(msg.content.toString());
+
+        // Bước 2: Kiểm tra trong Redis
+        // set(key, value, "EX", seconds, "NX")
+        // EX 3600: Key tự xóa sau 1 giờ (tùy chỉnh theo nhu cầu)
+        const isNewMessage = await redis.set(`processed_msg:${messageId}`, "1", "EX", 3600, "NX");
+
+        if (!isNewMessage) {
+          console.warn(`[Duplicate] Message ${messageId} dropped.`);
+          // ACK ngay để xóa khỏi hàng đợi vì nó là tin rác/trùng lặp
+          channel.ack(msg);
+          return; 
+        }
+        // --- KẾT THÚC XỬ LÝ TRÙNG LẶP ---
+
         console.log(`[x] Received '${routingKey}':`, content);
 
         try {
           await this.handleMessage(routingKey, content);
-          // Xác nhận đã xử lý xong (ACK)
           channel.ack(msg);
         } catch (error) {
           console.error("Error processing message:", error);
-          // Nếu lỗi, có thể NACK để gửi lại hoặc log vào dead-letter
-          // channel.nack(msg, false, false); 
+          // Nếu xử lý lỗi, bạn cần cân nhắc:
+          // 1. Nếu muốn retry: Xóa key trong Redis đi để lần sau nhận lại được
+          await redis.del(`processed_msg:${messageSignature}`); 
+          
+          // 2. NACK để RabbitMQ gửi lại (hoặc đẩy vào Dead Letter Queue)
+          channel.nack(msg, false, false); 
         }
       });
     } catch (error) {
       console.error("RabbitMQ Connection Error:", error);
-      // Retry logic nên được thêm vào đây (setTimeout connect lại)
     }
   }
 
-  // Hàm điều hướng xử lý logic
-  static async handleMessage(routingKey, eventData) {
-    // const { data } = eventData;
+  // Hàm tạo mã Hash MD5 từ nội dung tin nhắn
+  static generateSignature(contentString) {
+    return crypto.createHash('md5').update(contentString).digest('hex');
+  }
 
+  static async handleMessage(routingKey, eventData) {
     switch (routingKey) {
       case "violation.events":
         await this.handleUserWarning(eventData);
         break;
-      
       case "post.created":
         await this.handlePostCreated(eventData);
         break;
-
       default:
         console.warn(`Unknown routing key: ${routingKey}`);
     }
   }
 
-  // --- XỬ LÝ CÁC EVENT CỤ THỂ ---
-
-  /**
-   * Xử lý event từ Python Agent: Cảnh báo User vi phạm
-   * Payload: { user_id, reason, timestamp }
-   */
   static async handleUserWarning(data) {
-    // Gọi NotificationService để tạo thông báo cho đúng 1 user đó
     await NotificationService.createNotificationToMultipleUsers({
       user_ids: [data.user_id],
       title_template: data.title_template,
       body_template: data.body_template,
-    //   link_url: "/policy/violation-details"
     });
     console.log(`Warning sent to user ${data.user_id}`);
   }
 
+  // Placeholder function
+  static async handlePostCreated(data) {
+      // Logic here
+  }
 }

@@ -30,7 +30,7 @@ new_message = {
       ]
 }
 
-session_id = "s_123"
+session_id = "s_1234"
 user_id = "u_123"
 
 payload = {
