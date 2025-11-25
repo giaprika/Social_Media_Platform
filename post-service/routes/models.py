@@ -26,22 +26,6 @@ class Metadata(BaseModel):
 
 
 # ============= POST SCHEMAS =============
-class PostCreate(BaseModel):
-    content: Optional[str] = Field(None, description="Nội dung bài viết")
-    media_urls: Optional[List[str]] = Field(None, description="List URLs của media đã upload lên Storage")
-    tags: Optional[List[str]] = None
-    post_share_id: Optional[str] = Field(None, description="ID bài viết được chia sẻ")
-    group_id: Optional[str] = Field(None, description="ID Group đăng bài")
-    visibility: Optional[str] = Field(default=Visibility.PUBLIC.value, description="Chế độ hiển thị")
-
-
-class PostUpdate(BaseModel):
-    content: Optional[str] = None
-    media_urls: Optional[List[str]] = None
-    tags: Optional[List[str]] = None
-    visibility: Optional[str] = None
-
-
 class PostObject(BaseModel):
     post_id: str
     user_id: str
@@ -108,19 +92,6 @@ class ReactionListResponse(BaseModel):
 
 
 # ============= COMMENT SCHEMAS =============
-class CommentCreate(BaseModel):
-    content: Optional[str] = Field(None, description="Nội dung comment")
-    media_urls: Optional[List[str]] = None
-    tags: Optional[List[str]] = None
-    parent_id: Optional[str] = Field(None, description="ID Comment cha nếu là Reply")
-
-
-class CommentUpdate(BaseModel):
-    content: Optional[str] = None
-    media_urls: Optional[List[str]] = None
-    tags: Optional[List[str]] = None
-
-
 class CommentObject(BaseModel):
     comment_id: str
     user_id: str
