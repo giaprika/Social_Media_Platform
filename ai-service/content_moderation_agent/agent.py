@@ -62,7 +62,7 @@ root_agent = Agent(
 
     When you find content that violates these guidelines, call report_user_violation tool. Finally, return only json result example:
     {
-        "result": "Banned or Warning or accepted.", 
+        "result": "Banned or Warning or Accepted", 
         "message": "Detailed explanation of the decision."
     }
     """,
