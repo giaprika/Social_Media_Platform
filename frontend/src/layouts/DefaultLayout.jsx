@@ -15,8 +15,9 @@ const DefaultLayout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [recentPosts, setRecentPosts] = useState([]);
   
-  // Kiểm tra xem có đang ở trang profile không
+  // Kiểm tra xem có đang ở trang profile hoặc settings không
   const isProfilePage = location.pathname.includes("/profile");
+  const isSettingsPage = location.pathname.includes("/settings");
 
   const handleCreatePost = () => {
     // Navigate to feed and trigger create post modal
@@ -65,7 +66,7 @@ const DefaultLayout = () => {
       {/* Main content */}
       <div className={clsx(
         "lg:ml-72 min-h-screen bg-background",
-        !isProfilePage && "xl:mr-80"
+        !isProfilePage && !isSettingsPage && "xl:mr-80"
       )}>
         <Header
           activeNav={activeNav}
@@ -80,8 +81,8 @@ const DefaultLayout = () => {
         </main>
       </div>
 
-      {/* Recent Posts Sidebar - Ẩn khi ở trang profile */}
-      {!isProfilePage && (
+      {/* Recent Posts Sidebar - Ẩn khi ở trang profile hoặc settings */}
+      {!isProfilePage && !isSettingsPage && (
         <RecentPostsSidebar
           posts={recentPosts}
           onClear={() => setRecentPosts([])}

@@ -9,12 +9,17 @@ dotenv.config();
 class UserService {
   async registerUserService(userData) {
     try {
+      logger.info("Sending user data to user service", {
+        userData: { ...userData, password: "***" },
+      });
       const response = await userServiceInstance.post(`/`, userData);
+      logger.info("User service response", { data: response.data });
       return response.data;
     } catch (error) {
       logger.error("Error while registering user in user service", {
         error: error.message,
         response: error.response?.data,
+        userData: { ...userData, password: "***" },
       });
       throw error;
     }

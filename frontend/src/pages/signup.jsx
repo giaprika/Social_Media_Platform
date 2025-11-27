@@ -7,6 +7,7 @@ import { PATHS } from "src/constants/paths";
 
 const defaultForm = {
   fullName: "",
+  username: "",
   email: "",
   birthDate: "",
   gender: "",
@@ -25,9 +26,31 @@ const SignUp = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const validateUsername = (username) => {
+    if (!username || username.trim().length === 0) {
+      return "Username is required";
+    }
+    if (username.length < 3) {
+      return "Username must be at least 3 characters";
+    }
+    if (username.length > 20) {
+      return "Username must be less than 20 characters";
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      return "Username can only contain letters, numbers, and underscores";
+    }
+    return null;
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError("");
+
+    const usernameError = validateUsername(formData.username);
+    if (usernameError) {
+      setError(usernameError);
+      return;
+    }
 
     if (!validatePassword(formData.password)) {
       setError(
@@ -50,6 +73,7 @@ const SignUp = () => {
       setLoading(true);
       await signup({
         full_name: formData.fullName,
+        username: formData.username.trim().toLowerCase(),
         email: formData.email,
         password: formData.password,
         birth_date: formData.birthDate,
@@ -92,6 +116,28 @@ const SignUp = () => {
               className="w-full rounded-lg border border-border bg-card px-4 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               required
             />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="username">
+              Username
+            </label>
+            <input
+              id="username"
+              name="username"
+              type="text"
+              value={formData.username}
+              onChange={handleChange}
+              placeholder="johndoe"
+              className="w-full rounded-lg border border-border bg-card px-4 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              required
+              minLength={3}
+              maxLength={20}
+              pattern="[a-zA-Z0-9_]+"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              3-20 characters, letters, numbers, and underscores only
+            </p>
           </div>
 
           <div>

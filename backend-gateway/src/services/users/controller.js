@@ -20,13 +20,17 @@ class UserServiceController {
 
   static async register(req, res, next) {
     const userData = req.body;
+    logger.info("Register request received", {
+      userData: { ...userData, password: "***" },
+      correlationId: req.correlationId,
+    });
     try {
       const result = await userService.handleRegister(userData);
       res.status(200).json(result);
     } catch (error) {
       logger.error("Error in register controller", {
         error: error.message,
-        respose: error.response?.data,
+        response: error.response?.data,
         correlationId: req.correlationId,
       });
       res.status(400).json(error.response?.data || { error: error.message });

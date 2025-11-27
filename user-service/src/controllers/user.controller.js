@@ -4,9 +4,12 @@ export class UserController {
   static async createUser(req, res) {
     try {
       const userData = req.body;
+      console.log("Creating user with data:", { ...userData, password: "***" });
       const newUser = await UserService.createUser(userData);
+      console.log("User created successfully:", { id: newUser.id, username: newUser.username });
       res.status(201).json(newUser);
     } catch (error) {
+      console.error("Error creating user:", error);
       res.status(400).json({ error: error.message });
     }
   }
@@ -106,6 +109,81 @@ export class UserController {
       res.status(200).json({ 
         message: "Cập nhật trạng thái thành công",
         user: updatedUser 
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  static async getUserStats(req, res) {
+    try {
+      const userId = req.params.id;
+      const stats = await UserService.getUserStats(userId);
+      res.status(200).json(stats);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  static async updateUser(req, res) {
+    try {
+      const userId = req.params.id;
+      const updateData = req.body;
+      
+      console.log("Update user request:", { userId, updateData });
+      
+      const updatedUser = await UserService.updateUser(userId, updateData);
+      
+      console.log("Updated user:", updatedUser);
+      
+      res.status(200).json({
+        message: "Cập nhật thông tin thành công",
+        user: updatedUser
+      });
+    } catch (error) {
+      console.error("Error updating user:", error);
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  static async updatePassword(req, res) {
+    try {
+      const userId = req.params.id;
+      const { currentPassword, newPassword } = req.body;
+      
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ error: "Mật khẩu hiện tại và mật khẩu mới là bắt buộc" });
+      }
+
+      const updatedUser = await UserService.updatePassword(userId, currentPassword, newPassword);
+      res.status(200).json({
+        message: "Đổi mật khẩu thành công",
+        user: updatedUser
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  static async getUserSettings(req, res) {
+    try {
+      const userId = req.params.id;
+      const settings = await UserService.getUserSettings(userId);
+      res.status(200).json(settings);
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  static async updateUserSettings(req, res) {
+    try {
+      const userId = req.params.id;
+      const settings = req.body;
+      
+      const updatedSettings = await UserService.updateUserSettings(userId, settings);
+      res.status(200).json({
+        message: "Cập nhật settings thành công",
+        settings: updatedSettings
       });
     } catch (error) {
       res.status(400).json({ error: error.message });

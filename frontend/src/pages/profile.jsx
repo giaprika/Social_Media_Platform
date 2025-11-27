@@ -28,14 +28,7 @@ export default function Profile() {
     bio: "Passionate about technology, design, and coffee ☕",
   };
 
-  const stats = {
-    followers: 0,
-    karma: 1,
-    contributions: 0,
-    redditAge: new Date(2024, 0, 15),
-    goldEarned: 0,
-    activeIn: 0,
-  };
+  // Stats will be fetched by ProfileSidebar component
 
   useEffect(() => {
     // Load posts based on active tab
@@ -79,18 +72,20 @@ export default function Profile() {
   };
 
   return (
-    <div className="bg-background">
+    <div className="bg-background min-h-screen">
       {/* Profile Header và Tabs - Gắn liền với nhau */}
-      <div className="bg-card">
-        {/* Profile Header - Scroll với content */}
-        <div className="border-b border-border">
-          <div className="max-w-5xl mx-auto px-6 py-4">
-            <ProfileHeader user={profileUser} isOwnProfile={isOwnProfile} />
+      <div className="bg-background sticky top-16 lg:top-20 z-20">
+        {/* Profile Header */}
+        <div className="border-b border-border/50">
+          <div className="max-w-5xl mx-auto px-6">
+            <div className="py-8">
+              <ProfileHeader user={profileUser} isOwnProfile={isOwnProfile} />
+            </div>
           </div>
         </div>
 
         {/* Profile Tabs - Sticky ngay dưới global header khi scroll */}
-        <div className="sticky top-16 lg:top-20 z-30 border-b border-border bg-card">
+        <div className="border-b border-border/50 bg-background">
           <div className="max-w-5xl mx-auto px-6">
             <ProfileTabs activeTab={activeTab} onTabChange={setActiveTab} />
           </div>
@@ -98,9 +93,9 @@ export default function Profile() {
       </div>
 
       {/* Content Area with Sidebar */}
-      <div className="flex gap-6 bg-background max-w-7xl mx-auto px-3 sm:px-4 lg:px-6">
+      <div className="flex gap-6 bg-background max-w-5xl mx-auto px-6">
         {/* Main Content */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 py-6">
           <ProfileContent
             activeTab={activeTab}
             posts={posts}
@@ -117,9 +112,9 @@ export default function Profile() {
         </div>
 
         {/* Profile Sidebar - Thống kê user, achievements, settings */}
-        <div className="hidden xl:block w-80 flex-shrink-0 py-4 pr-6">
-          <div className="sticky top-24">
-            <ProfileSidebar user={profileUser} stats={stats} />
+        <div className="hidden xl:block w-80 flex-shrink-0 py-6">
+          <div className="sticky top-28">
+            <ProfileSidebar user={profileUser} />
           </div>
         </div>
       </div>

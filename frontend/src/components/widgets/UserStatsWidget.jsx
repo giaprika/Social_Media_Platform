@@ -3,7 +3,6 @@ import {
   DocumentTextIcon, 
   HeartIcon,
   CakeIcon,
-  TrophyIcon
 } from "@heroicons/react/24/outline";
 import { formatDistanceToNow } from "date-fns";
 import { vi } from "date-fns/locale";
@@ -62,11 +61,11 @@ const UserStatsWidget = () => {
           </div>
         </div>
 
-        {/* Karma Section */}
+        {/* Likes Section */}
         <div className="mb-3 p-3 rounded-lg bg-muted/50">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-xs text-muted-foreground">Karma</span>
-            <TrophyIcon className="h-4 w-4 text-warning" />
+            <span className="text-xs text-muted-foreground">Likes</span>
+            <HeartIcon className="h-4 w-4 text-destructive" />
           </div>
           <p className="text-2xl font-bold text-foreground">
             {formatNumber(stats.karma)}
