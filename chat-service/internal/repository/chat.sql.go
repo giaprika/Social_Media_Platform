@@ -27,6 +27,42 @@ func (q *Queries) AddParticipant(ctx context.Context, arg AddParticipantParams) 
 	return err
 }
 
+const getAndLockUnprocessedOutbox = `-- name: GetAndLockUnprocessedOutbox :many
+SELECT id, aggregate_type, aggregate_id, payload, created_at, processed_at
+FROM outbox
+WHERE processed_at IS NULL
+ORDER BY created_at ASC
+LIMIT $1
+FOR UPDATE SKIP LOCKED
+`
+
+func (q *Queries) GetAndLockUnprocessedOutbox(ctx context.Context, limit int32) ([]Outbox, error) {
+	rows, err := q.db.Query(ctx, getAndLockUnprocessedOutbox, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Outbox
+	for rows.Next() {
+		var i Outbox
+		if err := rows.Scan(
+			&i.ID,
+			&i.AggregateType,
+			&i.AggregateID,
+			&i.Payload,
+			&i.CreatedAt,
+			&i.ProcessedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getConversationsForUser = `-- name: GetConversationsForUser :many
 SELECT 
     c.id,
@@ -218,6 +254,17 @@ type MarkAsReadParams struct {
 
 func (q *Queries) MarkAsRead(ctx context.Context, arg MarkAsReadParams) error {
 	_, err := q.db.Exec(ctx, markAsRead, arg.ConversationID, arg.UserID)
+	return err
+}
+
+const markOutboxProcessed = `-- name: MarkOutboxProcessed :exec
+UPDATE outbox
+SET processed_at = NOW()
+WHERE id = $1
+`
+
+func (q *Queries) MarkOutboxProcessed(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markOutboxProcessed, id)
 	return err
 }
 

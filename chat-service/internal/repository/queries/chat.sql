@@ -31,6 +31,14 @@ WHERE processed_at IS NULL
 ORDER BY created_at ASC
 LIMIT $1;
 
+-- name: GetAndLockUnprocessedOutbox :many
+SELECT *
+FROM outbox
+WHERE processed_at IS NULL
+ORDER BY created_at ASC
+LIMIT $1
+FOR UPDATE SKIP LOCKED;
+
 -- name: GetConversationsForUser :many
 SELECT 
     c.id,
@@ -65,3 +73,8 @@ UPDATE conversation_participants
 SET last_read_at = NOW()
 WHERE conversation_id = $1
   AND user_id = $2;
+
+-- name: MarkOutboxProcessed :exec
+UPDATE outbox
+SET processed_at = NOW()
+WHERE id = $1;
