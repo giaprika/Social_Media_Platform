@@ -4,6 +4,7 @@ package outbox
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -53,7 +54,6 @@ func TestMain(m *testing.M) {
 
 	os.Exit(code)
 }
-
 
 func setupTestInfrastructure(ctx context.Context) (*testInfrastructure, error) {
 	infra := &testInfrastructure{}
@@ -147,7 +147,6 @@ func (ti *testInfrastructure) cleanupOutbox(ctx context.Context) error {
 	_, err := ti.DBPool.Exec(ctx, "TRUNCATE TABLE outbox CASCADE")
 	return err
 }
-
 
 // insertTestOutboxEvent inserts a test event and returns its ID
 func insertTestOutboxEvent(ctx context.Context, pool *pgxpool.Pool, processed bool) (pgtype.UUID, error) {
@@ -264,7 +263,6 @@ func TestProperty_UnprocessedEventsQueryCorrectness(t *testing.T) {
 
 	properties.TestingRun(t)
 }
-
 
 // **Feature: outbox-processor, Property 2: Batch Size Limit**
 // *For any* number of unprocessed events in the database (N events), when the processor queries
@@ -580,10 +578,7 @@ func TestIntegration_ConcurrentWorkers(t *testing.T) {
 	}
 }
 
-
 // redisTestInfra holds Redis test infrastructure
-var redisTestInfra *redisTestInfrastructure
-
 type redisTestInfrastructure struct {
 	RedisContainer testcontainers.Container
 	RedisAddr      string
@@ -626,11 +621,12 @@ func (ri *redisTestInfrastructure) teardown(ctx context.Context) error {
 	return nil
 }
 
-// TestIntegration_EndToEnd_MessageToRedisStreams tests the complete flow:
-// Insert message → Outbox event created → Processor publishes to Redis Streams
-// Requirement: Event should be published within 500ms
-// **Validates: Requirements 2.1, 2.2, 2.3**
-func TestIntegration_EndToEnd_MessageToRedisStreams(t *testing.T) {
+
+// TestIntegration_EndToEnd_MessageToRedisPubSub tests the complete flow:
+// Insert message → Outbox event created → Processor publishes to Redis Pub/Sub Channel
+// Requirement: Event should be published within 100ms
+// **Validates: Task 2 (Redis Pub/Sub Publisher) and Task 9 (Integration Test)**
+func TestIntegration_EndToEnd_MessageToRedisPubSub(t *testing.T) {
 	if testInfra == nil {
 		t.Skip("Test infrastructure not available")
 	}
@@ -661,10 +657,23 @@ func TestIntegration_EndToEnd_MessageToRedisStreams(t *testing.T) {
 		t.Fatalf("cleanup failed: %v", err)
 	}
 
+	// Subscribe to the channel BEFORE starting processor
+	pubsub := redisClient.Subscribe(ctx, ChannelName)
+	defer pubsub.Close()
+
+	// Wait for subscription to be ready
+	_, err = pubsub.Receive(ctx)
+	if err != nil {
+		t.Fatalf("Failed to subscribe: %v", err)
+	}
+
+	// Channel to receive messages
+	msgCh := pubsub.Channel()
+
 	// Create processor with fast poll interval
 	logger, _ := zap.NewDevelopment()
 	processor := NewProcessor(testInfra.DBPool, redisClient, logger, ProcessorConfig{
-		PollInterval: 50 * time.Millisecond,
+		PollInterval: 20 * time.Millisecond,
 		BatchSize:    100,
 		WorkerCount:  10,
 	})
@@ -692,53 +701,51 @@ func TestIntegration_EndToEnd_MessageToRedisStreams(t *testing.T) {
 		t.Fatalf("Failed to insert outbox event: %v", err)
 	}
 
-	// Wait for event to be published to Redis Streams (max 500ms)
-	streamKey := "chat:events:message.sent"
-	deadline := time.Now().Add(500 * time.Millisecond)
+	// Wait for event to be published to Redis Channel (max 100ms as per task requirement)
+	var receivedMsg *redis.Message
+	deadline := time.Now().Add(100 * time.Millisecond)
 
-	var streamEntries []redis.XMessage
 	for time.Now().Before(deadline) {
-		result, err := redisClient.XRange(ctx, streamKey, "-", "+").Result()
-		if err != nil {
-			t.Logf("XRange error: %v", err)
-			time.Sleep(10 * time.Millisecond)
-			continue
+		select {
+		case msg := <-msgCh:
+			receivedMsg = msg
+		default:
+			time.Sleep(5 * time.Millisecond)
 		}
-
-		if len(result) > 0 {
-			streamEntries = result
+		if receivedMsg != nil {
 			break
 		}
-
-		time.Sleep(10 * time.Millisecond)
 	}
 
 	latency := time.Since(startTime)
 
 	// Verify event was published
-	if len(streamEntries) == 0 {
-		t.Fatalf("Event was not published to Redis Streams within 500ms (waited %v)", latency)
+	if receivedMsg == nil {
+		t.Fatalf("Event was not published to Redis Channel within 100ms (waited %v)", latency)
 	}
 
-	t.Logf("Event published to Redis Streams in %v", latency)
+	t.Logf("Event published to Redis Channel in %v", latency)
 
-	// Verify latency requirement
-	if latency > 500*time.Millisecond {
-		t.Errorf("Latency %v exceeds 500ms requirement", latency)
+	// Verify latency requirement (<100ms)
+	if latency > 100*time.Millisecond {
+		t.Errorf("Latency %v exceeds 100ms requirement", latency)
 	}
 
 	// Verify event content
-	entry := streamEntries[0]
-	if entry.Values["aggregate_type"] != "message.sent" {
-		t.Errorf("Expected aggregate_type 'message.sent', got '%v'", entry.Values["aggregate_type"])
+	var payload EventPayload
+	if err := json.Unmarshal([]byte(receivedMsg.Payload), &payload); err != nil {
+		t.Fatalf("Failed to unmarshal payload: %v", err)
 	}
 
-	t.Logf("Stream entry ID: %s", entry.ID)
-	t.Logf("Stream entry values: %v", entry.Values)
+	if payload.AggregateType != "message.sent" {
+		t.Errorf("Expected aggregate_type 'message.sent', got '%v'", payload.AggregateType)
+	}
+
+	t.Logf("Received payload: %+v", payload)
 }
 
 // TestIntegration_EndToEnd_MultipleMessages tests processing multiple messages
-// and verifies all are published to Redis Streams within acceptable latency.
+// and verifies all are published to Redis Pub/Sub Channel within acceptable latency.
 func TestIntegration_EndToEnd_MultipleMessages(t *testing.T) {
 	if testInfra == nil {
 		t.Skip("Test infrastructure not available")
@@ -765,10 +772,23 @@ func TestIntegration_EndToEnd_MultipleMessages(t *testing.T) {
 		t.Fatalf("cleanup failed: %v", err)
 	}
 
+	// Subscribe to the channel BEFORE starting processor
+	pubsub := redisClient.Subscribe(ctx, ChannelName)
+	defer pubsub.Close()
+
+	// Wait for subscription to be ready
+	_, err = pubsub.Receive(ctx)
+	if err != nil {
+		t.Fatalf("Failed to subscribe: %v", err)
+	}
+
+	// Channel to receive messages
+	msgCh := pubsub.Channel()
+
 	// Create processor
 	logger, _ := zap.NewDevelopment()
 	processor := NewProcessor(testInfra.DBPool, redisClient, logger, ProcessorConfig{
-		PollInterval: 50 * time.Millisecond,
+		PollInterval: 20 * time.Millisecond,
 		BatchSize:    100,
 		WorkerCount:  10,
 	})
@@ -804,24 +824,32 @@ func TestIntegration_EndToEnd_MultipleMessages(t *testing.T) {
 	t.Logf("Inserted %d events in %v", numEvents, insertDuration)
 
 	// Wait for all events to be published (max 2 seconds for 50 events)
-	streamKey := "chat:events:message.sent"
 	deadline := time.Now().Add(2 * time.Second)
+	publishedCount := 0
 
-	var publishedCount int
-	for time.Now().Before(deadline) {
-		result, err := redisClient.XLen(ctx, streamKey).Result()
-		if err != nil {
-			time.Sleep(10 * time.Millisecond)
-			continue
+	for time.Now().Before(deadline) && publishedCount < numEvents {
+		select {
+		case <-msgCh:
+			publishedCount++
+		case <-time.After(50 * time.Millisecond):
+			// Check if all events are processed in DB
+			remaining, _ := queries.GetUnprocessedOutbox(ctx, int32(numEvents+10))
+			if len(remaining) == 0 {
+				// All processed, wait a bit more for messages
+				time.Sleep(100 * time.Millisecond)
+				// Drain remaining messages
+				for {
+					select {
+					case <-msgCh:
+						publishedCount++
+					default:
+						goto done
+					}
+				}
+			}
 		}
-
-		publishedCount = int(result)
-		if publishedCount >= numEvents {
-			break
-		}
-
-		time.Sleep(20 * time.Millisecond)
 	}
+done:
 
 	totalLatency := time.Since(startTime)
 
@@ -836,14 +864,13 @@ func TestIntegration_EndToEnd_MultipleMessages(t *testing.T) {
 	avgLatency := totalLatency / time.Duration(numEvents)
 	t.Logf("Average latency per event: %v", avgLatency)
 
-	// P99 should be under 200ms (as per acceptance criteria)
-	// For this test, we check total time is reasonable
+	// Total time should be reasonable
 	if totalLatency > 2*time.Second {
 		t.Errorf("Total latency %v exceeds 2s for %d events", totalLatency, numEvents)
 	}
 }
 
-// TestIntegration_Latency_P99 measures P99 latency for event processing
+// TestIntegration_Latency_P99 measures P99 latency for event processing via Pub/Sub
 func TestIntegration_Latency_P99(t *testing.T) {
 	if testInfra == nil {
 		t.Skip("Test infrastructure not available")
@@ -870,10 +897,21 @@ func TestIntegration_Latency_P99(t *testing.T) {
 		t.Fatalf("cleanup failed: %v", err)
 	}
 
+	// Subscribe to the channel
+	pubsub := redisClient.Subscribe(ctx, ChannelName)
+	defer pubsub.Close()
+
+	_, err = pubsub.Receive(ctx)
+	if err != nil {
+		t.Fatalf("Failed to subscribe: %v", err)
+	}
+
+	msgCh := pubsub.Channel()
+
 	// Create processor
 	logger, _ := zap.NewDevelopment()
 	processor := NewProcessor(testInfra.DBPool, redisClient, logger, ProcessorConfig{
-		PollInterval: 50 * time.Millisecond,
+		PollInterval: 20 * time.Millisecond,
 		BatchSize:    100,
 		WorkerCount:  10,
 	})
@@ -891,12 +929,8 @@ func TestIntegration_Latency_P99(t *testing.T) {
 	latencies := make([]time.Duration, 0, numSamples)
 
 	queries := repository.New(testInfra.DBPool)
-	streamKey := "chat:events:message.sent"
 
 	for i := 0; i < numSamples; i++ {
-		// Get current stream length
-		beforeLen, _ := redisClient.XLen(ctx, streamKey).Result()
-
 		// Insert event
 		startTime := time.Now()
 		aggregateID := pgtype.UUID{}
@@ -911,20 +945,29 @@ func TestIntegration_Latency_P99(t *testing.T) {
 			t.Fatalf("Failed to insert: %v", err)
 		}
 
-		// Wait for event to appear in stream
-		deadline := time.Now().Add(500 * time.Millisecond)
+		// Wait for event to appear in channel
+		deadline := time.Now().Add(200 * time.Millisecond)
+		received := false
 		for time.Now().Before(deadline) {
-			afterLen, _ := redisClient.XLen(ctx, streamKey).Result()
-			if afterLen > beforeLen {
+			select {
+			case <-msgCh:
 				latency := time.Since(startTime)
 				latencies = append(latencies, latency)
+				received = true
+			default:
+				time.Sleep(2 * time.Millisecond)
+			}
+			if received {
 				break
 			}
-			time.Sleep(5 * time.Millisecond)
+		}
+
+		if !received {
+			t.Logf("Sample %d: message not received within deadline", i)
 		}
 
 		// Small delay between samples
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(30 * time.Millisecond)
 	}
 
 	// Calculate P99
@@ -951,8 +994,8 @@ func TestIntegration_Latency_P99(t *testing.T) {
 	t.Logf("  P99: %v", p99)
 	t.Logf("  Max: %v", maxLatency)
 
-	// Verify P99 < 200ms (acceptance criteria)
-	if p99 > 200*time.Millisecond {
-		t.Errorf("P99 latency %v exceeds 200ms requirement", p99)
+	// Verify P99 < 100ms (task requirement: event received on Redis Channel trong <100ms)
+	if p99 > 100*time.Millisecond {
+		t.Errorf("P99 latency %v exceeds 100ms requirement", p99)
 	}
 }
