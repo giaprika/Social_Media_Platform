@@ -154,6 +154,32 @@ func (q *Queries) GetAndLockUnprocessedOutboxWithRetry(ctx context.Context, arg 
 	return items, nil
 }
 
+const getConversationParticipants = `-- name: GetConversationParticipants :many
+SELECT user_id
+FROM conversation_participants
+WHERE conversation_id = $1
+`
+
+func (q *Queries) GetConversationParticipants(ctx context.Context, conversationID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, getConversationParticipants, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var user_id pgtype.UUID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getConversationsForUser = `-- name: GetConversationsForUser :many
 SELECT 
     c.id,

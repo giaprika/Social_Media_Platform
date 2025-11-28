@@ -356,12 +356,15 @@ func TestCreateMessageEventPayload(t *testing.T) {
 	}
 	message.CreatedAt.Scan(time.Now())
 
-	payload, err := service.createMessageEventPayload(message)
+	receiverIDs := []string{"receiver-1", "receiver-2"}
+	payload, err := service.createMessageEventPayload(message, receiverIDs)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, payload)
 	assert.Contains(t, string(payload), "message.sent")
 	assert.Contains(t, string(payload), "Test message")
+	assert.Contains(t, string(payload), "receiver_ids")
+	assert.Contains(t, string(payload), "receiver-1")
 }
 
 func TestCreateMessageEventPayload_WithDifferentContent(t *testing.T) {
@@ -408,7 +411,8 @@ func TestCreateMessageEventPayload_WithDifferentContent(t *testing.T) {
 			}
 			message.CreatedAt.Scan(time.Now())
 
-			payload, err := service.createMessageEventPayload(message)
+			receiverIDs := []string{"receiver-1"}
+			payload, err := service.createMessageEventPayload(message, receiverIDs)
 
 			assert.NoError(t, err)
 			assert.NotNil(t, payload)

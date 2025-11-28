@@ -61,7 +61,9 @@ func (cm *ConnectionManager) Add(userID string, client *Client) {
 
 	if oldClient, ok := cm.connections[userID]; ok {
 		oldClient.Close()
-		_ = oldClient.Conn.Close()
+		if oldClient.Conn != nil {
+			_ = oldClient.Conn.Close()
+		}
 	}
 	cm.connections[userID] = client
 }
@@ -82,7 +84,9 @@ func (cm *ConnectionManager) Remove(userID string, client *Client) {
 	}
 
 	currentClient.Close()
-	_ = currentClient.Conn.Close()
+	if currentClient.Conn != nil {
+		_ = currentClient.Conn.Close()
+	}
 	delete(cm.connections, userID)
 }
 
