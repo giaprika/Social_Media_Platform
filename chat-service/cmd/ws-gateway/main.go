@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -29,6 +28,7 @@ var (
 	}
 	connManager = ws.NewConnectionManager()
 	subscriber  *ws.Subscriber
+	router      *ws.Router
 	logger      *zap.Logger
 )
 
@@ -156,8 +156,11 @@ func main() {
 	}
 	logger.Info("Connected to Redis", zap.String("addr", redisAddr))
 
+	// Initialize message router
+	router = ws.NewRouter(connManager, logger, nil) // TODO: Add metrics in Task 10
+
 	// Initialize and start Redis Pub/Sub subscriber
-	subscriber = ws.NewSubscriber(redisClient, logger, handleChatEvent)
+	subscriber = ws.NewSubscriber(redisClient, logger, router.HandleEvent)
 	if err := subscriber.Start(ctx); err != nil {
 		logger.Fatal("Failed to start subscriber", zap.Error(err))
 	}
@@ -214,34 +217,7 @@ func main() {
 	logger.Info("WebSocket Gateway stopped")
 }
 
-// handleChatEvent processes events received from Redis Pub/Sub.
-// This is the handler for Task 5 - it receives events and will be extended in Task 6 for routing.
-func handleChatEvent(ctx context.Context, event ws.EventPayload) {
-	logger.Debug("Processing chat event",
-		zap.String("event_id", event.EventID),
-		zap.String("aggregate_type", event.AggregateType),
-		zap.String("aggregate_id", event.AggregateID),
-	)
 
-	// Prepare message to send to clients
-	// The event payload is forwarded as-is to connected clients
-	messageJSON, err := json.Marshal(event)
-	if err != nil {
-		logger.Error("Failed to marshal event for WebSocket",
-			zap.String("event_id", event.EventID),
-			zap.Error(err),
-		)
-		return
-	}
-
-	// TODO: Task 6 will implement proper routing based on aggregate_type and recipients
-	// For now, log that we received the event
-	logger.Info("Chat event received from Pub/Sub",
-		zap.String("event_id", event.EventID),
-		zap.String("aggregate_type", event.AggregateType),
-		zap.Int("payload_size", len(messageJSON)),
-	)
-}
 
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {

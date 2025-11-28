@@ -74,6 +74,11 @@ SET last_read_at = NOW()
 WHERE conversation_id = $1
   AND user_id = $2;
 
+-- name: GetConversationParticipants :many
+SELECT user_id
+FROM conversation_participants
+WHERE conversation_id = $1;
+
 -- name: MarkOutboxProcessed :exec
 UPDATE outbox
 SET processed_at = NOW()
