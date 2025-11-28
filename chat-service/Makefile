@@ -36,3 +36,7 @@ audit:
 	@echo "--- 3. Running Tests ---"
 	go test ./... -v
 	@echo "✅ Ngon lanh! Ban co the Push."
+
+build:
+	@echo "Building binaries..."
+	go build -o bin/ ./cmd/...
