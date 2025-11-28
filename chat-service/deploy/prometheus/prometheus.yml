@@ -1,6 +1,23 @@
 global:
   scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Alert rules
+rule_files:
+  - "alert_rules.yml"
+
+# Alertmanager configuration (optional - configure if you have Alertmanager)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - alertmanager:9093
+
 scrape_configs:
   - job_name: 'chat-service'
     static_configs:
-      - targets: ['host.docker.internal:8080'] # Localhost của máy host
+      - targets: ['host.docker.internal:8080'] # gRPC/HTTP server metrics
+
+  - job_name: 'outbox-processor'
+    static_configs:
+      - targets: ['host.docker.internal:9090'] # Outbox processor metrics

@@ -274,6 +274,9 @@ go tool cover -html=coverage.out
 
 # Run specific package tests
 go test ./internal/service/... -v
+
+# Run integration tests (requires Docker)
+go test -v -tags=integration ./internal/outbox/... -timeout 120s
 ```
 
 ### Testing Guidelines
@@ -324,6 +327,9 @@ Configuration is managed via environment variables or `app.env` file:
 | `REDIS_ADDR` | Redis address | `localhost:6379` |
 | `HTTP_SERVER_ADDRESS` | HTTP server bind address | `0.0.0.0:8080` |
 | `GRPC_SERVER_ADDRESS` | gRPC server bind address | `0.0.0.0:9090` |
+| `METRICS_PORT` | Prometheus metrics port | `9090` |
+| `OUTBOX_POLL_INTERVAL_MS` | Outbox poll interval (ms) | `100` |
+| `OUTBOX_BATCH_SIZE` | Outbox batch size | `100` |
 
 ## Key Features
 
@@ -353,7 +359,42 @@ Messages are stored atomically with outbox events in a single transaction:
 3. Insert event into `outbox` table
 4. Commit transaction
 
-A separate outbox processor publishes events asynchronously, ensuring reliable event delivery even if the message service crashes.
+A separate outbox processor publishes events asynchronously to Redis Streams, ensuring reliable event delivery even if the message service crashes.
+
+#### Outbox Processor Features
+
+- **Batch Processing**: 100 events per batch with concurrent worker pool (10 workers)
+- **Retry Logic**: Exponential backoff (1s → 2s → 4s) with max 3 retries
+- **Dead Letter Queue**: Failed events moved to DLQ for manual recovery
+- **Graceful Shutdown**: Completes current batch before exit
+- **Metrics**: Prometheus metrics for monitoring
+- **P99 Latency**: < 200ms from insert to Redis Streams
+
+#### Running the Outbox Processor
+
+```bash
+go run cmd/outbox/main.go
+```
+
+Metrics available at `http://localhost:9090/metrics`:
+- `outbox_pending_count` - Current pending events
+- `outbox_processed_total` - Total processed events
+- `outbox_publish_errors_total` - Total publish errors
+- `outbox_dlq_total` - Events moved to Dead Letter Queue
+
+#### Dead Letter Queue Recovery
+
+```sql
+-- View failed events
+SELECT * FROM outbox_dlq ORDER BY moved_to_dlq_at DESC;
+
+-- Replay an event
+INSERT INTO outbox (aggregate_type, aggregate_id, payload)
+SELECT aggregate_type, aggregate_id, payload FROM outbox_dlq WHERE id = '<dlq_id>';
+
+-- Delete from DLQ after successful replay
+DELETE FROM outbox_dlq WHERE id = '<dlq_id>';
+```
 
 ### Pagination
 
@@ -413,6 +454,18 @@ Pre-configured dashboards for:
 - Error rates
 - Database performance
 - Redis operations
+
+### Alerting
+
+Prometheus alert rules configured in `deploy/prometheus/alert_rules.yml`:
+
+| Alert | Condition | Severity |
+|-------|-----------|----------|
+| `OutboxBacklogHigh` | pending > 1000 for 5m | warning |
+| `OutboxBacklogCritical` | pending > 5000 for 2m | critical |
+| `OutboxPublishErrorsHigh` | error rate > 10/sec | warning |
+| `OutboxDLQIncreasing` | DLQ rate > 0 | warning |
+| `OutboxProcessorStuck` | no processing + pending > 0 | critical |
 
 ## Performance
 
@@ -528,7 +581,12 @@ For questions or issues:
 
 ## Roadmap
 
-- [ ] WebSocket support for real-time updates
+- [x] ~~Transactional Outbox Pattern~~
+- [x] ~~Outbox Processor with Redis Streams~~
+- [x] ~~Retry Logic with Exponential Backoff~~
+- [x] ~~Dead Letter Queue~~
+- [x] ~~Prometheus Metrics & Alerts~~
+- [ ] WebSocket Gateway for real-time updates
 - [ ] Message reactions and threading
 - [ ] File attachments
 - [ ] End-to-end encryption

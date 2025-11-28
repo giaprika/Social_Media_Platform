@@ -1,0 +1,62 @@
+groups:
+  - name: outbox_alerts
+    rules:
+      # Alert when outbox backlog exceeds 1000 events for 5 minutes
+      - alert: OutboxBacklogHigh
+        expr: outbox_pending_count > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Outbox backlog is high"
+          description: "Outbox has {{ $value }} pending events (threshold: 1000) for more than 5 minutes. This may indicate processing issues."
+
+      # Alert when outbox backlog exceeds 5000 events (critical)
+      - alert: OutboxBacklogCritical
+        expr: outbox_pending_count > 5000
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Outbox backlog is critically high"
+          description: "Outbox has {{ $value }} pending events (threshold: 5000). Immediate attention required."
+
+      # Alert when publish errors are increasing rapidly
+      - alert: OutboxPublishErrorsHigh
+        expr: rate(outbox_publish_errors_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High rate of outbox publish errors"
+          description: "Outbox publish error rate is {{ $value | printf \"%.2f\" }} errors/sec over the last 5 minutes."
+
+      # Alert when events are being moved to DLQ
+      - alert: OutboxDLQIncreasing
+        expr: rate(outbox_dlq_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Events are being moved to Dead Letter Queue"
+          description: "{{ $value | printf \"%.2f\" }} events/sec are being moved to DLQ. Check for persistent failures."
+
+      # Alert when processing latency is high (P99 > 500ms)
+      - alert: OutboxProcessingLatencyHigh
+        expr: histogram_quantile(0.99, rate(outbox_processing_duration_seconds_bucket[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Outbox processing latency is high"
+          description: "P99 processing latency is {{ $value | printf \"%.2f\" }}s (threshold: 0.5s)."
+
+      # Alert when processor appears to be stuck (no events processed)
+      - alert: OutboxProcessorStuck
+        expr: rate(outbox_processed_total[10m]) == 0 and outbox_pending_count > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Outbox processor appears to be stuck"
+          description: "No events have been processed in the last 10 minutes while {{ $value }} events are pending."

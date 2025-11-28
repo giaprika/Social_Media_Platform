@@ -40,3 +40,15 @@ type Outbox struct {
 	RetryCount    int32              `json:"retry_count"`
 	LastRetryAt   pgtype.Timestamptz `json:"last_retry_at"`
 }
+
+type OutboxDlq struct {
+	ID                pgtype.UUID        `json:"id"`
+	OriginalEventID   pgtype.UUID        `json:"original_event_id"`
+	AggregateType     string             `json:"aggregate_type"`
+	AggregateID       pgtype.UUID        `json:"aggregate_id"`
+	Payload           []byte             `json:"payload"`
+	ErrorMessage      pgtype.Text        `json:"error_message"`
+	RetryCount        int32              `json:"retry_count"`
+	OriginalCreatedAt pgtype.Timestamptz `json:"original_created_at"`
+	MovedToDlqAt      pgtype.Timestamptz `json:"moved_to_dlq_at"`
+}
