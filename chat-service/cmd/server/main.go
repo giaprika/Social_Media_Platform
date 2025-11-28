@@ -12,6 +12,7 @@ import (
 	"time"
 
 	chatv1 "chat-service/api/chat/v1"
+	"chat-service/internal/auth"
 	"chat-service/internal/config"
 	"chat-service/internal/middleware"
 	"chat-service/internal/service"
@@ -65,7 +66,7 @@ func main() {
 		grpc.ChainUnaryInterceptor(
 			middleware.GrpcLogger(logger),
 			middleware.GrpcRecovery(logger),
-			middleware.GrpcAuthExtractor(logger),
+			auth.GrpcAuthInterceptor(logger),
 		),
 	)
 
