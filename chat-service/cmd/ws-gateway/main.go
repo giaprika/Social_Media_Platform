@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -13,6 +14,8 @@ import (
 	"chat-service/internal/ws"
 
 	"github.com/gorilla/websocket"
+	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 var (
@@ -25,6 +28,8 @@ var (
 		},
 	}
 	connManager = ws.NewConnectionManager()
+	subscriber  *ws.Subscriber
+	logger      *zap.Logger
 )
 
 const (
@@ -126,6 +131,37 @@ func writePump(userID string, client *ws.Client) {
 }
 
 func main() {
+	// Initialize logger
+	var err error
+	logger, err = zap.NewProduction()
+	if err != nil {
+		log.Fatal("Failed to create logger:", err)
+	}
+	defer func() {
+		_ = logger.Sync()
+	}()
+
+	// Initialize Redis client
+	redisAddr := getEnv("REDIS_ADDR", "localhost:6379")
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: getEnv("REDIS_PASSWORD", ""),
+		DB:       0,
+	})
+
+	// Test Redis connection
+	ctx := context.Background()
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		logger.Fatal("Failed to connect to Redis", zap.Error(err))
+	}
+	logger.Info("Connected to Redis", zap.String("addr", redisAddr))
+
+	// Initialize and start Redis Pub/Sub subscriber
+	subscriber = ws.NewSubscriber(redisClient, logger, handleChatEvent)
+	if err := subscriber.Start(ctx); err != nil {
+		logger.Fatal("Failed to start subscriber", zap.Error(err))
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", serveWs)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -147,9 +183,14 @@ func main() {
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 		<-sigChan
 
-		log.Println("Shutting down WebSocket Gateway...")
+		logger.Info("Shutting down WebSocket Gateway...")
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+
+		// Stop subscriber first
+		if subscriber != nil {
+			_ = subscriber.Stop()
+		}
 
 		// Close all connections
 		for userID, client := range connManager.GetAllClients() {
@@ -158,16 +199,48 @@ func main() {
 			connManager.Remove(userID, client)
 		}
 
+		// Close Redis client
+		_ = redisClient.Close()
+
 		if err := server.Shutdown(ctx); err != nil {
-			log.Printf("Shutdown error: %v", err)
+			logger.Error("Shutdown error", zap.Error(err))
 		}
 	}()
 
-	log.Printf("WebSocket Gateway starting on %s", addr)
+	logger.Info("WebSocket Gateway starting", zap.String("addr", addr))
 	if err := server.ListenAndServe(); err != http.ErrServerClosed {
-		log.Fatal("ListenAndServe: ", err)
+		logger.Fatal("ListenAndServe failed", zap.Error(err))
 	}
-	log.Println("WebSocket Gateway stopped")
+	logger.Info("WebSocket Gateway stopped")
+}
+
+// handleChatEvent processes events received from Redis Pub/Sub.
+// This is the handler for Task 5 - it receives events and will be extended in Task 6 for routing.
+func handleChatEvent(ctx context.Context, event ws.EventPayload) {
+	logger.Debug("Processing chat event",
+		zap.String("event_id", event.EventID),
+		zap.String("aggregate_type", event.AggregateType),
+		zap.String("aggregate_id", event.AggregateID),
+	)
+
+	// Prepare message to send to clients
+	// The event payload is forwarded as-is to connected clients
+	messageJSON, err := json.Marshal(event)
+	if err != nil {
+		logger.Error("Failed to marshal event for WebSocket",
+			zap.String("event_id", event.EventID),
+			zap.Error(err),
+		)
+		return
+	}
+
+	// TODO: Task 6 will implement proper routing based on aggregate_type and recipients
+	// For now, log that we received the event
+	logger.Info("Chat event received from Pub/Sub",
+		zap.String("event_id", event.EventID),
+		zap.String("aggregate_type", event.AggregateType),
+		zap.Int("payload_size", len(messageJSON)),
+	)
 }
 
 func getEnv(key, defaultValue string) string {
