@@ -29,6 +29,7 @@ type ProcessorInterface interface {
 type Processor struct {
 	db           *pgxpool.Pool
 	redis        *redis.Client
+	publisher    *Publisher
 	logger       *zap.Logger
 	pollInterval time.Duration
 	batchSize    int
@@ -41,6 +42,7 @@ func NewProcessor(db *pgxpool.Pool, redisClient *redis.Client, logger *zap.Logge
 	return &Processor{
 		db:           db,
 		redis:        redisClient,
+		publisher:    NewPublisher(redisClient),
 		logger:       logger,
 		pollInterval: cfg.PollInterval,
 		batchSize:    cfg.BatchSize,
@@ -183,10 +185,18 @@ func (p *Processor) processBatchWithTx(ctx context.Context, queries *repository.
 }
 
 
-// processEvent handles the actual event processing (future: publish to Redis Streams).
+// processEvent publishes the event to Redis Streams.
 func (p *Processor) processEvent(ctx context.Context, event repository.Outbox) error {
-	// TODO: Implement Redis Streams publishing in Task 2
-	// For now, this is a no-op placeholder
+	streamID, err := p.publisher.Publish(ctx, event)
+	if err != nil {
+		return err
+	}
+
+	p.logger.Debug("event published to Redis Streams",
+		zap.String("event_id", event.ID.String()),
+		zap.String("aggregate_type", event.AggregateType),
+		zap.String("stream_id", streamID))
+
 	return nil
 }
 
