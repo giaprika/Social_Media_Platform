@@ -78,3 +78,28 @@ WHERE conversation_id = $1
 UPDATE outbox
 SET processed_at = NOW()
 WHERE id = $1;
+
+-- name: IncrementOutboxRetry :exec
+UPDATE outbox
+SET retry_count = retry_count + 1,
+    last_retry_at = NOW()
+WHERE id = $1;
+
+-- name: GetAndLockUnprocessedOutboxWithRetry :many
+SELECT *
+FROM outbox
+WHERE processed_at IS NULL
+  AND retry_count < $2
+  AND (
+    last_retry_at IS NULL 
+    OR last_retry_at < NOW() - ($3::interval)
+  )
+ORDER BY created_at ASC
+LIMIT $1
+FOR UPDATE SKIP LOCKED;
+
+-- name: MarkOutboxFailed :exec
+UPDATE outbox
+SET retry_count = retry_count + 1,
+    last_retry_at = NOW()
+WHERE id = $1;

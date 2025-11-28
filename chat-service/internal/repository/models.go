@@ -37,4 +37,6 @@ type Outbox struct {
 	Payload       []byte             `json:"payload"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	ProcessedAt   pgtype.Timestamptz `json:"processed_at"`
+	RetryCount    int32              `json:"retry_count"`
+	LastRetryAt   pgtype.Timestamptz `json:"last_retry_at"`
 }
