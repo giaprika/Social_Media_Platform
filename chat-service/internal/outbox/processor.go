@@ -2,6 +2,7 @@ package outbox
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"chat-service/internal/repository"
@@ -12,10 +13,27 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	// DefaultMaxRetries is the maximum number of retry attempts for an event.
+	DefaultMaxRetries = 3
+
+	// DefaultBaseBackoff is the base duration for exponential backoff.
+	DefaultBaseBackoff = 1 * time.Second
+
+	// DefaultWorkerCount is the default number of concurrent workers for batch processing.
+	DefaultWorkerCount = 10
+
+	// DefaultBatchSize is the default batch size for processing events.
+	DefaultBatchSize = 100
+)
+
 // ProcessorConfig holds configuration for the outbox processor.
 type ProcessorConfig struct {
 	PollInterval time.Duration
-	BatchSize    int
+	BatchSize    int           // Number of events to fetch per poll (default: 100)
+	MaxRetries   int           // Maximum retry attempts (default: 3)
+	BaseBackoff  time.Duration // Base backoff duration for exponential backoff (default: 1s)
+	WorkerCount  int           // Number of concurrent workers for publishing (default: 10)
 }
 
 // ProcessorInterface defines the interface for outbox processor (for testing).
@@ -33,19 +51,52 @@ type Processor struct {
 	logger       *zap.Logger
 	pollInterval time.Duration
 	batchSize    int
+	maxRetries   int
+	baseBackoff  time.Duration
+	workerCount  int
 	stopCh       chan struct{}
 	doneCh       chan struct{}
 }
 
+// eventResult holds the result of processing a single event.
+type eventResult struct {
+	event   repository.Outbox
+	success bool
+	err     error
+}
+
 // NewProcessor creates a new outbox processor.
 func NewProcessor(db *pgxpool.Pool, redisClient *redis.Client, logger *zap.Logger, cfg ProcessorConfig) *Processor {
+	maxRetries := cfg.MaxRetries
+	if maxRetries <= 0 {
+		maxRetries = DefaultMaxRetries
+	}
+
+	baseBackoff := cfg.BaseBackoff
+	if baseBackoff <= 0 {
+		baseBackoff = DefaultBaseBackoff
+	}
+
+	workerCount := cfg.WorkerCount
+	if workerCount <= 0 {
+		workerCount = DefaultWorkerCount
+	}
+
+	batchSize := cfg.BatchSize
+	if batchSize <= 0 {
+		batchSize = DefaultBatchSize
+	}
+
 	return &Processor{
 		db:           db,
 		redis:        redisClient,
 		publisher:    NewPublisher(redisClient),
 		logger:       logger,
 		pollInterval: cfg.PollInterval,
-		batchSize:    cfg.BatchSize,
+		batchSize:    batchSize,
+		maxRetries:   maxRetries,
+		baseBackoff:  baseBackoff,
+		workerCount:  workerCount,
 		stopCh:       make(chan struct{}),
 		doneCh:       make(chan struct{}),
 	}
@@ -153,35 +204,153 @@ func (p *Processor) ProcessBatch(ctx context.Context, events []repository.Outbox
 	return processed, nil
 }
 
-// processBatchWithTx processes events within an existing transaction.
+// processBatchWithTx processes events within an existing transaction using worker pool.
+// Phase 1: Concurrent publish to Redis (I/O bound, benefits from parallelism)
+// Phase 2: Sequential DB updates (must be serialized within transaction)
 func (p *Processor) processBatchWithTx(ctx context.Context, queries *repository.Queries, events []repository.Outbox) (int, error) {
+	if len(events) == 0 {
+		return 0, nil
+	}
+
+	// Phase 1: Concurrent publishing using worker pool
+	results := p.publishConcurrently(ctx, events)
+
+	// Phase 2: Sequential DB updates based on publish results
 	processed := 0
 	var lastErr error
 
-	for _, event := range events {
-		// Process the event (future: publish to Redis Streams)
-		if err := p.processEvent(ctx, event); err != nil {
+	for _, result := range results {
+		if result.success {
+			// Mark as processed
+			if err := p.markEventProcessed(ctx, queries, result.event.ID); err != nil {
+				p.logger.Error("failed to mark event as processed",
+					zap.String("event_id", result.event.ID.String()),
+					zap.Error(err))
+				lastErr = err
+				continue
+			}
+			processed++
+		} else {
+			// Handle failure - increment retry count
 			p.logger.Error("failed to process event",
-				zap.String("event_id", event.ID.String()),
-				zap.String("aggregate_type", event.AggregateType),
-				zap.Error(err))
-			lastErr = err
-			continue
-		}
+				zap.String("event_id", result.event.ID.String()),
+				zap.String("aggregate_type", result.event.AggregateType),
+				zap.Int32("retry_count", result.event.RetryCount),
+				zap.Error(result.err))
 
-		// Mark as processed
-		if err := p.markEventProcessed(ctx, queries, event.ID); err != nil {
-			p.logger.Error("failed to mark event as processed",
-				zap.String("event_id", event.ID.String()),
-				zap.Error(err))
-			lastErr = err
-			continue
+			if err := p.handleEventFailure(ctx, queries, result.event); err != nil {
+				p.logger.Error("failed to handle event failure",
+					zap.String("event_id", result.event.ID.String()),
+					zap.Error(err))
+			}
+			lastErr = result.err
 		}
-
-		processed++
 	}
 
 	return processed, lastErr
+}
+
+// publishConcurrently publishes events to Redis using a worker pool.
+// Returns results in the same order as input events.
+func (p *Processor) publishConcurrently(ctx context.Context, events []repository.Outbox) []eventResult {
+	numEvents := len(events)
+	results := make([]eventResult, numEvents)
+
+	// Use semaphore pattern for worker pool
+	workerCount := p.workerCount
+	if workerCount > numEvents {
+		workerCount = numEvents
+	}
+
+	var wg sync.WaitGroup
+	semaphore := make(chan struct{}, workerCount)
+
+	for i, event := range events {
+		wg.Add(1)
+		go func(idx int, evt repository.Outbox) {
+			defer wg.Done()
+
+			// Acquire semaphore slot
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+
+			// Check context cancellation
+			if ctx.Err() != nil {
+				results[idx] = eventResult{
+					event:   evt,
+					success: false,
+					err:     ctx.Err(),
+				}
+				return
+			}
+
+			// Publish to Redis
+			err := p.processEvent(ctx, evt)
+			results[idx] = eventResult{
+				event:   evt,
+				success: err == nil,
+				err:     err,
+			}
+		}(i, event)
+	}
+
+	wg.Wait()
+	return results
+}
+
+// handleEventFailure handles a failed event by incrementing retry count.
+// If max retries exceeded, logs a critical error for manual intervention.
+func (p *Processor) handleEventFailure(ctx context.Context, queries *repository.Queries, event repository.Outbox) error {
+	newRetryCount := event.RetryCount + 1
+
+	// Check if max retries exceeded (will be handled by Dead Letter Queue in Task 8)
+	if int(newRetryCount) >= p.maxRetries {
+		p.logger.Error("event exceeded max retries - requires manual intervention",
+			zap.String("event_id", event.ID.String()),
+			zap.String("aggregate_type", event.AggregateType),
+			zap.String("aggregate_id", event.AggregateID.String()),
+			zap.Int32("retry_count", newRetryCount),
+			zap.Int("max_retries", p.maxRetries))
+	} else {
+		nextBackoff := p.calculateBackoff(int(newRetryCount))
+		p.logger.Warn("event failed, will retry",
+			zap.String("event_id", event.ID.String()),
+			zap.Int32("retry_count", newRetryCount),
+			zap.Duration("next_backoff", nextBackoff))
+	}
+
+	// Increment retry count and update last_retry_at
+	return queries.IncrementOutboxRetry(ctx, event.ID)
+}
+
+// calculateBackoff calculates exponential backoff duration for a given retry attempt.
+// Formula: baseBackoff * 2^(retryCount-1)
+// Example with 1s base: retry 1 = 1s, retry 2 = 2s, retry 3 = 4s
+func (p *Processor) calculateBackoff(retryCount int) time.Duration {
+	if retryCount <= 0 {
+		return p.baseBackoff
+	}
+	multiplier := 1 << (retryCount - 1) // 2^(retryCount-1)
+	return p.baseBackoff * time.Duration(multiplier)
+}
+
+// ShouldRetryEvent checks if an event should be retried based on retry count and backoff.
+func (p *Processor) ShouldRetryEvent(event repository.Outbox) bool {
+	// Check max retries
+	if int(event.RetryCount) >= p.maxRetries {
+		return false
+	}
+
+	// Check backoff period
+	if event.LastRetryAt.Valid {
+		backoff := p.calculateBackoff(int(event.RetryCount))
+		nextRetryTime := event.LastRetryAt.Time.Add(backoff)
+		if time.Now().Before(nextRetryTime) {
+			return false
+		}
+	}
+
+	return true
 }
 
 

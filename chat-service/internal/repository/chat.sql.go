@@ -28,7 +28,7 @@ func (q *Queries) AddParticipant(ctx context.Context, arg AddParticipantParams) 
 }
 
 const getAndLockUnprocessedOutbox = `-- name: GetAndLockUnprocessedOutbox :many
-SELECT id, aggregate_type, aggregate_id, payload, created_at, processed_at
+SELECT id, aggregate_type, aggregate_id, payload, created_at, processed_at, retry_count, last_retry_at
 FROM outbox
 WHERE processed_at IS NULL
 ORDER BY created_at ASC
@@ -52,6 +52,57 @@ func (q *Queries) GetAndLockUnprocessedOutbox(ctx context.Context, limit int32) 
 			&i.Payload,
 			&i.CreatedAt,
 			&i.ProcessedAt,
+			&i.RetryCount,
+			&i.LastRetryAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAndLockUnprocessedOutboxWithRetry = `-- name: GetAndLockUnprocessedOutboxWithRetry :many
+SELECT id, aggregate_type, aggregate_id, payload, created_at, processed_at, retry_count, last_retry_at
+FROM outbox
+WHERE processed_at IS NULL
+  AND retry_count < $2
+  AND (
+    last_retry_at IS NULL 
+    OR last_retry_at < NOW() - ($3::interval)
+  )
+ORDER BY created_at ASC
+LIMIT $1
+FOR UPDATE SKIP LOCKED
+`
+
+type GetAndLockUnprocessedOutboxWithRetryParams struct {
+	Limit      int32           `json:"limit"`
+	RetryCount int32           `json:"retry_count"`
+	Column3    pgtype.Interval `json:"column_3"`
+}
+
+func (q *Queries) GetAndLockUnprocessedOutboxWithRetry(ctx context.Context, arg GetAndLockUnprocessedOutboxWithRetryParams) ([]Outbox, error) {
+	rows, err := q.db.Query(ctx, getAndLockUnprocessedOutboxWithRetry, arg.Limit, arg.RetryCount, arg.Column3)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Outbox
+	for rows.Next() {
+		var i Outbox
+		if err := rows.Scan(
+			&i.ID,
+			&i.AggregateType,
+			&i.AggregateID,
+			&i.Payload,
+			&i.CreatedAt,
+			&i.ProcessedAt,
+			&i.RetryCount,
+			&i.LastRetryAt,
 		); err != nil {
 			return nil, err
 		}
@@ -165,7 +216,7 @@ func (q *Queries) GetMessages(ctx context.Context, arg GetMessagesParams) ([]Mes
 }
 
 const getUnprocessedOutbox = `-- name: GetUnprocessedOutbox :many
-SELECT id, aggregate_type, aggregate_id, payload, created_at, processed_at
+SELECT id, aggregate_type, aggregate_id, payload, created_at, processed_at, retry_count, last_retry_at
 FROM outbox
 WHERE processed_at IS NULL
 ORDER BY created_at ASC
@@ -188,6 +239,8 @@ func (q *Queries) GetUnprocessedOutbox(ctx context.Context, limit int32) ([]Outb
 			&i.Payload,
 			&i.CreatedAt,
 			&i.ProcessedAt,
+			&i.RetryCount,
+			&i.LastRetryAt,
 		); err != nil {
 			return nil, err
 		}
@@ -197,6 +250,18 @@ func (q *Queries) GetUnprocessedOutbox(ctx context.Context, limit int32) ([]Outb
 		return nil, err
 	}
 	return items, nil
+}
+
+const incrementOutboxRetry = `-- name: IncrementOutboxRetry :exec
+UPDATE outbox
+SET retry_count = retry_count + 1,
+    last_retry_at = NOW()
+WHERE id = $1
+`
+
+func (q *Queries) IncrementOutboxRetry(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, incrementOutboxRetry, id)
+	return err
 }
 
 const insertMessage = `-- name: InsertMessage :one
@@ -254,6 +319,18 @@ type MarkAsReadParams struct {
 
 func (q *Queries) MarkAsRead(ctx context.Context, arg MarkAsReadParams) error {
 	_, err := q.db.Exec(ctx, markAsRead, arg.ConversationID, arg.UserID)
+	return err
+}
+
+const markOutboxFailed = `-- name: MarkOutboxFailed :exec
+UPDATE outbox
+SET retry_count = retry_count + 1,
+    last_retry_at = NOW()
+WHERE id = $1
+`
+
+func (q *Queries) MarkOutboxFailed(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markOutboxFailed, id)
 	return err
 }
 
