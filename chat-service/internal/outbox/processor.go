@@ -89,7 +89,11 @@ func (p *Processor) pollOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil {
+			p.logger.Debug("failed to rollback transaction", zap.Error(err))
+		}
+	}()
 
 	queries := repository.New(tx)
 	events, err := queries.GetAndLockUnprocessedOutbox(ctx, int32(p.batchSize))
@@ -129,7 +133,11 @@ func (p *Processor) ProcessBatch(ctx context.Context, events []repository.Outbox
 	if err != nil {
 		return 0, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil {
+			p.logger.Debug("failed to rollback transaction", zap.Error(err))
+		}
+	}()
 
 	queries := repository.New(tx)
 	processed, err := p.processBatchWithTx(ctx, queries, events)
