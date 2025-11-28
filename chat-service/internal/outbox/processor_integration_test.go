@@ -20,8 +20,10 @@ import (
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"
 	"github.com/leanovate/gopter/prop"
+	"github.com/redis/go-redis/v9"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"go.uber.org/zap"
 )
 
 // testInfra holds the test infrastructure for property tests
@@ -575,5 +577,382 @@ func TestIntegration_ConcurrentWorkers(t *testing.T) {
 	// All events should be processed
 	if totalRemaining > 0 {
 		t.Logf("Note: %d events remain unprocessed (this is acceptable if workers finished early)", totalRemaining)
+	}
+}
+
+
+// redisTestInfra holds Redis test infrastructure
+var redisTestInfra *redisTestInfrastructure
+
+type redisTestInfrastructure struct {
+	RedisContainer testcontainers.Container
+	RedisAddr      string
+}
+
+func setupRedisInfrastructure(ctx context.Context) (*redisTestInfrastructure, error) {
+	infra := &redisTestInfrastructure{}
+
+	redisContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image:        "redis:7-alpine",
+			ExposedPorts: []string{"6379/tcp"},
+			WaitingFor:   wait.ForLog("Ready to accept connections").WithStartupTimeout(30 * time.Second),
+		},
+		Started: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to start Redis container: %w", err)
+	}
+	infra.RedisContainer = redisContainer
+
+	redisHost, err := redisContainer.Host(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	redisPort, err := redisContainer.MappedPort(ctx, "6379")
+	if err != nil {
+		return nil, err
+	}
+
+	infra.RedisAddr = fmt.Sprintf("%s:%s", redisHost, redisPort.Port())
+	return infra, nil
+}
+
+func (ri *redisTestInfrastructure) teardown(ctx context.Context) error {
+	if ri.RedisContainer != nil {
+		return ri.RedisContainer.Terminate(ctx)
+	}
+	return nil
+}
+
+// TestIntegration_EndToEnd_MessageToRedisStreams tests the complete flow:
+// Insert message → Outbox event created → Processor publishes to Redis Streams
+// Requirement: Event should be published within 500ms
+// **Validates: Requirements 2.1, 2.2, 2.3**
+func TestIntegration_EndToEnd_MessageToRedisStreams(t *testing.T) {
+	if testInfra == nil {
+		t.Skip("Test infrastructure not available")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// Setup Redis
+	redisInfra, err := setupRedisInfrastructure(ctx)
+	if err != nil {
+		t.Fatalf("Failed to setup Redis: %v", err)
+	}
+	defer redisInfra.teardown(ctx)
+
+	// Create Redis client
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: redisInfra.RedisAddr,
+	})
+	defer redisClient.Close()
+
+	// Verify Redis connection
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		t.Fatalf("Failed to connect to Redis: %v", err)
+	}
+
+	// Cleanup outbox
+	if err := testInfra.cleanupOutbox(ctx); err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
+
+	// Create processor with fast poll interval
+	logger, _ := zap.NewDevelopment()
+	processor := NewProcessor(testInfra.DBPool, redisClient, logger, ProcessorConfig{
+		PollInterval: 50 * time.Millisecond,
+		BatchSize:    100,
+		WorkerCount:  10,
+	})
+
+	// Start processor
+	processorCtx, processorCancel := context.WithCancel(ctx)
+	go processor.Start(processorCtx)
+	defer func() {
+		processorCancel()
+		processor.Stop()
+	}()
+
+	// Insert a test outbox event
+	startTime := time.Now()
+	aggregateID := pgtype.UUID{}
+	_ = aggregateID.Scan("11111111-1111-1111-1111-111111111111")
+
+	queries := repository.New(testInfra.DBPool)
+	err = queries.InsertOutbox(ctx, repository.InsertOutboxParams{
+		AggregateType: "message.sent",
+		AggregateID:   aggregateID,
+		Payload:       []byte(`{"message_id": "test-123", "content": "Hello World"}`),
+	})
+	if err != nil {
+		t.Fatalf("Failed to insert outbox event: %v", err)
+	}
+
+	// Wait for event to be published to Redis Streams (max 500ms)
+	streamKey := "chat:events:message.sent"
+	deadline := time.Now().Add(500 * time.Millisecond)
+
+	var streamEntries []redis.XMessage
+	for time.Now().Before(deadline) {
+		result, err := redisClient.XRange(ctx, streamKey, "-", "+").Result()
+		if err != nil {
+			t.Logf("XRange error: %v", err)
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+
+		if len(result) > 0 {
+			streamEntries = result
+			break
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	latency := time.Since(startTime)
+
+	// Verify event was published
+	if len(streamEntries) == 0 {
+		t.Fatalf("Event was not published to Redis Streams within 500ms (waited %v)", latency)
+	}
+
+	t.Logf("Event published to Redis Streams in %v", latency)
+
+	// Verify latency requirement
+	if latency > 500*time.Millisecond {
+		t.Errorf("Latency %v exceeds 500ms requirement", latency)
+	}
+
+	// Verify event content
+	entry := streamEntries[0]
+	if entry.Values["aggregate_type"] != "message.sent" {
+		t.Errorf("Expected aggregate_type 'message.sent', got '%v'", entry.Values["aggregate_type"])
+	}
+
+	t.Logf("Stream entry ID: %s", entry.ID)
+	t.Logf("Stream entry values: %v", entry.Values)
+}
+
+// TestIntegration_EndToEnd_MultipleMessages tests processing multiple messages
+// and verifies all are published to Redis Streams within acceptable latency.
+func TestIntegration_EndToEnd_MultipleMessages(t *testing.T) {
+	if testInfra == nil {
+		t.Skip("Test infrastructure not available")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	// Setup Redis
+	redisInfra, err := setupRedisInfrastructure(ctx)
+	if err != nil {
+		t.Fatalf("Failed to setup Redis: %v", err)
+	}
+	defer redisInfra.teardown(ctx)
+
+	// Create Redis client
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: redisInfra.RedisAddr,
+	})
+	defer redisClient.Close()
+
+	// Cleanup outbox
+	if err := testInfra.cleanupOutbox(ctx); err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
+
+	// Create processor
+	logger, _ := zap.NewDevelopment()
+	processor := NewProcessor(testInfra.DBPool, redisClient, logger, ProcessorConfig{
+		PollInterval: 50 * time.Millisecond,
+		BatchSize:    100,
+		WorkerCount:  10,
+	})
+
+	// Start processor
+	processorCtx, processorCancel := context.WithCancel(ctx)
+	go processor.Start(processorCtx)
+	defer func() {
+		processorCancel()
+		processor.Stop()
+	}()
+
+	// Insert multiple test events
+	numEvents := 50
+	startTime := time.Now()
+
+	queries := repository.New(testInfra.DBPool)
+	for i := 0; i < numEvents; i++ {
+		aggregateID := pgtype.UUID{}
+		_ = aggregateID.Scan(fmt.Sprintf("22222222-2222-2222-2222-%012d", i))
+
+		err = queries.InsertOutbox(ctx, repository.InsertOutboxParams{
+			AggregateType: "message.sent",
+			AggregateID:   aggregateID,
+			Payload:       []byte(fmt.Sprintf(`{"message_id": "msg-%d", "content": "Message %d"}`, i, i)),
+		})
+		if err != nil {
+			t.Fatalf("Failed to insert outbox event %d: %v", i, err)
+		}
+	}
+
+	insertDuration := time.Since(startTime)
+	t.Logf("Inserted %d events in %v", numEvents, insertDuration)
+
+	// Wait for all events to be published (max 2 seconds for 50 events)
+	streamKey := "chat:events:message.sent"
+	deadline := time.Now().Add(2 * time.Second)
+
+	var publishedCount int
+	for time.Now().Before(deadline) {
+		result, err := redisClient.XLen(ctx, streamKey).Result()
+		if err != nil {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+
+		publishedCount = int(result)
+		if publishedCount >= numEvents {
+			break
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	totalLatency := time.Since(startTime)
+
+	t.Logf("Published %d/%d events in %v", publishedCount, numEvents, totalLatency)
+
+	// Verify all events were published
+	if publishedCount < numEvents {
+		t.Errorf("Only %d/%d events were published within deadline", publishedCount, numEvents)
+	}
+
+	// Calculate average latency per event
+	avgLatency := totalLatency / time.Duration(numEvents)
+	t.Logf("Average latency per event: %v", avgLatency)
+
+	// P99 should be under 200ms (as per acceptance criteria)
+	// For this test, we check total time is reasonable
+	if totalLatency > 2*time.Second {
+		t.Errorf("Total latency %v exceeds 2s for %d events", totalLatency, numEvents)
+	}
+}
+
+// TestIntegration_Latency_P99 measures P99 latency for event processing
+func TestIntegration_Latency_P99(t *testing.T) {
+	if testInfra == nil {
+		t.Skip("Test infrastructure not available")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	// Setup Redis
+	redisInfra, err := setupRedisInfrastructure(ctx)
+	if err != nil {
+		t.Fatalf("Failed to setup Redis: %v", err)
+	}
+	defer redisInfra.teardown(ctx)
+
+	// Create Redis client
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: redisInfra.RedisAddr,
+	})
+	defer redisClient.Close()
+
+	// Cleanup outbox
+	if err := testInfra.cleanupOutbox(ctx); err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
+
+	// Create processor
+	logger, _ := zap.NewDevelopment()
+	processor := NewProcessor(testInfra.DBPool, redisClient, logger, ProcessorConfig{
+		PollInterval: 50 * time.Millisecond,
+		BatchSize:    100,
+		WorkerCount:  10,
+	})
+
+	// Start processor
+	processorCtx, processorCancel := context.WithCancel(ctx)
+	go processor.Start(processorCtx)
+	defer func() {
+		processorCancel()
+		processor.Stop()
+	}()
+
+	// Measure latency for individual events
+	numSamples := 20
+	latencies := make([]time.Duration, 0, numSamples)
+
+	queries := repository.New(testInfra.DBPool)
+	streamKey := "chat:events:message.sent"
+
+	for i := 0; i < numSamples; i++ {
+		// Get current stream length
+		beforeLen, _ := redisClient.XLen(ctx, streamKey).Result()
+
+		// Insert event
+		startTime := time.Now()
+		aggregateID := pgtype.UUID{}
+		_ = aggregateID.Scan(fmt.Sprintf("33333333-3333-3333-3333-%012d", i))
+
+		err = queries.InsertOutbox(ctx, repository.InsertOutboxParams{
+			AggregateType: "message.sent",
+			AggregateID:   aggregateID,
+			Payload:       []byte(fmt.Sprintf(`{"sample": %d}`, i)),
+		})
+		if err != nil {
+			t.Fatalf("Failed to insert: %v", err)
+		}
+
+		// Wait for event to appear in stream
+		deadline := time.Now().Add(500 * time.Millisecond)
+		for time.Now().Before(deadline) {
+			afterLen, _ := redisClient.XLen(ctx, streamKey).Result()
+			if afterLen > beforeLen {
+				latency := time.Since(startTime)
+				latencies = append(latencies, latency)
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+
+		// Small delay between samples
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// Calculate P99
+	if len(latencies) == 0 {
+		t.Fatal("No latency samples collected")
+	}
+
+	sort.Slice(latencies, func(i, j int) bool {
+		return latencies[i] < latencies[j]
+	})
+
+	p50Index := len(latencies) * 50 / 100
+	p99Index := len(latencies) * 99 / 100
+	if p99Index >= len(latencies) {
+		p99Index = len(latencies) - 1
+	}
+
+	p50 := latencies[p50Index]
+	p99 := latencies[p99Index]
+	maxLatency := latencies[len(latencies)-1]
+
+	t.Logf("Latency stats (n=%d):", len(latencies))
+	t.Logf("  P50: %v", p50)
+	t.Logf("  P99: %v", p99)
+	t.Logf("  Max: %v", maxLatency)
+
+	// Verify P99 < 200ms (acceptance criteria)
+	if p99 > 200*time.Millisecond {
+		t.Errorf("P99 latency %v exceeds 200ms requirement", p99)
 	}
 }

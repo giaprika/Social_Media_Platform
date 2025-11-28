@@ -10,6 +10,7 @@ import (
 const (
 	DefaultOutboxPollIntervalMs = 100
 	DefaultOutboxBatchSize      = 100
+	DefaultMetricsPort          = 9090
 )
 
 type Config struct {
@@ -22,6 +23,9 @@ type Config struct {
 	// Outbox Processor Settings
 	OutboxPollIntervalMs int `mapstructure:"OUTBOX_POLL_INTERVAL_MS"`
 	OutboxBatchSize      int `mapstructure:"OUTBOX_BATCH_SIZE"`
+
+	// Metrics Settings
+	MetricsPort int `mapstructure:"METRICS_PORT"`
 }
 
 // GetOutboxPollInterval returns the poll interval as time.Duration.
@@ -50,6 +54,15 @@ func (c *Config) GetOutboxBatchSize(logger *zap.Logger) int {
 		return DefaultOutboxBatchSize
 	}
 	return c.OutboxBatchSize
+}
+
+// GetMetricsPort returns the metrics server port.
+// If the configured value is invalid (non-positive), it returns the default value.
+func (c *Config) GetMetricsPort() int {
+	if c.MetricsPort <= 0 {
+		return DefaultMetricsPort
+	}
+	return c.MetricsPort
 }
 
 func LoadConfig(path string) (config Config, err error) {

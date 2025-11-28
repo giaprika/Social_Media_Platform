@@ -49,6 +49,7 @@ type Processor struct {
 	redis        *redis.Client
 	publisher    *Publisher
 	logger       *zap.Logger
+	metrics      *Metrics
 	pollInterval time.Duration
 	batchSize    int
 	maxRetries   int
@@ -56,6 +57,8 @@ type Processor struct {
 	workerCount  int
 	stopCh       chan struct{}
 	doneCh       chan struct{}
+	processing   bool      // indicates if currently processing a batch
+	processingMu sync.Mutex // protects processing flag
 }
 
 // eventResult holds the result of processing a single event.
@@ -67,6 +70,11 @@ type eventResult struct {
 
 // NewProcessor creates a new outbox processor.
 func NewProcessor(db *pgxpool.Pool, redisClient *redis.Client, logger *zap.Logger, cfg ProcessorConfig) *Processor {
+	return NewProcessorWithMetrics(db, redisClient, logger, cfg, DefaultMetrics)
+}
+
+// NewProcessorWithMetrics creates a new outbox processor with custom metrics.
+func NewProcessorWithMetrics(db *pgxpool.Pool, redisClient *redis.Client, logger *zap.Logger, cfg ProcessorConfig, metrics *Metrics) *Processor {
 	maxRetries := cfg.MaxRetries
 	if maxRetries <= 0 {
 		maxRetries = DefaultMaxRetries
@@ -87,11 +95,16 @@ func NewProcessor(db *pgxpool.Pool, redisClient *redis.Client, logger *zap.Logge
 		batchSize = DefaultBatchSize
 	}
 
+	if metrics == nil {
+		metrics = DefaultMetrics
+	}
+
 	return &Processor{
 		db:           db,
 		redis:        redisClient,
 		publisher:    NewPublisher(redisClient),
 		logger:       logger,
+		metrics:      metrics,
 		pollInterval: cfg.PollInterval,
 		batchSize:    batchSize,
 		maxRetries:   maxRetries,
@@ -107,7 +120,8 @@ func NewProcessor(db *pgxpool.Pool, redisClient *redis.Client, logger *zap.Logge
 func (p *Processor) Start(ctx context.Context) {
 	p.logger.Info("starting outbox processor",
 		zap.Duration("poll_interval", p.pollInterval),
-		zap.Int("batch_size", p.batchSize))
+		zap.Int("batch_size", p.batchSize),
+		zap.Int("worker_count", p.workerCount))
 
 	ticker := time.NewTicker(p.pollInterval)
 	defer ticker.Stop()
@@ -116,9 +130,13 @@ func (p *Processor) Start(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			p.logger.Info("outbox processor stopped due to context cancellation")
+			p.logger.Info("outbox processor stopping due to context cancellation, waiting for current batch...")
+			p.waitForCurrentBatch()
+			p.logger.Info("outbox processor stopped")
 			return
 		case <-p.stopCh:
+			p.logger.Info("outbox processor stopping, waiting for current batch...")
+			p.waitForCurrentBatch()
 			p.logger.Info("outbox processor stopped")
 			return
 		case <-ticker.C:
@@ -130,13 +148,41 @@ func (p *Processor) Start(ctx context.Context) {
 }
 
 // Stop signals the processor to stop and waits for it to finish.
+// It ensures the current batch completes before returning.
 func (p *Processor) Stop() {
 	close(p.stopCh)
 	<-p.doneCh
 }
 
+// setProcessing sets the processing flag safely.
+func (p *Processor) setProcessing(processing bool) {
+	p.processingMu.Lock()
+	defer p.processingMu.Unlock()
+	p.processing = processing
+}
+
+// isProcessing returns whether a batch is currently being processed.
+func (p *Processor) isProcessing() bool {
+	p.processingMu.Lock()
+	defer p.processingMu.Unlock()
+	return p.processing
+}
+
+// waitForCurrentBatch waits for any in-progress batch to complete.
+func (p *Processor) waitForCurrentBatch() {
+	for p.isProcessing() {
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // pollOnce executes a single poll cycle: query unprocessed events and process them.
 func (p *Processor) pollOnce(ctx context.Context) error {
+	// Mark as processing for graceful shutdown
+	p.setProcessing(true)
+	defer p.setProcessing(false)
+
+	startTime := time.Now()
+
 	// Start a transaction to use FOR UPDATE SKIP LOCKED
 	tx, err := p.db.Begin(ctx)
 	if err != nil {
@@ -154,19 +200,35 @@ func (p *Processor) pollOnce(ctx context.Context) error {
 		return err
 	}
 
+	// Update pending count metric (approximate - shows locked events count)
+	if p.metrics != nil {
+		p.metrics.PendingCount.Set(float64(len(events)))
+		p.metrics.BatchSize.Observe(float64(len(events)))
+	}
+
 	if len(events) == 0 {
 		return nil
 	}
 
-	processed, err := p.processBatchWithTx(ctx, queries, events)
+	processed, publishErrors, err := p.processBatchWithTxAndMetrics(ctx, queries, events)
+
+	// Update metrics
+	if p.metrics != nil {
+		p.metrics.ProcessedTotal.Add(float64(processed))
+		p.metrics.PublishErrorsTotal.Add(float64(publishErrors))
+		p.metrics.ProcessingDuration.Observe(time.Since(startTime).Seconds())
+	}
+
 	if err != nil {
 		p.logger.Error("batch processing encountered errors",
 			zap.Int("processed", processed),
+			zap.Int("errors", publishErrors),
 			zap.Int("total", len(events)),
 			zap.Error(err))
 	} else {
 		p.logger.Info("batch processed",
-			zap.Int("count", processed))
+			zap.Int("count", processed),
+			zap.Duration("duration", time.Since(startTime)))
 	}
 
 	// Commit the transaction to release locks and persist processed_at updates
@@ -208,8 +270,14 @@ func (p *Processor) ProcessBatch(ctx context.Context, events []repository.Outbox
 // Phase 1: Concurrent publish to Redis (I/O bound, benefits from parallelism)
 // Phase 2: Sequential DB updates (must be serialized within transaction)
 func (p *Processor) processBatchWithTx(ctx context.Context, queries *repository.Queries, events []repository.Outbox) (int, error) {
+	processed, _, err := p.processBatchWithTxAndMetrics(ctx, queries, events)
+	return processed, err
+}
+
+// processBatchWithTxAndMetrics processes events and returns both processed count and error count.
+func (p *Processor) processBatchWithTxAndMetrics(ctx context.Context, queries *repository.Queries, events []repository.Outbox) (int, int, error) {
 	if len(events) == 0 {
-		return 0, nil
+		return 0, 0, nil
 	}
 
 	// Phase 1: Concurrent publishing using worker pool
@@ -217,6 +285,7 @@ func (p *Processor) processBatchWithTx(ctx context.Context, queries *repository.
 
 	// Phase 2: Sequential DB updates based on publish results
 	processed := 0
+	publishErrors := 0
 	var lastErr error
 
 	for _, result := range results {
@@ -231,14 +300,19 @@ func (p *Processor) processBatchWithTx(ctx context.Context, queries *repository.
 			}
 			processed++
 		} else {
-			// Handle failure - increment retry count
+			// Handle failure - increment retry count or move to DLQ
+			publishErrors++
 			p.logger.Error("failed to process event",
 				zap.String("event_id", result.event.ID.String()),
 				zap.String("aggregate_type", result.event.AggregateType),
 				zap.Int32("retry_count", result.event.RetryCount),
 				zap.Error(result.err))
 
-			if err := p.handleEventFailure(ctx, queries, result.event); err != nil {
+			errMsg := ""
+			if result.err != nil {
+				errMsg = result.err.Error()
+			}
+			if err := p.handleEventFailure(ctx, queries, result.event, errMsg); err != nil {
 				p.logger.Error("failed to handle event failure",
 					zap.String("event_id", result.event.ID.String()),
 					zap.Error(err))
@@ -247,7 +321,7 @@ func (p *Processor) processBatchWithTx(ctx context.Context, queries *repository.
 		}
 	}
 
-	return processed, lastErr
+	return processed, publishErrors, lastErr
 }
 
 // publishConcurrently publishes events to Redis using a worker pool.
@@ -299,28 +373,64 @@ func (p *Processor) publishConcurrently(ctx context.Context, events []repository
 }
 
 // handleEventFailure handles a failed event by incrementing retry count.
-// If max retries exceeded, logs a critical error for manual intervention.
-func (p *Processor) handleEventFailure(ctx context.Context, queries *repository.Queries, event repository.Outbox) error {
+// If max retries exceeded, moves the event to Dead Letter Queue.
+func (p *Processor) handleEventFailure(ctx context.Context, queries *repository.Queries, event repository.Outbox, errMsg string) error {
 	newRetryCount := event.RetryCount + 1
 
-	// Check if max retries exceeded (will be handled by Dead Letter Queue in Task 8)
+	// Check if max retries exceeded - move to DLQ
 	if int(newRetryCount) >= p.maxRetries {
-		p.logger.Error("event exceeded max retries - requires manual intervention",
-			zap.String("event_id", event.ID.String()),
-			zap.String("aggregate_type", event.AggregateType),
-			zap.String("aggregate_id", event.AggregateID.String()),
-			zap.Int32("retry_count", newRetryCount),
-			zap.Int("max_retries", p.maxRetries))
-	} else {
-		nextBackoff := p.calculateBackoff(int(newRetryCount))
-		p.logger.Warn("event failed, will retry",
-			zap.String("event_id", event.ID.String()),
-			zap.Int32("retry_count", newRetryCount),
-			zap.Duration("next_backoff", nextBackoff))
+		return p.moveEventToDLQ(ctx, queries, event, errMsg)
 	}
 
-	// Increment retry count and update last_retry_at
+	// Still has retries left - increment retry count
+	nextBackoff := p.calculateBackoff(int(newRetryCount))
+	p.logger.Warn("event failed, will retry",
+		zap.String("event_id", event.ID.String()),
+		zap.Int32("retry_count", newRetryCount),
+		zap.Duration("next_backoff", nextBackoff))
+
 	return queries.IncrementOutboxRetry(ctx, event.ID)
+}
+
+// moveEventToDLQ moves a failed event to the Dead Letter Queue.
+func (p *Processor) moveEventToDLQ(ctx context.Context, queries *repository.Queries, event repository.Outbox, errMsg string) error {
+	p.logger.Error("moving event to Dead Letter Queue - max retries exceeded",
+		zap.String("event_id", event.ID.String()),
+		zap.String("aggregate_type", event.AggregateType),
+		zap.String("aggregate_id", event.AggregateID.String()),
+		zap.Int32("retry_count", event.RetryCount),
+		zap.Int("max_retries", p.maxRetries),
+		zap.String("error", errMsg))
+
+	// Move to DLQ
+	if err := queries.MoveOutboxToDLQ(ctx, repository.MoveOutboxToDLQParams{
+		ID:           event.ID,
+		ErrorMessage: pgtype.Text{String: errMsg, Valid: errMsg != ""},
+	}); err != nil {
+		p.logger.Error("failed to move event to DLQ",
+			zap.String("event_id", event.ID.String()),
+			zap.Error(err))
+		return err
+	}
+
+	// Delete from outbox
+	if err := queries.DeleteOutboxEvent(ctx, event.ID); err != nil {
+		p.logger.Error("failed to delete event from outbox after DLQ move",
+			zap.String("event_id", event.ID.String()),
+			zap.Error(err))
+		return err
+	}
+
+	// Update DLQ metric
+	if p.metrics != nil {
+		p.metrics.DLQTotal.Inc()
+	}
+
+	p.logger.Info("event moved to Dead Letter Queue",
+		zap.String("event_id", event.ID.String()),
+		zap.String("aggregate_type", event.AggregateType))
+
+	return nil
 }
 
 // calculateBackoff calculates exponential backoff duration for a given retry attempt.

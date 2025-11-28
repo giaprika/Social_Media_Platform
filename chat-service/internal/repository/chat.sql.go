@@ -27,6 +27,46 @@ func (q *Queries) AddParticipant(ctx context.Context, arg AddParticipantParams) 
 	return err
 }
 
+const countDLQEvents = `-- name: CountDLQEvents :one
+SELECT COUNT(*) FROM outbox_dlq
+`
+
+func (q *Queries) CountDLQEvents(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countDLQEvents)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countDLQEventsByAggregateType = `-- name: CountDLQEventsByAggregateType :one
+SELECT COUNT(*) FROM outbox_dlq WHERE aggregate_type = $1
+`
+
+func (q *Queries) CountDLQEventsByAggregateType(ctx context.Context, aggregateType string) (int64, error) {
+	row := q.db.QueryRow(ctx, countDLQEventsByAggregateType, aggregateType)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const deleteDLQEvent = `-- name: DeleteDLQEvent :exec
+DELETE FROM outbox_dlq WHERE id = $1
+`
+
+func (q *Queries) DeleteDLQEvent(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteDLQEvent, id)
+	return err
+}
+
+const deleteOutboxEvent = `-- name: DeleteOutboxEvent :exec
+DELETE FROM outbox WHERE id = $1
+`
+
+func (q *Queries) DeleteOutboxEvent(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteOutboxEvent, id)
+	return err
+}
+
 const getAndLockUnprocessedOutbox = `-- name: GetAndLockUnprocessedOutbox :many
 SELECT id, aggregate_type, aggregate_id, payload, created_at, processed_at, retry_count, last_retry_at
 FROM outbox
@@ -160,6 +200,86 @@ func (q *Queries) GetConversationsForUser(ctx context.Context, arg GetConversati
 			&i.LastMessageContent,
 			&i.LastMessageAt,
 			&i.UnreadCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getDLQEvents = `-- name: GetDLQEvents :many
+SELECT id, original_event_id, aggregate_type, aggregate_id, payload, error_message, retry_count, original_created_at, moved_to_dlq_at
+FROM outbox_dlq
+ORDER BY moved_to_dlq_at DESC
+LIMIT $1
+`
+
+func (q *Queries) GetDLQEvents(ctx context.Context, limit int32) ([]OutboxDlq, error) {
+	rows, err := q.db.Query(ctx, getDLQEvents, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OutboxDlq
+	for rows.Next() {
+		var i OutboxDlq
+		if err := rows.Scan(
+			&i.ID,
+			&i.OriginalEventID,
+			&i.AggregateType,
+			&i.AggregateID,
+			&i.Payload,
+			&i.ErrorMessage,
+			&i.RetryCount,
+			&i.OriginalCreatedAt,
+			&i.MovedToDlqAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getDLQEventsByAggregateType = `-- name: GetDLQEventsByAggregateType :many
+SELECT id, original_event_id, aggregate_type, aggregate_id, payload, error_message, retry_count, original_created_at, moved_to_dlq_at
+FROM outbox_dlq
+WHERE aggregate_type = $1
+ORDER BY moved_to_dlq_at DESC
+LIMIT $2
+`
+
+type GetDLQEventsByAggregateTypeParams struct {
+	AggregateType string `json:"aggregate_type"`
+	Limit         int32  `json:"limit"`
+}
+
+func (q *Queries) GetDLQEventsByAggregateType(ctx context.Context, arg GetDLQEventsByAggregateTypeParams) ([]OutboxDlq, error) {
+	rows, err := q.db.Query(ctx, getDLQEventsByAggregateType, arg.AggregateType, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OutboxDlq
+	for rows.Next() {
+		var i OutboxDlq
+		if err := rows.Scan(
+			&i.ID,
+			&i.OriginalEventID,
+			&i.AggregateType,
+			&i.AggregateID,
+			&i.Payload,
+			&i.ErrorMessage,
+			&i.RetryCount,
+			&i.OriginalCreatedAt,
+			&i.MovedToDlqAt,
 		); err != nil {
 			return nil, err
 		}
@@ -342,6 +462,37 @@ WHERE id = $1
 
 func (q *Queries) MarkOutboxProcessed(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, markOutboxProcessed, id)
+	return err
+}
+
+const moveOutboxToDLQ = `-- name: MoveOutboxToDLQ :exec
+
+INSERT INTO outbox_dlq (original_event_id, aggregate_type, aggregate_id, payload, error_message, retry_count, original_created_at)
+SELECT o.id, o.aggregate_type, o.aggregate_id, o.payload, $2, o.retry_count, o.created_at
+FROM outbox o
+WHERE o.id = $1
+`
+
+type MoveOutboxToDLQParams struct {
+	ID           pgtype.UUID `json:"id"`
+	ErrorMessage pgtype.Text `json:"error_message"`
+}
+
+// Dead Letter Queue (DLQ) Operations
+func (q *Queries) MoveOutboxToDLQ(ctx context.Context, arg MoveOutboxToDLQParams) error {
+	_, err := q.db.Exec(ctx, moveOutboxToDLQ, arg.ID, arg.ErrorMessage)
+	return err
+}
+
+const replayDLQEvent = `-- name: ReplayDLQEvent :exec
+INSERT INTO outbox (aggregate_type, aggregate_id, payload)
+SELECT d.aggregate_type, d.aggregate_id, d.payload
+FROM outbox_dlq d
+WHERE d.id = $1
+`
+
+func (q *Queries) ReplayDLQEvent(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, replayDLQEvent, id)
 	return err
 }
 
