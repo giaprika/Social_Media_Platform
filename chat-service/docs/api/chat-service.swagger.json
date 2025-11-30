@@ -297,6 +297,13 @@
         },
         "idempotencyKey": {
           "type": "string"
+        },
+        "receiverIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "Optional list of receiver UUIDs"
         }
       }
     },

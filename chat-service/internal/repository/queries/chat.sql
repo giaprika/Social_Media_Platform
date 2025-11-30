@@ -68,6 +68,11 @@ INSERT INTO conversation_participants (conversation_id, user_id, joined_at)
 VALUES ($1, $2, NOW())
 ON CONFLICT DO NOTHING;
 
+-- name: AddConversationParticipants :exec
+INSERT INTO conversation_participants (conversation_id, user_id, joined_at)
+SELECT $1, unnest($2::uuid[]), NOW()
+ON CONFLICT DO NOTHING;
+
 -- name: MarkAsRead :exec
 UPDATE conversation_participants
 SET last_read_at = NOW()
