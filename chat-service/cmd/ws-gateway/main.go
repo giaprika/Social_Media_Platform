@@ -253,7 +253,11 @@ func main() {
 		}
 	}()
 
-	logger.Info("WebSocket Gateway starting", zap.String("addr", addr))
+	instanceID := ws.GetInstanceID()
+	logger.Info("WebSocket Gateway starting",
+		zap.String("addr", addr),
+		zap.String("instance_id", instanceID),
+	)
 	if err := server.ListenAndServe(); err != http.ErrServerClosed {
 		logger.Fatal("ListenAndServe failed", zap.Error(err))
 	}

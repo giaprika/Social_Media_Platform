@@ -1,6 +1,6 @@
 sync:
   defaults:
-    mode: "two-way-resolved" # Cho phép sửa cả 2 đầu (thường sửa ở Local là chính)
+    mode: "two-way-safe" # Cho phép sửa cả 2 đầu (thường sửa ở Local là chính)
     ignore:
       vcs: true # Bỏ qua folder .git
       paths:
