@@ -12,6 +12,9 @@
 *.test
 *.out
 
+# Test result file
+*-results.json
+
 # Test coverage & reports
 coverage.txt
 profile.out
