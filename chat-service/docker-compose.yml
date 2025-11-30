@@ -1,9 +1,12 @@
-# Hi
+# Hihi
 
 services:
-  # 1. PostgreSQL 15
+  # =============================================================================
+  # Infrastructure
+  # =============================================================================
+  
   postgres:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     container_name: chat_postgres
     environment:
       POSTGRES_USER: user
@@ -13,26 +16,114 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./migrations/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d chat_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
-  # 2. Redis (Dev mode: Standalone)
   redis:
     image: redis:7-alpine
     container_name: chat_redis
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
-  # 3. Prometheus (Metrics)
+  # =============================================================================
+  # Application Services
+  # =============================================================================
+
+  # HTTP/gRPC API Server (port 8080)
+  api-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.api-server
+    container_name: chat_api
+    environment:
+      - ENVIRONMENT=production
+      - DB_SOURCE=postgresql://user:password@postgres:5432/chat_db?sslmode=disable
+      - REDIS_ADDR=redis:6379
+      - HTTP_SERVER_ADDRESS=0.0.0.0:8080
+      - GRPC_SERVER_ADDRESS=0.0.0.0:50051
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # WebSocket Gateway (port 8081)
+  ws-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.ws-gateway
+    container_name: chat_ws
+    environment:
+      - REDIS_ADDR=redis:6379
+      - WS_GATEWAY_ADDR=:8080
+    ports:
+      - "8081:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Outbox Processor
+  outbox-processor:
+    build:
+      context: .
+      dockerfile: Dockerfile.outbox
+    container_name: chat_outbox
+    environment:
+      - ENVIRONMENT=production
+      - DB_SOURCE=postgresql://user:password@postgres:5432/chat_db?sslmode=disable
+      - REDIS_ADDR=redis:6379
+      - OUTBOX_POLL_INTERVAL_MS=100
+      - OUTBOX_BATCH_SIZE=100
+      - METRICS_PORT=9091
+    ports:
+      - "9091:9091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # =============================================================================
+  # Monitoring (Optional)
+  # =============================================================================
+
   prometheus:
-    image: prom/prometheus
+    image: prom/prometheus:latest
     container_name: chat_prometheus
     ports:
       - "9090:9090"
     volumes:
       - ./deploy/prometheus:/etc/prometheus
+    profiles:
+      - monitoring
 
-  # 4. Grafana (Dashboard)
   grafana:
-    image: grafana/grafana
+    image: grafana/grafana:latest
     container_name: chat_grafana
     ports:
       - "3000:3000"
@@ -40,6 +131,8 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     depends_on:
       - prometheus
+    profiles:
+      - monitoring
 
 volumes:
   postgres_data:

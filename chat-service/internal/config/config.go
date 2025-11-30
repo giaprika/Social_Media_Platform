@@ -70,11 +70,27 @@ func LoadConfig(path string) (config Config, err error) {
 	viper.SetConfigName("app")
 	viper.SetConfigType("env")
 
+	// Bind environment variables explicitly
+	viper.BindEnv("ENVIRONMENT")
+	viper.BindEnv("DB_SOURCE")
+	viper.BindEnv("REDIS_ADDR")
+	viper.BindEnv("HTTP_SERVER_ADDRESS")
+	viper.BindEnv("GRPC_SERVER_ADDRESS")
+	viper.BindEnv("OUTBOX_POLL_INTERVAL_MS")
+	viper.BindEnv("OUTBOX_BATCH_SIZE")
+	viper.BindEnv("METRICS_PORT")
+
+	// Đọc từ environment variables
 	viper.AutomaticEnv()
 
-	err = viper.ReadInConfig()
-	if err != nil {
-		return
+	// Thử đọc file config, nhưng không fail nếu không có
+	if err = viper.ReadInConfig(); err != nil {
+		// Nếu không tìm thấy file, vẫn tiếp tục với env vars
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return
+		}
+		// Reset error - sẽ dùng env vars
+		err = nil
 	}
 
 	err = viper.Unmarshal(&config)
