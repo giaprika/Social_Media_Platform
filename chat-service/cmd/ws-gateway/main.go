@@ -313,6 +313,6 @@ func sendConnectionEvent(client *ws.Client, userID string, result ws.AddResult) 
 	}
 
 	// Send directly to connection (not through channel, as writePump may not be started yet)
-	client.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+	_ = client.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 	return client.Conn.WriteMessage(websocket.TextMessage, data)
 }
