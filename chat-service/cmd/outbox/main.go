@@ -38,8 +38,21 @@ func main() {
 		zap.Int("poll_interval_ms", cfg.OutboxPollIntervalMs),
 		zap.Int("batch_size", cfg.OutboxBatchSize))
 
-	// 3. Connect to Database (Requirement 1.1, 1.2)
-	dbPool, err := pgxpool.New(context.Background(), cfg.GetDBSource())
+	// 3. Connect to Database with pool configuration (Requirement 1.1, 1.2)
+	poolConfig, err := pgxpool.ParseConfig(cfg.GetDBSource())
+	if err != nil {
+		logger.Fatal("cannot parse db config", zap.Error(err))
+	}
+	poolConfig.MaxConns = cfg.GetDBMaxConns()
+	poolConfig.MinConns = cfg.GetDBMinConns()
+	poolConfig.MaxConnLifetime = cfg.GetDBMaxConnLifetime()
+	poolConfig.MaxConnIdleTime = cfg.GetDBMaxConnIdleTime()
+
+	logger.Info("database pool config",
+		zap.Int32("max_conns", poolConfig.MaxConns),
+		zap.Int32("min_conns", poolConfig.MinConns))
+
+	dbPool, err := pgxpool.NewWithConfig(context.Background(), poolConfig)
 	if err != nil {
 		logger.Fatal("cannot connect to database", zap.Error(err))
 	}
