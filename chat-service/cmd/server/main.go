@@ -42,7 +42,7 @@ func main() {
 	logger.Info("starting chat service", zap.String("env", cfg.Environment))
 
 	// 3. Connect to Database
-	dbPool, err := pgxpool.New(context.Background(), cfg.DBSource)
+	dbPool, err := pgxpool.New(context.Background(), cfg.GetDBSource())
 	if err != nil {
 		logger.Fatal("cannot connect to db", zap.Error(err))
 	}
