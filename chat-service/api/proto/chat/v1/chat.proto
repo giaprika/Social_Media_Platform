@@ -44,7 +44,8 @@ message SendMessageRequest {
   string conversation_id = 1;
   // sender_id is extracted from JWT token via auth middleware
   string content = 3;
-  string idempotency_key = 4; 
+  string idempotency_key = 4;
+  repeated string receiver_ids = 5; // Optional list of receiver UUIDs
 }
 
 message SendMessageResponse {

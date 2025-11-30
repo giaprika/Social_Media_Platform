@@ -11,6 +11,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addConversationParticipants = `-- name: AddConversationParticipants :exec
+INSERT INTO conversation_participants (conversation_id, user_id, joined_at)
+SELECT $1, unnest($2::uuid[]), NOW()
+ON CONFLICT DO NOTHING
+`
+
+type AddConversationParticipantsParams struct {
+	ConversationID pgtype.UUID   `json:"conversation_id"`
+	Column2        []pgtype.UUID `json:"column_2"`
+}
+
+func (q *Queries) AddConversationParticipants(ctx context.Context, arg AddConversationParticipantsParams) error {
+	_, err := q.db.Exec(ctx, addConversationParticipants, arg.ConversationID, arg.Column2)
+	return err
+}
+
 const addParticipant = `-- name: AddParticipant :exec
 INSERT INTO conversation_participants (conversation_id, user_id, joined_at)
 VALUES ($1, $2, NOW())
