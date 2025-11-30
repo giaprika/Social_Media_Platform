@@ -142,7 +142,6 @@ func TestSendMessage_MissingUserIDInContext(t *testing.T) {
 	// Track if any database operations are called
 	beginTxCalled := false
 	upsertConvCalled := false
-	addParticipantCalled := false
 	insertMsgCalled := false
 	updateLastMsgCalled := false
 	insertOutboxCalled := false
@@ -158,10 +157,6 @@ func TestSendMessage_MissingUserIDInContext(t *testing.T) {
 		upsertConversationFn: func(ctx context.Context, qtx *chatv1.Queries, id pgtype.UUID) (chatv1.Conversation, error) {
 			upsertConvCalled = true
 			return chatv1.Conversation{}, errors.New("should not be called")
-		},
-		addParticipantFn: func(ctx context.Context, qtx *chatv1.Queries, params chatv1.AddParticipantParams) error {
-			addParticipantCalled = true
-			return errors.New("should not be called")
 		},
 		insertMessageFn: func(ctx context.Context, qtx *chatv1.Queries, params chatv1.InsertMessageParams) (chatv1.Message, error) {
 			insertMsgCalled = true
@@ -198,7 +193,6 @@ func TestSendMessage_MissingUserIDInContext(t *testing.T) {
 	// Verify no database operations were attempted
 	assert.False(t, beginTxCalled, "beginTx should not be called without authentication")
 	assert.False(t, upsertConvCalled, "upsertConversation should not be called without authentication")
-	assert.False(t, addParticipantCalled, "addParticipant should not be called without authentication")
 	assert.False(t, insertMsgCalled, "insertMessage should not be called without authentication")
 	assert.False(t, updateLastMsgCalled, "updateLastMessage should not be called without authentication")
 	assert.False(t, insertOutboxCalled, "insertOutbox should not be called without authentication")

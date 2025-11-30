@@ -199,7 +199,6 @@ type mockTransactionHelpers struct {
 	mockTx                           *mockDBTX
 	mockBeginTx                      func(ctx context.Context) (repository.DBTX, error)
 	mockUpsertConversation           func(ctx context.Context, qtx *repository.Queries, id pgtype.UUID) (repository.Conversation, error)
-	mockAddParticipant               func(ctx context.Context, qtx *repository.Queries, params repository.AddParticipantParams) error
 	mockAddConversationParticipants  func(ctx context.Context, qtx *repository.Queries, params repository.AddConversationParticipantsParams) error
 	mockInsertMessage                func(ctx context.Context, qtx *repository.Queries, params repository.InsertMessageParams) (repository.Message, error)
 	mockUpdateLastMessage            func(ctx context.Context, qtx *repository.Queries, params repository.UpdateConversationLastMessageParams) error
@@ -311,25 +310,6 @@ func (m *mockTransactionHelpers) setupUpsertConversationError(err error) {
 
 	m.mockUpsertConversation = func(ctx context.Context, qtx *repository.Queries, id pgtype.UUID) (repository.Conversation, error) {
 		return repository.Conversation{}, err
-	}
-
-	m.mockRollbackTx = func(ctx context.Context, tx repository.DBTX) error {
-		return nil
-	}
-}
-
-// setupAddParticipantError configures mocks for addParticipant failure (legacy, kept for compatibility)
-func (m *mockTransactionHelpers) setupAddParticipantError(conversationID pgtype.UUID, err error) {
-	m.mockBeginTx = func(ctx context.Context) (repository.DBTX, error) {
-		return m.mockTx, nil
-	}
-
-	m.mockUpsertConversation = func(ctx context.Context, qtx *repository.Queries, id pgtype.UUID) (repository.Conversation, error) {
-		return repository.Conversation{ID: conversationID}, nil
-	}
-
-	m.mockAddParticipant = func(ctx context.Context, qtx *repository.Queries, params repository.AddParticipantParams) error {
-		return err
 	}
 
 	m.mockRollbackTx = func(ctx context.Context, tx repository.DBTX) error {
@@ -503,9 +483,6 @@ func (m *mockTransactionHelpers) injectIntoService(service *ChatService) {
 	}
 	if m.mockUpsertConversation != nil {
 		service.upsertConversationFn = m.mockUpsertConversation
-	}
-	if m.mockAddParticipant != nil {
-		service.addParticipantFn = m.mockAddParticipant
 	}
 	if m.mockAddConversationParticipants != nil {
 		service.addConversationParticipantsFn = m.mockAddConversationParticipants

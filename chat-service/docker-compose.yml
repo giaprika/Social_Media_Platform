@@ -33,6 +33,8 @@ services:
       - REDIS_ADDR=redis:6379
       - HTTP_SERVER_ADDRESS=0.0.0.0:8080
       - GRPC_SERVER_ADDRESS=0.0.0.0:50051
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8080:8080"
       - "50051:50051"
@@ -81,6 +83,8 @@ services:
       - OUTBOX_POLL_INTERVAL_MS=100
       - OUTBOX_BATCH_SIZE=100
       - METRICS_PORT=9091
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "9091:9091"
     depends_on:
