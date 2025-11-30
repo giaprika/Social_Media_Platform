@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/spf13/viper"
@@ -15,10 +17,18 @@ const (
 
 type Config struct {
 	Environment       string `mapstructure:"ENVIRONMENT"`
-	DBSource          string `mapstructure:"DB_SOURCE"`
+	DBSource          string `mapstructure:"DB_SOURCE"` // Legacy: full connection string
 	RedisAddr         string `mapstructure:"REDIS_ADDR"`
 	HTTPServerAddress string `mapstructure:"HTTP_SERVER_ADDRESS"`
 	GRPCServerAddress string `mapstructure:"GRPC_SERVER_ADDRESS"`
+
+	// Database connection components (preferred over DB_SOURCE)
+	DBHost     string `mapstructure:"DB_HOST"`
+	DBPort     string `mapstructure:"DB_PORT"`
+	DBUser     string `mapstructure:"DB_USER"`
+	DBPassword string `mapstructure:"DB_PASSWORD"`
+	DBName     string `mapstructure:"DB_NAME"`
+	DBSSLMode  string `mapstructure:"DB_SSLMODE"`
 
 	// Outbox Processor Settings
 	OutboxPollIntervalMs int `mapstructure:"OUTBOX_POLL_INTERVAL_MS"`
@@ -26,6 +36,34 @@ type Config struct {
 
 	// Metrics Settings
 	MetricsPort int `mapstructure:"METRICS_PORT"`
+}
+
+// GetDBSource returns the database connection string.
+// If DB_HOST is set, it builds the connection string from components (with URL-encoded password).
+// Otherwise, it falls back to DB_SOURCE for backward compatibility.
+func (c *Config) GetDBSource() string {
+	if c.DBHost != "" {
+		// Build connection string from components with URL-encoded password
+		encodedPassword := url.QueryEscape(c.DBPassword)
+		sslMode := c.DBSSLMode
+		if sslMode == "" {
+			sslMode = "disable"
+		}
+		port := c.DBPort
+		if port == "" {
+			port = "5432"
+		}
+		return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+			c.DBUser,
+			encodedPassword,
+			c.DBHost,
+			port,
+			c.DBName,
+			sslMode,
+		)
+	}
+	// Fallback to legacy DB_SOURCE
+	return c.DBSource
 }
 
 // GetOutboxPollInterval returns the poll interval as time.Duration.
@@ -73,6 +111,12 @@ func LoadConfig(path string) (config Config, err error) {
 	// Bind environment variables explicitly
 	viper.BindEnv("ENVIRONMENT")
 	viper.BindEnv("DB_SOURCE")
+	viper.BindEnv("DB_HOST")
+	viper.BindEnv("DB_PORT")
+	viper.BindEnv("DB_USER")
+	viper.BindEnv("DB_PASSWORD")
+	viper.BindEnv("DB_NAME")
+	viper.BindEnv("DB_SSLMODE")
 	viper.BindEnv("REDIS_ADDR")
 	viper.BindEnv("HTTP_SERVER_ADDRESS")
 	viper.BindEnv("GRPC_SERVER_ADDRESS")

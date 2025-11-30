@@ -24,7 +24,7 @@ vendor/
 
 # --- Environment & Secrets (QUAN TRỌNG) ---
 # Tuyệt đối không commit file chứa mật khẩu, key, connection string
-*.env.*
+*.env
 app.env
 *.pem
 *.key

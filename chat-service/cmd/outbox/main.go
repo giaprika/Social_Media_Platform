@@ -39,7 +39,7 @@ func main() {
 		zap.Int("batch_size", cfg.OutboxBatchSize))
 
 	// 3. Connect to Database (Requirement 1.1, 1.2)
-	dbPool, err := pgxpool.New(context.Background(), cfg.DBSource)
+	dbPool, err := pgxpool.New(context.Background(), cfg.GetDBSource())
 	if err != nil {
 		logger.Fatal("cannot connect to database", zap.Error(err))
 	}
