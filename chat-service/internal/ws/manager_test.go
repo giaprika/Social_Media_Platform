@@ -290,3 +290,71 @@ func TestConnectionManager_Concurrent(t *testing.T) {
 	// Should have at most 10 users (0-9)
 	assert.LessOrEqual(t, cm.Count(), 10)
 }
+
+
+func TestConnectionManager_Add_ReconnectAfterDisconnect(t *testing.T) {
+	cm := NewConnectionManager()
+
+	userID := "user-1"
+
+	// First connection
+	client1 := NewClient(nil)
+	result1 := cm.Add(userID, client1)
+	assert.False(t, result1.IsReconnect, "first connection should not be a reconnect")
+
+	// Disconnect
+	cm.Remove(userID, client1)
+	assert.Equal(t, 0, cm.Count())
+
+	// Reconnect after disconnect
+	client2 := NewClient(nil)
+	result2 := cm.Add(userID, client2)
+	assert.True(t, result2.IsReconnect, "second connection should be a reconnect")
+	assert.Equal(t, client1.ConnectedAt, result2.PreviousConnectedAt)
+}
+
+func TestConnectionManager_Add_ReconnectWhileConnected(t *testing.T) {
+	cm := NewConnectionManager()
+
+	userID := "user-1"
+
+	// First connection
+	client1 := NewClient(nil)
+	result1 := cm.Add(userID, client1)
+	assert.False(t, result1.IsReconnect)
+
+	// Reconnect while still connected (replace)
+	client2 := NewClient(nil)
+	result2 := cm.Add(userID, client2)
+	assert.True(t, result2.IsReconnect)
+	assert.Equal(t, client1.ConnectedAt, result2.PreviousConnectedAt)
+	assert.True(t, client1.IsClosed(), "old client should be closed")
+}
+
+func TestConnectionManager_Add_MultipleReconnects(t *testing.T) {
+	cm := NewConnectionManager()
+
+	userID := "user-1"
+
+	// First connection
+	client1 := NewClient(nil)
+	result1 := cm.Add(userID, client1)
+	assert.False(t, result1.IsReconnect)
+
+	// Disconnect
+	cm.Remove(userID, client1)
+
+	// Second connection (reconnect)
+	client2 := NewClient(nil)
+	result2 := cm.Add(userID, client2)
+	assert.True(t, result2.IsReconnect)
+
+	// Disconnect again
+	cm.Remove(userID, client2)
+
+	// Third connection (reconnect again)
+	client3 := NewClient(nil)
+	result3 := cm.Add(userID, client3)
+	assert.True(t, result3.IsReconnect)
+	assert.Equal(t, client2.ConnectedAt, result3.PreviousConnectedAt)
+}

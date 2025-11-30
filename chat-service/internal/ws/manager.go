@@ -83,17 +83,26 @@ func (c *Client) IsClosed() bool {
 	return c.closed
 }
 
+// userHistory tracks when a user was last connected (for reconnection detection).
+type userHistory struct {
+	lastConnectedAt    time.Time
+	lastDisconnectedAt time.Time
+}
+
 // ConnectionManager handles WebSocket connections for users.
 // It is thread-safe.
 type ConnectionManager struct {
 	mu          sync.RWMutex
 	connections map[string]*Client
+	// history tracks user connection history for reconnection detection
+	history map[string]*userHistory
 }
 
 // NewConnectionManager creates a new ConnectionManager.
 func NewConnectionManager() *ConnectionManager {
 	return &ConnectionManager{
 		connections: make(map[string]*Client),
+		history:     make(map[string]*userHistory),
 	}
 }
 
@@ -115,6 +124,7 @@ func (cm *ConnectionManager) Add(userID string, client *Client) AddResult {
 
 	result := AddResult{}
 
+	// Check if there's an existing active connection (replace scenario)
 	if oldClient, ok := cm.connections[userID]; ok {
 		result.IsReconnect = true
 		result.PreviousConnectedAt = oldClient.ConnectedAt
@@ -122,7 +132,17 @@ func (cm *ConnectionManager) Add(userID string, client *Client) AddResult {
 		if oldClient.Conn != nil {
 			_ = oldClient.Conn.Close()
 		}
+	} else if hist, ok := cm.history[userID]; ok {
+		// User had a previous connection that was closed - this is a reconnect
+		result.IsReconnect = true
+		result.PreviousConnectedAt = hist.lastConnectedAt
 	}
+
+	// Update history
+	cm.history[userID] = &userHistory{
+		lastConnectedAt: client.ConnectedAt,
+	}
+
 	cm.connections[userID] = client
 	return result
 }
@@ -147,6 +167,11 @@ func (cm *ConnectionManager) Remove(userID string, client *Client) {
 	if client != nil && currentClient != client {
 		cm.mu.Unlock()
 		return
+	}
+
+	// Update history with disconnect time
+	if hist, ok := cm.history[userID]; ok {
+		hist.lastDisconnectedAt = time.Now()
 	}
 
 	// Remove from map first (prevents new messages from being queued)
@@ -176,6 +201,11 @@ func (cm *ConnectionManager) RemoveAndWait(userID string, client *Client) {
 	if client != nil && currentClient != client {
 		cm.mu.Unlock()
 		return
+	}
+
+	// Update history with disconnect time
+	if hist, ok := cm.history[userID]; ok {
+		hist.lastDisconnectedAt = time.Now()
 	}
 
 	delete(cm.connections, userID)
