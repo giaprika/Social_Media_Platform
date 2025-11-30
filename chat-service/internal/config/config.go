@@ -36,6 +36,12 @@ type Config struct {
 
 	// Metrics Settings
 	MetricsPort int `mapstructure:"METRICS_PORT"`
+
+	// Database Pool Settings
+	DBMaxConns     int32 `mapstructure:"DB_MAX_CONNS"`
+	DBMinConns     int32 `mapstructure:"DB_MIN_CONNS"`
+	DBMaxConnLife  int   `mapstructure:"DB_MAX_CONN_LIFE_MINUTES"`
+	DBMaxConnIdle  int   `mapstructure:"DB_MAX_CONN_IDLE_MINUTES"`
 }
 
 // GetDBSource returns the database connection string.
@@ -64,6 +70,38 @@ func (c *Config) GetDBSource() string {
 	}
 	// Fallback to legacy DB_SOURCE
 	return c.DBSource
+}
+
+// GetDBMaxConns returns max connections for the pool (default: 25)
+func (c *Config) GetDBMaxConns() int32 {
+	if c.DBMaxConns <= 0 {
+		return 25
+	}
+	return c.DBMaxConns
+}
+
+// GetDBMinConns returns min connections for the pool (default: 5)
+func (c *Config) GetDBMinConns() int32 {
+	if c.DBMinConns <= 0 {
+		return 5
+	}
+	return c.DBMinConns
+}
+
+// GetDBMaxConnLifetime returns max connection lifetime (default: 60 minutes)
+func (c *Config) GetDBMaxConnLifetime() time.Duration {
+	if c.DBMaxConnLife <= 0 {
+		return 60 * time.Minute
+	}
+	return time.Duration(c.DBMaxConnLife) * time.Minute
+}
+
+// GetDBMaxConnIdleTime returns max connection idle time (default: 15 minutes)
+func (c *Config) GetDBMaxConnIdleTime() time.Duration {
+	if c.DBMaxConnIdle <= 0 {
+		return 15 * time.Minute
+	}
+	return time.Duration(c.DBMaxConnIdle) * time.Minute
 }
 
 // GetOutboxPollInterval returns the poll interval as time.Duration.
@@ -123,6 +161,10 @@ func LoadConfig(path string) (config Config, err error) {
 	_ = viper.BindEnv("OUTBOX_POLL_INTERVAL_MS")
 	_ = viper.BindEnv("OUTBOX_BATCH_SIZE")
 	_ = viper.BindEnv("METRICS_PORT")
+	_ = viper.BindEnv("DB_MAX_CONNS")
+	_ = viper.BindEnv("DB_MIN_CONNS")
+	_ = viper.BindEnv("DB_MAX_CONN_LIFE_MINUTES")
+	_ = viper.BindEnv("DB_MAX_CONN_IDLE_MINUTES")
 
 	// Đọc từ environment variables
 	viper.AutomaticEnv()
