@@ -13,6 +13,7 @@ import (
 	"chat-service/internal/ws"
 
 	"github.com/gorilla/websocket"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
@@ -30,6 +31,7 @@ var (
 	subscriber  *ws.Subscriber
 	router      *ws.Router
 	logger      *zap.Logger
+	metrics     *ws.Metrics
 )
 
 const (
@@ -61,6 +63,7 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 
 	client := ws.NewClient(conn)
 	connManager.Add(userID, client)
+	metrics.ConnectionOpened()
 	log.Printf("Client connected: %s (active: %d)", userID, connManager.Count())
 
 	// Track goroutines for graceful shutdown
@@ -78,6 +81,7 @@ func readPump(userID string, client *ws.Client) {
 	defer func() {
 		client.DoneGoroutine()
 		connManager.Remove(userID, client)
+		metrics.ConnectionClosed()
 		log.Printf("Client disconnected: %s (active: %d)", userID, connManager.Count())
 	}()
 
@@ -184,8 +188,11 @@ func main() {
 	}
 	logger.Info("Connected to Redis", zap.String("addr", redisAddr))
 
-	// Initialize message router
-	router = ws.NewRouter(connManager, logger, nil) // TODO: Add metrics in Task 10
+	// Initialize metrics
+	metrics = ws.DefaultMetrics()
+
+	// Initialize message router with metrics
+	router = ws.NewRouter(connManager, logger, metrics)
 
 	// Initialize and start Redis Pub/Sub subscriber
 	subscriber = ws.NewSubscriber(redisClient, logger, router.HandleEvent)
@@ -199,6 +206,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
 	})
+	mux.Handle("/metrics", promhttp.Handler())
 
 	addr := getEnv("WS_GATEWAY_ADDR", ":8080")
 	server := &http.Server{
