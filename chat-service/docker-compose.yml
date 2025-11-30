@@ -55,6 +55,7 @@ services:
       dockerfile: Dockerfile.ws-gateway
     container_name: chat_ws
     environment:
+      - ENVIRONMENT=production
       - REDIS_ADDR=redis:6379
       - WS_GATEWAY_ADDR=:8080
     ports:
@@ -78,6 +79,7 @@ services:
     env_file:
       - app.env
     environment:
+      - ENVIRONMENT=production
       - REDIS_ADDR=redis:6379
     extra_hosts:
       - "host.docker.internal:host-gateway"
