@@ -23,6 +23,9 @@ type Metrics struct {
 	// Connection events (counter with labels)
 	ConnectionsTotal *prometheus.CounterVec
 
+	// Reconnections counter - when a user reconnects (had previous connection)
+	Reconnections prometheus.Counter
+
 	// Message latency histogram (optional, for future use)
 	MessageLatency prometheus.Histogram
 }
@@ -55,6 +58,12 @@ func NewMetrics(registry prometheus.Registerer) *Metrics {
 			Name:      "connections_total",
 			Help:      "Total number of WebSocket connection events",
 		}, []string{"event"}), // event: "opened", "closed"
+
+		Reconnections: factory.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "reconnections_total",
+			Help:      "Total number of client reconnections (user had previous connection)",
+		}),
 
 		MessageLatency: factory.NewHistogram(prometheus.HistogramOpts{
 			Namespace: namespace,
@@ -92,6 +101,11 @@ func (m *Metrics) ConnectionClosed() {
 // ObserveLatency records message delivery latency.
 func (m *Metrics) ObserveLatency(seconds float64) {
 	m.MessageLatency.Observe(seconds)
+}
+
+// IncReconnections increments the reconnections counter.
+func (m *Metrics) IncReconnections() {
+	m.Reconnections.Inc()
 }
 
 // DefaultMetrics creates metrics with the default Prometheus registry.

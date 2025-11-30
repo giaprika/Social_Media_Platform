@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -20,16 +21,20 @@ type Client struct {
 
 	// WaitGroup to track active goroutines (readPump, writePump)
 	wg sync.WaitGroup
+
+	// ConnectedAt is when this client connected (for gap sync)
+	ConnectedAt time.Time
 }
 
 // NewClient creates a new Client with a cancellable context.
 func NewClient(conn *websocket.Conn) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Client{
-		Conn:   conn,
-		Send:   make(chan []byte, 256), // Buffered channel for outgoing messages
-		ctx:    ctx,
-		cancel: cancel,
+		Conn:        conn,
+		Send:        make(chan []byte, 256), // Buffered channel for outgoing messages
+		ctx:         ctx,
+		cancel:      cancel,
+		ConnectedAt: time.Now(),
 	}
 }
 
@@ -92,19 +97,34 @@ func NewConnectionManager() *ConnectionManager {
 	}
 }
 
+// AddResult contains information about the Add operation.
+type AddResult struct {
+	// IsReconnect is true if there was a previous connection for this user.
+	IsReconnect bool
+	// PreviousConnectedAt is when the previous connection was established.
+	// Only valid if IsReconnect is true.
+	PreviousConnectedAt time.Time
+}
+
 // Add adds a client for a user.
 // If a client already exists, it is closed and replaced.
-func (cm *ConnectionManager) Add(userID string, client *Client) {
+// Returns AddResult with reconnection information.
+func (cm *ConnectionManager) Add(userID string, client *Client) AddResult {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
+	result := AddResult{}
+
 	if oldClient, ok := cm.connections[userID]; ok {
+		result.IsReconnect = true
+		result.PreviousConnectedAt = oldClient.ConnectedAt
 		oldClient.Close()
 		if oldClient.Conn != nil {
 			_ = oldClient.Conn.Close()
 		}
 	}
 	cm.connections[userID] = client
+	return result
 }
 
 // Remove removes the client for a user and performs graceful cleanup.
