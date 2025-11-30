@@ -43,7 +43,6 @@ type ChatService struct {
 	markAsReadFn                   func(ctx context.Context, arg repository.MarkAsReadParams) error
 	beginTxFn                      func(ctx context.Context) (repository.DBTX, error)
 	upsertConversationFn           func(ctx context.Context, qtx *repository.Queries, id pgtype.UUID) (repository.Conversation, error)
-	addParticipantFn               func(ctx context.Context, qtx *repository.Queries, params repository.AddParticipantParams) error
 	addConversationParticipantsFn  func(ctx context.Context, qtx *repository.Queries, params repository.AddConversationParticipantsParams) error
 	insertMessageFn                func(ctx context.Context, qtx *repository.Queries, params repository.InsertMessageParams) (repository.Message, error)
 	updateLastMessageFn            func(ctx context.Context, qtx *repository.Queries, params repository.UpdateConversationLastMessageParams) error
@@ -544,14 +543,6 @@ func (s *ChatService) upsertConversation(ctx context.Context, qtx *repository.Qu
 		return s.upsertConversationFn(ctx, qtx, id)
 	}
 	return qtx.UpsertConversation(ctx, id)
-}
-
-// addParticipant adds a participant to a conversation, using injectable function if available
-func (s *ChatService) addParticipant(ctx context.Context, qtx *repository.Queries, params repository.AddParticipantParams) error {
-	if s.addParticipantFn != nil {
-		return s.addParticipantFn(ctx, qtx, params)
-	}
-	return qtx.AddParticipant(ctx, params)
 }
 
 // addConversationParticipants adds multiple participants to a conversation using bulk insert

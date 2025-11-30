@@ -108,21 +108,21 @@ func LoadConfig(path string) (config Config, err error) {
 	viper.SetConfigName("app")
 	viper.SetConfigType("env")
 
-	// Bind environment variables explicitly
-	viper.BindEnv("ENVIRONMENT")
-	viper.BindEnv("DB_SOURCE")
-	viper.BindEnv("DB_HOST")
-	viper.BindEnv("DB_PORT")
-	viper.BindEnv("DB_USER")
-	viper.BindEnv("DB_PASSWORD")
-	viper.BindEnv("DB_NAME")
-	viper.BindEnv("DB_SSLMODE")
-	viper.BindEnv("REDIS_ADDR")
-	viper.BindEnv("HTTP_SERVER_ADDRESS")
-	viper.BindEnv("GRPC_SERVER_ADDRESS")
-	viper.BindEnv("OUTBOX_POLL_INTERVAL_MS")
-	viper.BindEnv("OUTBOX_BATCH_SIZE")
-	viper.BindEnv("METRICS_PORT")
+	// Bind environment variables explicitly (errors ignored as per viper convention)
+	_ = viper.BindEnv("ENVIRONMENT")
+	_ = viper.BindEnv("DB_SOURCE")
+	_ = viper.BindEnv("DB_HOST")
+	_ = viper.BindEnv("DB_PORT")
+	_ = viper.BindEnv("DB_USER")
+	_ = viper.BindEnv("DB_PASSWORD")
+	_ = viper.BindEnv("DB_NAME")
+	_ = viper.BindEnv("DB_SSLMODE")
+	_ = viper.BindEnv("REDIS_ADDR")
+	_ = viper.BindEnv("HTTP_SERVER_ADDRESS")
+	_ = viper.BindEnv("GRPC_SERVER_ADDRESS")
+	_ = viper.BindEnv("OUTBOX_POLL_INTERVAL_MS")
+	_ = viper.BindEnv("OUTBOX_BATCH_SIZE")
+	_ = viper.BindEnv("METRICS_PORT")
 
 	// Đọc từ environment variables
 	viper.AutomaticEnv()
@@ -133,8 +133,8 @@ func LoadConfig(path string) (config Config, err error) {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return
 		}
-		// Reset error - sẽ dùng env vars
-		err = nil
+		// File not found is ok, continue with env vars
+		err = nil //nolint:ineffassign // intentional reset for env-only mode
 	}
 
 	err = viper.Unmarshal(&config)
