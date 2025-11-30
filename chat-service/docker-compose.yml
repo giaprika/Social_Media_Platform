@@ -78,11 +78,7 @@ services:
     env_file:
       - app.env
     environment:
-      - ENVIRONMENT=production
       - REDIS_ADDR=redis:6379
-      - OUTBOX_POLL_INTERVAL_MS=100
-      - OUTBOX_BATCH_SIZE=100
-      - METRICS_PORT=9091
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
