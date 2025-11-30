@@ -63,15 +63,20 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 	connManager.Add(userID, client)
 	log.Printf("Client connected: %s (active: %d)", userID, connManager.Count())
 
+	// Track goroutines for graceful shutdown
+	client.AddGoroutine() // for writePump
+	client.AddGoroutine() // for readPump
+
 	// Start write pump (for pings and messages)
 	go writePump(userID, client)
 
-	// Start read pump (for pongs and incoming messages)
+	// Start read pump (for pongs and incoming messages) - blocks until disconnect
 	readPump(userID, client)
 }
 
 func readPump(userID string, client *ws.Client) {
 	defer func() {
+		client.DoneGoroutine()
 		connManager.Remove(userID, client)
 		log.Printf("Client disconnected: %s (active: %d)", userID, connManager.Count())
 	}()
@@ -84,13 +89,23 @@ func readPump(userID string, client *ws.Client) {
 		return nil
 	})
 
+	ctx := client.Context()
+
 	for {
+		// Check if context is cancelled (graceful shutdown)
+		select {
+		case <-ctx.Done():
+			log.Printf("ReadPump context cancelled for %s", userID)
+			return
+		default:
+		}
+
 		_, p, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("Read error for %s: %v", userID, err)
 			}
-			break
+			return
 		}
 		log.Printf("Received message from %s: %s", userID, string(p))
 		// Messages from client can be processed here if needed
@@ -101,13 +116,25 @@ func readPump(userID string, client *ws.Client) {
 func writePump(userID string, client *ws.Client) {
 	ticker := time.NewTicker(pingPeriod)
 	conn := client.Conn
+	ctx := client.Context()
+
 	defer func() {
+		client.DoneGoroutine()
 		ticker.Stop()
 		conn.Close()
+		log.Printf("WritePump exited for %s", userID)
 	}()
 
 	for {
 		select {
+		case <-ctx.Done():
+			// Graceful shutdown - send close message before exiting
+			log.Printf("WritePump context cancelled for %s", userID)
+			_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
+			_ = conn.WriteMessage(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseGoingAway, "connection closed"))
+			return
+
 		case message, ok := <-client.Send:
 			_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
@@ -124,6 +151,7 @@ func writePump(userID string, client *ws.Client) {
 		case <-ticker.C:
 			_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				log.Printf("Ping error for %s: %v", userID, err)
 				return
 			}
 		}
@@ -187,25 +215,40 @@ func main() {
 		<-sigChan
 
 		logger.Info("Shutting down WebSocket Gateway...")
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		// Stop subscriber first
+		// Stop subscriber first (stop receiving new messages)
 		if subscriber != nil {
 			_ = subscriber.Stop()
 		}
 
-		// Close all connections
-		for userID, client := range connManager.GetAllClients() {
-			_ = client.Conn.WriteMessage(websocket.CloseMessage,
-				websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutdown"))
-			connManager.Remove(userID, client)
+		// Gracefully close all connections and wait for goroutines to exit
+		clients := connManager.GetAllClients()
+		logger.Info("Closing client connections", zap.Int("count", len(clients)))
+
+		// Use a channel to track completion with timeout
+		done := make(chan struct{})
+		go func() {
+			for userID, client := range clients {
+				logger.Debug("Closing connection", zap.String("user_id", userID))
+				connManager.RemoveAndWait(userID, client)
+			}
+			close(done)
+		}()
+
+		// Wait for all connections to close or timeout
+		select {
+		case <-done:
+			logger.Info("All client connections closed gracefully")
+		case <-shutdownCtx.Done():
+			logger.Warn("Timeout waiting for connections to close, forcing shutdown")
 		}
 
 		// Close Redis client
 		_ = redisClient.Close()
 
-		if err := server.Shutdown(ctx); err != nil {
+		if err := server.Shutdown(shutdownCtx); err != nil {
 			logger.Error("Shutdown error", zap.Error(err))
 		}
 	}()
