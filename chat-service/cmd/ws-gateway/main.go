@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -62,9 +63,24 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := ws.NewClient(conn)
-	connManager.Add(userID, client)
+	result := connManager.Add(userID, client)
 	metrics.ConnectionOpened()
-	log.Printf("Client connected: %s (active: %d)", userID, connManager.Count())
+
+	// Send welcome or reconnected event
+	if err := sendConnectionEvent(client, userID, result); err != nil {
+		log.Printf("Failed to send connection event to %s: %v", userID, err)
+		// Continue anyway - client can still receive messages
+	}
+
+	if result.IsReconnect {
+		metrics.IncReconnections()
+		log.Printf("Client reconnected: %s (gap: %v, active: %d)",
+			userID,
+			client.ConnectedAt.Sub(result.PreviousConnectedAt),
+			connManager.Count())
+	} else {
+		log.Printf("Client connected: %s (active: %d)", userID, connManager.Count())
+	}
 
 	// Track goroutines for graceful shutdown
 	client.AddGoroutine() // for writePump
@@ -279,4 +295,24 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// sendConnectionEvent sends welcome or reconnected event to the client.
+func sendConnectionEvent(client *ws.Client, userID string, result ws.AddResult) error {
+	var event interface{}
+
+	if result.IsReconnect {
+		event = ws.NewReconnectedEvent(userID, result.PreviousConnectedAt)
+	} else {
+		event = ws.NewWelcomeEvent(userID)
+	}
+
+	data, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+
+	// Send directly to connection (not through channel, as writePump may not be started yet)
+	client.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+	return client.Conn.WriteMessage(websocket.TextMessage, data)
 }
