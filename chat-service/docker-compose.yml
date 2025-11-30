@@ -4,24 +4,6 @@ services:
   # =============================================================================
   # Infrastructure
   # =============================================================================
-  
-  postgres:
-    image: postgres:16-alpine
-    container_name: chat_postgres
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: chat_db
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./migrations/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d chat_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
 
   redis:
     image: redis:7-alpine
@@ -44,9 +26,10 @@ services:
       context: .
       dockerfile: Dockerfile.api-server
     container_name: chat_api
+    env_file:
+      - app.env
     environment:
       - ENVIRONMENT=production
-      - DB_SOURCE=postgresql://user:password@postgres:5432/chat_db?sslmode=disable
       - REDIS_ADDR=redis:6379
       - HTTP_SERVER_ADDRESS=0.0.0.0:8080
       - GRPC_SERVER_ADDRESS=0.0.0.0:50051
@@ -54,8 +37,6 @@ services:
       - "8080:8080"
       - "50051:50051"
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
@@ -92,9 +73,10 @@ services:
       context: .
       dockerfile: Dockerfile.outbox
     container_name: chat_outbox
+    env_file:
+      - app.env
     environment:
       - ENVIRONMENT=production
-      - DB_SOURCE=postgresql://user:password@postgres:5432/chat_db?sslmode=disable
       - REDIS_ADDR=redis:6379
       - OUTBOX_POLL_INTERVAL_MS=100
       - OUTBOX_BATCH_SIZE=100
@@ -102,8 +84,6 @@ services:
     ports:
       - "9091:9091"
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
@@ -134,5 +114,4 @@ services:
     profiles:
       - monitoring
 
-volumes:
-  postgres_data:
+volumes: {}
