@@ -12,6 +12,7 @@ const config = {
 
   // Service URLs
   userServiceUrl: process.env.USER_SERVICE_URL,
+  aiServiceUrl: process.env.AI_SERVICE_URL || "http://localhost:9001",
 
   // Rate limiting
   rateLimit: {
@@ -46,6 +47,16 @@ const config = {
         "^/api/service/notifications": "/notifications",
       },
       excludeList: [],
+      timeout: 5000,
+    },
+    posts: {
+      target: process.env.POST_SERVICE_URL || "http://localhost:8000",
+      pathRewrite: {
+        "^/api/service/posts": "/api/v1",
+      },
+      excludeList: [
+        "/health",
+      ],
       timeout: 5000,
     },
   },

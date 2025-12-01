@@ -7,7 +7,7 @@ from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Query, Path, Header
 from dotenv import load_dotenv
 from supabase import create_client
-from models import (
+from .models import (
     ReactionUpsert, ReactionObject,
     ReactionSingleResponse, ReactionListResponse,
     Pagination, Metadata, Link

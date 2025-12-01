@@ -12,7 +12,7 @@ const client = new Client({
   port: process.env.DB_PORT || 5432,
   database: process.env.DB_NAME || "user_db",
   user: process.env.DB_USER || "postgres",
-  password: process.env.DB_PASSWORD || "giap08022005",
+  password: process.env.DB_PASSWORD || "binh39",
 });
 
 async function initDB() {

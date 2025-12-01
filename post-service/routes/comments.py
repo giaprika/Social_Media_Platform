@@ -4,11 +4,11 @@ Comments Service - RESTful API for Comments Management
 import os
 import uuid
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Query, Path, Header, UploadFile, File
+from fastapi import APIRouter, HTTPException, Query, Path, Header, UploadFile, File, Form
 from dotenv import load_dotenv
 from supabase import create_client
-from models import (
-    CommentCreate, CommentUpdate, CommentObject,
+from .models import (
+    CommentObject,
     CommentSingleResponse, CommentListResponse,
     Pagination, Metadata, Link
 )
@@ -189,9 +189,9 @@ async def upload_comment_media(
 @router.post("/posts/{post_id}/comments", response_model=CommentSingleResponse, status_code=201)
 async def create_comment(
     post_id: str = Path(..., description="ID của bài viết"),
-    content: Optional[str] = None,
-    tags: Optional[str] = None,  # JSON string array
-    parent_id: Optional[str] = None,
+    content: Optional[str] = Form(None),
+    tags: Optional[List[str]] = Form(None),
+    parent_id: Optional[str] = Form(None),
     files: Optional[List[UploadFile]] = File(None),
     x_user_id: Optional[str] = Header(None, alias="X-User-ID")
 ):
@@ -219,21 +219,12 @@ async def create_comment(
                     url = await upload_to_supabase(file)
                     media_urls.append(url)
         
-        # Parse tags from JSON string
-        tags_list = None
-        if tags:
-            import json
-            try:
-                tags_list = json.loads(tags)
-            except:
-                tags_list = [tags]
-        
         new_comment = {
             "user_id": user_id,
             "post_id": post_id,
             "content": content,
             "media_urls": media_urls if media_urls else None,
-            "tags": tags_list,
+            "tags": tags,
             "parent_id": parent_id,
             "reacts_count": 0,
         }
@@ -301,8 +292,8 @@ async def get_comment_by_id(
 async def update_comment(
     post_id: str = Path(..., description="ID của bài viết"),
     comment_id: str = Path(..., description="ID của comment"),
-    content: Optional[str] = None,
-    tags: Optional[str] = None,  # JSON string array
+    content: Optional[str] = Form(None),
+    tags: Optional[List[str]] = Form(None),
     files: Optional[List[UploadFile]] = File(None),
     x_user_id: Optional[str] = Header(None, alias="X-User-ID")
 ):
@@ -336,22 +327,13 @@ async def update_comment(
                     url = await upload_to_supabase(file)
                     media_urls.append(url)
         
-        # Parse tags from JSON string
-        tags_list = None
-        if tags:
-            import json
-            try:
-                tags_list = json.loads(tags)
-            except:
-                tags_list = [tags]
-        
         update_data = {}
         if content is not None:
             update_data["content"] = content
         # Always update media_urls (even if empty to clear old files)
         update_data["media_urls"] = media_urls if media_urls else None
         if tags is not None:
-            update_data["tags"] = tags_list
+            update_data["tags"] = tags
         
         if len(update_data) == 1 and "media_urls" in update_data and not files:
             # If only media_urls would be updated but no files provided, still valid (clearing media)
