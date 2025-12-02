@@ -16,12 +16,16 @@ const DefaultLayout = () => {
   const [recentPosts, setRecentPosts] = useState([]);
   
   // Kiểm tra xem có đang ở trang profile hoặc settings không
-  const isProfilePage = location.pathname.includes("/profile");
+  const isProfilePage = location.pathname.includes("/profile") || location.pathname.includes("/u/");
   const isSettingsPage = location.pathname.includes("/settings");
 
   const handleCreatePost = () => {
     // Navigate to feed and trigger create post modal
     navigate(PATHS.FEED, { state: { openCreateModal: true } });
+  };
+
+  const handleOpenChat = () => {
+    setIsChatOpen(true);
   };
 
   const addRecentPost = (post) => {
@@ -77,7 +81,7 @@ const DefaultLayout = () => {
           onCreatePost={handleCreatePost}
         />
         <main className="px-3 sm:px-4 lg:px-6 pb-8 pt-16 lg:pt-20">
-          <Outlet context={{ addRecentPost }} />
+          <Outlet context={{ addRecentPost, onOpenChat: handleOpenChat }} />
         </main>
       </div>
 

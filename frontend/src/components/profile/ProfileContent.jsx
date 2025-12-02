@@ -6,6 +6,7 @@ const ProfileContent = ({
   activeTab = "overview",
   posts = [],
   loading = false,
+  isOwnProfile = false,
   onUpvote,
   onDownvote,
   onComment,
@@ -17,7 +18,7 @@ const ProfileContent = ({
 }) => {
   const renderEmptyState = () => {
     const emptyMessages = {
-      overview: "You don't have any posts yet",
+      overview: isOwnProfile ? "You don't have any posts yet" : "No posts yet",
       posts: "No posts yet",
       comments: "No comments yet",
       saved: "No saved posts",
@@ -28,9 +29,11 @@ const ProfileContent = ({
     };
 
     const emptyDescriptions = {
-      overview: "Once you post to a community, it'll show up here. If you'd rather hide your posts, update your settings.",
-      posts: "Start sharing with the community!",
-      comments: "Join the conversation!",
+      overview: isOwnProfile 
+        ? "Once you post to a community, it'll show up here. If you'd rather hide your posts, update your settings."
+        : "This user hasn't posted anything yet.",
+      posts: isOwnProfile ? "Start sharing with the community!" : "This user hasn't posted anything yet.",
+      comments: isOwnProfile ? "Join the conversation!" : "This user hasn't commented yet.",
       saved: "Save posts to read later",
       history: "Your viewing history will appear here",
       hidden: "Hidden posts will appear here",
@@ -51,7 +54,7 @@ const ProfileContent = ({
         <p className="text-sm text-muted-foreground max-w-md mb-6 leading-relaxed">
           {emptyDescriptions[activeTab]}
         </p>
-        {activeTab === "overview" && (
+        {activeTab === "overview" && isOwnProfile && (
           <button className="px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors">
             Update Settings
           </button>
@@ -62,20 +65,22 @@ const ProfileContent = ({
 
   return (
     <div className="w-full">
-      {/* Content Filter Bar */}
-      <div className="flex items-center justify-between gap-3 mb-6">
-        <button className="flex items-center gap-2 px-3 py-2 rounded-full bg-muted/50 text-sm font-medium text-foreground hover:bg-muted transition-colors border border-border/30">
-          <EyeIcon className="h-4 w-4" />
-          <span>Showing all content</span>
-          <ChevronDownIcon className="h-4 w-4" />
-        </button>
+      {/* Content Filter Bar - Chỉ hiển thị khi xem profile của mình */}
+      {isOwnProfile && (
+        <div className="flex items-center justify-between gap-3 mb-6">
+          <button className="flex items-center gap-2 px-3 py-2 rounded-full bg-muted/50 text-sm font-medium text-foreground hover:bg-muted transition-colors border border-border/30">
+            <EyeIcon className="h-4 w-4" />
+            <span>Showing all content</span>
+            <ChevronDownIcon className="h-4 w-4" />
+          </button>
 
-        <button className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors">
-          <PlusIcon className="h-4 w-4" />
-          <span>Create Post</span>
-          <ChevronDownIcon className="h-4 w-4" />
-        </button>
-      </div>
+          <button className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors">
+            <PlusIcon className="h-4 w-4" />
+            <span>Create Post</span>
+            <ChevronDownIcon className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* Content Area */}
       <div className="space-y-4">

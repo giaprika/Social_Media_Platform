@@ -27,6 +27,10 @@ const routes = {
           element: <Profile />,
         },
         {
+          path: "/app/u/:username",
+          element: <Profile />,
+        },
+        {
           path: PATHS.SETTINGS,
           element: <Settings />,
         },

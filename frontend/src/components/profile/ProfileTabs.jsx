@@ -1,8 +1,9 @@
 import clsx from "clsx";
 import Card from "src/components/ui/Card";
 
-const ProfileTabs = ({ activeTab = "overview", onTabChange }) => {
-  const tabs = [
+const ProfileTabs = ({ activeTab = "overview", onTabChange, isOwnProfile = false }) => {
+  // Tabs đầy đủ cho profile của mình
+  const allTabs = [
     { id: "overview", label: "Overview" },
     { id: "posts", label: "Posts" },
     { id: "comments", label: "Comments" },
@@ -12,6 +13,15 @@ const ProfileTabs = ({ activeTab = "overview", onTabChange }) => {
     { id: "upvoted", label: "Upvoted" },
     { id: "downvoted", label: "Downvoted" },
   ];
+
+  // Tabs giới hạn cho profile người khác
+  const publicTabs = [
+    { id: "overview", label: "Overview" },
+    { id: "posts", label: "Posts" },
+    { id: "comments", label: "Comments" },
+  ];
+
+  const tabs = isOwnProfile ? allTabs : publicTabs;
 
   return (
     <div className="py-6">

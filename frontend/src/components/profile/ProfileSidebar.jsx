@@ -3,17 +3,54 @@ import {
   CakeIcon,
   DocumentTextIcon,
   HeartIcon,
-  UserPlusIcon,
+  UsersIcon,
   ClockIcon,
-  ShareIcon,
+  XMarkIcon,
+  InformationCircleIcon,
 } from "@heroicons/react/24/outline";
-import { differenceInDays, differenceInMonths, differenceInYears } from "date-fns";
+import { differenceInDays } from "date-fns";
 import { getUserStats } from "src/api/user";
 
-const ProfileSidebar = ({ user, stats: initialStats }) => {
+// Modal Component
+const StatsModal = ({ isOpen, onClose, title, children }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div 
+        className="absolute inset-0 bg-black/60" 
+        onClick={onClose}
+      />
+      
+      {/* Modal */}
+      <div className="relative bg-card border border-border rounded-lg w-full max-w-sm mx-4 shadow-xl">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <h3 className="text-base font-bold text-foreground">{title}</h3>
+          <button 
+            onClick={onClose}
+            className="p-1 rounded-full hover:bg-muted transition-colors"
+          >
+            <XMarkIcon className="h-5 w-5 text-muted-foreground" />
+          </button>
+        </div>
+        
+        {/* Content */}
+        <div className="p-4">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ProfileSidebar = ({ user, stats: initialStats, isOwnProfile = false }) => {
   const username = user?.username || "username";
   const [stats, setStats] = useState(initialStats);
   const [loading, setLoading] = useState(!initialStats);
+  const [showFollowModal, setShowFollowModal] = useState(false);
+  const [showContributionsModal, setShowContributionsModal] = useState(false);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -87,13 +124,65 @@ const ProfileSidebar = ({ user, stats: initialStats }) => {
 
   const userStats = stats || {
     followers: 0,
+    following: 0,
     likes: 0,
-    contributions: 0,
+    posts: 0,
+    comments: 0,
     created_at: user?.created_at || new Date().toISOString(),
   };
 
   return (
     <div className="space-y-3">
+      {/* Follow Modal */}
+      <StatsModal 
+        isOpen={showFollowModal} 
+        onClose={() => setShowFollowModal(false)}
+        title="Follow"
+      >
+        <p className="text-sm text-muted-foreground mb-4">Followers and following</p>
+        <div className="flex gap-4">
+          <div className="flex-1 text-center py-3 border-r border-border">
+            <div className="text-2xl font-bold text-foreground">
+              {formatNumber(userStats.followers)}
+            </div>
+            <div className="text-xs text-muted-foreground">Followers</div>
+          </div>
+          <div className="flex-1 text-center py-3">
+            <div className="text-2xl font-bold text-foreground">
+              {formatNumber(userStats.following || 0)}
+            </div>
+            <div className="text-xs text-muted-foreground">Following</div>
+          </div>
+        </div>
+      </StatsModal>
+
+      {/* Contributions Modal */}
+      <StatsModal 
+        isOpen={showContributionsModal} 
+        onClose={() => setShowContributionsModal(false)}
+        title="Contributions"
+      >
+        <p className="text-sm text-muted-foreground mb-4">Total posts and comments</p>
+        <div className="flex gap-4 mb-4">
+          <div className="flex-1 text-center py-3 border-r border-border">
+            <div className="text-2xl font-bold text-foreground">
+              {formatNumber(userStats.posts || 0)}
+            </div>
+            <div className="text-xs text-muted-foreground">Posts</div>
+          </div>
+          <div className="flex-1 text-center py-3">
+            <div className="text-2xl font-bold text-foreground">
+              {formatNumber(userStats.comments || 0)}
+            </div>
+            <div className="text-xs text-muted-foreground">Comments</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <InformationCircleIcon className="h-4 w-4" />
+          <span>Updates every 24 hours</span>
+        </div>
+      </StatsModal>
+
       {/* Stats Card */}
       <div className="rounded-lg border border-border bg-card overflow-hidden">
         <div className="px-4 py-3 border-b border-border bg-primary/5">
@@ -108,16 +197,19 @@ const ProfileSidebar = ({ user, stats: initialStats }) => {
         </div>
 
         <div className="p-4 space-y-3">
-          {/* Followers */}
-          <div className="flex items-center justify-between">
+          {/* Follow - Gộp Followers và Following */}
+          <button 
+            onClick={() => setShowFollowModal(true)}
+            className="w-full flex items-center justify-between hover:bg-muted/50 rounded-md transition-colors cursor-pointer group"
+          >
             <div className="flex items-center gap-2">
-              <UserPlusIcon className="h-4 w-4 text-primary" />
-              <span className="text-sm text-muted-foreground">Followers</span>
+              <UsersIcon className="h-4 w-4 text-primary" />
+              <span className="text-sm text-muted-foreground group-hover:text-foreground">Follow</span>
             </div>
             <span className="text-sm font-semibold text-foreground">
-              {formatNumber(userStats.followers)}
+              {loading ? "..." : formatNumber(userStats.followers + (userStats.following || 0))}
             </span>
-          </div>
+          </button>
 
           {/* Likes */}
           <div className="flex items-center justify-between">
@@ -131,15 +223,18 @@ const ProfileSidebar = ({ user, stats: initialStats }) => {
           </div>
 
           {/* Contributions */}
-          <div className="flex items-center justify-between">
+          <button 
+            onClick={() => setShowContributionsModal(true)}
+            className="w-full flex items-center justify-between hover:bg-muted/50 rounded-md transition-colors cursor-pointer group"
+          >
             <div className="flex items-center gap-2">
               <DocumentTextIcon className="h-4 w-4 text-info" />
-              <span className="text-sm text-muted-foreground">Contributions</span>
+              <span className="text-sm text-muted-foreground group-hover:text-foreground">Contributions</span>
             </div>
             <span className="text-sm font-semibold text-foreground">
-              {formatNumber(userStats.contributions)}
+              {loading ? "..." : formatNumber((userStats.posts || 0) + (userStats.comments || 0))}
             </span>
-          </div>
+          </button>
 
           {/* Social Age */}
           <div className="flex items-center justify-between">
@@ -185,92 +280,94 @@ const ProfileSidebar = ({ user, stats: initialStats }) => {
         </div>
       </div>
 
-      {/* Settings */}
-      <div className="rounded-lg border border-border bg-card overflow-hidden">
-        <div className="px-4 py-3 border-b border-border">
-          <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-            Settings
-          </h3>
+      {/* Settings - Chỉ hiển thị cho profile của mình */}
+      {isOwnProfile && (
+        <div className="rounded-lg border border-border bg-card overflow-hidden">
+          <div className="px-4 py-3 border-b border-border">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+              Settings
+            </h3>
+          </div>
+
+          <div className="divide-y divide-border">
+            <div className="px-4 py-3 hover:bg-muted/50 transition-colors cursor-pointer">
+              <div className="flex items-start gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
+                  <span className="text-lg">👤</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-semibold text-foreground mb-0.5">
+                    Profile
+                  </h4>
+                  <p className="text-xs text-muted-foreground">
+                    Customize your profile
+                  </p>
+                </div>
+                <button className="px-3 py-1 rounded-full bg-muted text-xs font-semibold text-foreground hover:bg-muted/80 transition-colors">
+                  Update
+                </button>
+              </div>
+            </div>
+
+            <div className="px-4 py-3 hover:bg-muted/50 transition-colors cursor-pointer">
+              <div className="flex items-start gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
+                  <span className="text-lg">👁️</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-semibold text-foreground mb-0.5">
+                    Curate your profile
+                  </h4>
+                  <p className="text-xs text-muted-foreground">
+                    Manage what people see when they visit your profile
+                  </p>
+                </div>
+                <button className="px-3 py-1 rounded-full bg-muted text-xs font-semibold text-foreground hover:bg-muted/80 transition-colors">
+                  Update
+                </button>
+              </div>
+            </div>
+
+            <div className="px-4 py-3 hover:bg-muted/50 transition-colors cursor-pointer">
+              <div className="flex items-start gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
+                  <span className="text-lg">👕</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-semibold text-foreground mb-0.5">
+                    Avatar
+                  </h4>
+                  <p className="text-xs text-muted-foreground">
+                    Style your avatar
+                  </p>
+                </div>
+                <button className="px-3 py-1 rounded-full bg-muted text-xs font-semibold text-foreground hover:bg-muted/80 transition-colors">
+                  Update
+                </button>
+              </div>
+            </div>
+
+            <div className="px-4 py-3 hover:bg-muted/50 transition-colors cursor-pointer">
+              <div className="flex items-start gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
+                  <span className="text-lg">🛡️</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-semibold text-foreground mb-0.5">
+                    Mod Tools
+                  </h4>
+                  <p className="text-xs text-muted-foreground">
+                    Moderate your profile
+                  </p>
+                </div>
+                <button className="px-3 py-1 rounded-full bg-muted text-xs font-semibold text-foreground hover:bg-muted/80 transition-colors">
+                  Update
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-
-        <div className="divide-y divide-border">
-          <div className="px-4 py-3 hover:bg-muted/50 transition-colors cursor-pointer">
-            <div className="flex items-start gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
-                <span className="text-lg">👤</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <h4 className="text-sm font-semibold text-foreground mb-0.5">
-                  Profile
-                </h4>
-                <p className="text-xs text-muted-foreground">
-                  Customize your profile
-                </p>
-              </div>
-              <button className="px-3 py-1 rounded-full bg-muted text-xs font-semibold text-foreground hover:bg-muted/80 transition-colors">
-                Update
-              </button>
-            </div>
-          </div>
-
-          <div className="px-4 py-3 hover:bg-muted/50 transition-colors cursor-pointer">
-            <div className="flex items-start gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
-                <span className="text-lg">👁️</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <h4 className="text-sm font-semibold text-foreground mb-0.5">
-                  Curate your profile
-                </h4>
-                <p className="text-xs text-muted-foreground">
-                  Manage what people see when they visit your profile
-                </p>
-              </div>
-              <button className="px-3 py-1 rounded-full bg-muted text-xs font-semibold text-foreground hover:bg-muted/80 transition-colors">
-                Update
-              </button>
-            </div>
-          </div>
-
-          <div className="px-4 py-3 hover:bg-muted/50 transition-colors cursor-pointer">
-            <div className="flex items-start gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
-                <span className="text-lg">👕</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <h4 className="text-sm font-semibold text-foreground mb-0.5">
-                  Avatar
-                </h4>
-                <p className="text-xs text-muted-foreground">
-                  Style your avatar
-                </p>
-              </div>
-              <button className="px-3 py-1 rounded-full bg-muted text-xs font-semibold text-foreground hover:bg-muted/80 transition-colors">
-                Update
-              </button>
-            </div>
-          </div>
-
-          <div className="px-4 py-3 hover:bg-muted/50 transition-colors cursor-pointer">
-            <div className="flex items-start gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
-                <span className="text-lg">🛡️</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <h4 className="text-sm font-semibold text-foreground mb-0.5">
-                  Mod Tools
-                </h4>
-                <p className="text-xs text-muted-foreground">
-                  Moderate your profile
-                </p>
-              </div>
-              <button className="px-3 py-1 rounded-full bg-muted text-xs font-semibold text-foreground hover:bg-muted/80 transition-colors">
-                Update
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Social Links */}
       <div className="rounded-lg border border-border bg-card overflow-hidden">
