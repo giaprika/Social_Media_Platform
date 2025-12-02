@@ -11,3 +11,5 @@ __pycache__/
 
 **/.env
 !**/.env.example
+/ai-service/eval_agent/.adk
+*.json
