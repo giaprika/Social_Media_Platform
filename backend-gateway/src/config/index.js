@@ -12,7 +12,7 @@ const config = {
 
   // Service URLs
   userServiceUrl: process.env.USER_SERVICE_URL,
-  aiServiceUrl: process.env.AI_SERVICE_URL || "http://localhost:9001",
+  aiServiceUrl: process.env.AI_SERVICE_URL,
 
   // Rate limiting
   rateLimit: {

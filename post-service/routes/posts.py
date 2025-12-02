@@ -168,7 +168,6 @@ async def create_post(
     files: Optional[List[UploadFile]] = File(None),
     x_user_id: str = Header(..., alias="X-User-ID")
 ):
-    
     user_id = get_user_id(x_user_id)
     
     try:
@@ -354,3 +353,55 @@ async def delete_post(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
+# ============= UC4.1: UPLOAD MEDIA FILES =============
+@router.post("/upload")
+async def upload_files(
+    files: List[UploadFile] = File(...),
+    x_user_id: str = Header(..., alias="X-User-ID")
+):
+    """
+    Upload riêng lẻ files (ảnh/video) lên Supabase Storage.
+    
+    **Use case:** UC4.1 - Upload Media Files
+    
+    **Input:**
+    - files: Danh sách files (chỉ chấp nhận image/* hoặc video/*)
+    
+    **Output:**
+    - Danh sách public URLs của files đã upload
+    
+    **Validation:**
+    - Chỉ chấp nhận image/* và video/* content types
+    - Trả về 400 nếu file không phải ảnh/video
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided")
+    
+    uploaded_urls = []
+    
+    for file in files:
+        # Validation: Chỉ chấp nhận ảnh hoặc video
+        content_type = file.content_type
+        if not (content_type and (content_type.startswith("image/") or content_type.startswith("video/"))):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"File '{file.filename}' không hợp lệ. Chỉ chấp nhận ảnh hoặc video."
+            )
+        
+        try:
+            url = await upload_to_supabase(file)
+            uploaded_urls.append(url)
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Upload failed for '{file.filename}': {str(e)}")
+    
+    return {
+        "status": "success",
+        "message": f"Uploaded {len(uploaded_urls)} file(s) successfully",
+        "data": {
+            "urls": uploaded_urls
+        }
+    }

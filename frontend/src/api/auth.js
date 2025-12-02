@@ -1,7 +1,7 @@
 import instance from "./axios";
 import axios from "axios";
 
-const API_BASE_URL = process.env.BACKEND_URL || "http://localhost:8000";
+const API_BASE_URL = process.env.BACKEND_URL || "http://localhost:3000";
 
 const instanceWithoutCredential = axios.create({ baseURL: API_BASE_URL });
 

@@ -1,5 +1,23 @@
-CREATE TYPE user_status AS ENUM ('active', 'banned', 'suspended');
+-- ============================================
+-- DROP EXISTING TABLES AND TYPES
+-- ============================================
+DROP TABLE IF EXISTS relationships CASCADE;
+DROP TABLE IF EXISTS auth_tokens CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+DROP TYPE IF EXISTS relationship_status;
+DROP TYPE IF EXISTS relationship_type;
+DROP TYPE IF EXISTS user_status;
 
+-- ============================================
+-- CREATE TYPES
+-- ============================================
+CREATE TYPE user_status AS ENUM ('active', 'banned', 'suspended');
+CREATE TYPE relationship_type AS ENUM ('friend', 'follow', 'block');
+CREATE TYPE relationship_status AS ENUM ('pending', 'accepted');
+
+-- ============================================
+-- CREATE TABLES
+-- ============================================
 CREATE TABLE users (
   id UUID PRIMARY KEY,
   username VARCHAR(255) NOT NULL UNIQUE,
@@ -23,10 +41,6 @@ CREATE TABLE auth_tokens (
   last_used_at TIMESTAMP,
   is_revoked BOOLEAN
 );
-
-CREATE TYPE relationship_type AS ENUM ('friend', 'follow', 'block');
-
-CREATE TYPE relationship_status AS ENUM ('pending', 'accepted');
 
 CREATE TABLE relationships (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
