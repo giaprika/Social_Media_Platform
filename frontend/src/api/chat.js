@@ -53,14 +53,26 @@ export const generateConversationIdForUsers = (userId1, userId2) => {
  * Send a message in a conversation
  * @param {string} conversationId - Conversation ID (UUID)
  * @param {string} content - Message content
+ * @param {string[]} [receiverIds] - Optional array of receiver user IDs (for adding participants)
  * @returns {Promise<{message_id: string, status: string}>}
  */
-export const sendMessage = async (conversationId, content) => {
-	const response = await chatApi.post(`${CHAT_PATH}/v1/messages`, {
+export const sendMessage = async (
+	conversationId,
+	content,
+	receiverIds = null
+) => {
+	const payload = {
 		conversation_id: conversationId,
 		content: content,
 		idempotency_key: generateUUID(),
-	})
+	}
+
+	// Add receiver_ids if provided (this adds recipients as participants)
+	if (receiverIds && receiverIds.length > 0) {
+		payload.receiver_ids = receiverIds
+	}
+
+	const response = await chatApi.post(`${CHAT_PATH}/v1/messages`, payload)
 	return response.data
 }
 
@@ -152,6 +164,7 @@ export const startConversation = async (
 		conversation_id: conversationId,
 		content: content,
 		idempotency_key: generateUUID(),
+		receiver_ids: [recipientId], // Add recipient as participant
 	})
 
 	return {

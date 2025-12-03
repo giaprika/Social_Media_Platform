@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  ArrowLeftIcon,
   ArrowTopRightOnSquareIcon,
   ArrowsPointingOutIcon,
   ArrowsPointingInIcon,
@@ -13,13 +12,13 @@ import {
   PlusCircleIcon,
   UserGroupIcon,
   XMarkIcon,
-  ExclamationCircleIcon,
 } from '@heroicons/react/24/outline'
 import { useChat } from 'src/contexts/ChatContext'
 import useAuth from 'src/hooks/useAuth'
 import { formatDistanceToNow } from 'date-fns'
 import * as userApi from 'src/api/user'
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
+import Avatar from 'src/components/ui/Avatar'
 
 const filterOptions = [
   { id: 'channels', label: 'Chat channels' },
@@ -33,6 +32,7 @@ const ConversationItem = ({ conversation, isActive, onClick, currentUserId }) =>
   // Support both camelCase (from API) and snake_case (normalized)
   const lastMessageAt = conversation.last_message_at || conversation.lastMessageAt
   const lastMessageContent = conversation.last_message_content || conversation.lastMessageContent
+  const lastMessageSenderId = conversation.last_message_sender_id || conversation.lastMessageSenderId
   const unreadCount = conversation.unread_count ?? conversation.unreadCount ?? 0
 
   const timeAgo = lastMessageAt
@@ -55,6 +55,18 @@ const ConversationItem = ({ conversation, isActive, onClick, currentUserId }) =>
   const avatarUrl = conversation.recipient?.avatar_url || otherParticipant?.avatar_url
   const isDirectChat = conversation.participants?.length === 2 || conversation.recipient
 
+  // Check if last message was sent by current user
+  const isLastMessageOwn = lastMessageSenderId && 
+    String(lastMessageSenderId).toLowerCase() === String(currentUserId).toLowerCase()
+
+  // Only show unread count for incoming messages (not messages we sent)
+  const showUnreadBadge = unreadCount > 0 && !isLastMessageOwn
+
+  // Format preview with "You: " prefix if user sent the last message
+  const messagePreview = lastMessageContent
+    ? (isLastMessageOwn ? `You: ${lastMessageContent}` : lastMessageContent)
+    : 'No messages yet'
+
   return (
     <button
       type="button"
@@ -66,21 +78,18 @@ const ConversationItem = ({ conversation, isActive, onClick, currentUserId }) =>
           : 'hover:bg-muted/50'
       )}
     >
-      <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0 overflow-hidden">
-        {avatarUrl ? (
-          <img
-            src={avatarUrl}
-            alt={conversationName}
-            className="h-full w-full object-cover"
-          />
-        ) : isDirectChat ? (
-          <span className="text-lg font-medium text-primary">
-            {conversationName[0]?.toUpperCase() || '?'}
-          </span>
-        ) : (
+      {isDirectChat ? (
+        <Avatar
+          src={avatarUrl}
+          name={conversationName}
+          size="md"
+          className="flex-shrink-0"
+        />
+      ) : (
+        <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
           <UserGroupIcon className="h-5 w-5 text-primary" />
-        )}
-      </div>
+        </div>
+      )}
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium text-foreground truncate">
@@ -89,10 +98,10 @@ const ConversationItem = ({ conversation, isActive, onClick, currentUserId }) =>
           <span className="text-xs text-muted-foreground">{timeAgo}</span>
         </div>
         <p className="text-xs text-muted-foreground truncate mt-0.5">
-          {lastMessageContent || 'No messages yet'}
+          {messagePreview}
         </p>
       </div>
-      {unreadCount > 0 && (
+      {showUnreadBadge && (
         <span className="flex-shrink-0 h-5 min-w-5 px-1.5 rounded-full bg-primary text-primary-foreground text-xs font-medium flex items-center justify-center">
           {unreadCount}
         </span>
@@ -195,11 +204,16 @@ const ChatView = ({ conversation }) => {
     const content = inputValue.trim()
     if (!content || isSending) return
 
+    // Get recipient ID from various sources
+    const recipientId = conversation.recipient?.id || otherParticipant?.id
+    
     console.log('[ChatPanel] handleSend:', {
       content,
       isNew: conversation.isNew,
       conversationId: conversation.id,
-      recipientId: conversation.recipient?.id,
+      recipientId: recipientId,
+      recipientSource: conversation.recipient?.id ? 'recipient' : otherParticipant?.id ? 'otherParticipant' : 'none',
+      conversationData: conversation,
     })
 
     setIsSending(true)
@@ -216,8 +230,9 @@ const ChatView = ({ conversation }) => {
         )
         console.log('[ChatPanel] New conversation result:', result)
       } else {
-        console.log('[ChatPanel] Sending to existing conversation:', conversation.id)
-        await sendMessage(conversation.id, content)
+        // Existing conversation -> send message with recipient ID to ensure they're a participant
+        console.log('[ChatPanel] Sending to existing conversation:', conversation.id, 'recipient:', recipientId)
+        await sendMessage(conversation.id, content, recipientId)
       }
     } catch (error) {
       console.error('[ChatPanel] Failed to send message:', error)
@@ -251,21 +266,17 @@ const ChatView = ({ conversation }) => {
     <div className="flex flex-col h-full">
       {/* Chat Header */}
       <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
-        <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
-          {avatarUrl ? (
-            <img
-              src={avatarUrl}
-              alt={conversationName}
-              className="h-full w-full object-cover"
-            />
-          ) : isDirectChat ? (
-            <span className="text-sm font-medium text-primary">
-              {conversationName[0]?.toUpperCase() || '?'}
-            </span>
-          ) : (
+        {isDirectChat ? (
+          <Avatar
+            src={avatarUrl}
+            name={conversationName}
+            size="sm"
+          />
+        ) : (
+          <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
             <UserGroupIcon className="h-4 w-4 text-primary" />
-          )}
-        </div>
+          </div>
+        )}
         <div className="flex-1 min-w-0">
           <span className="text-sm font-semibold text-foreground truncate block">
             {conversationName}
@@ -502,19 +513,11 @@ const UserSearchModal = ({ isOpen, onClose, onSelectUser }) => {
                 onClick={() => onSelectUser(user)}
                 className="flex w-full items-center gap-3 rounded-lg p-2 hover:bg-muted text-left"
               >
-                <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
-                  {user.avatar_url ? (
-                    <img
-                      src={user.avatar_url}
-                      alt={user.full_name}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <span className="text-lg font-medium text-primary">
-                      {user.full_name?.[0]}
-                    </span>
-                  )}
-                </div>
+                <Avatar
+                  src={user.avatar_url}
+                  name={user.full_name}
+                  size="md"
+                />
                 <div>
                   <p className="font-medium text-foreground">{user.full_name}</p>
                   <p className="text-xs text-muted-foreground">

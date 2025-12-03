@@ -7,6 +7,7 @@ import {
 	useRef,
 } from 'react'
 import * as chatApi from '../api/chat'
+import * as userApi from '../api/user'
 import chatWebSocket from '../services/chatWebSocket'
 import useAuth from '../hooks/useAuth'
 
@@ -55,6 +56,7 @@ export function ChatProvider({ children }) {
 		id: conv.id,
 		last_message_content: conv.lastMessageContent || conv.last_message_content,
 		last_message_at: conv.lastMessageAt || conv.last_message_at,
+		last_message_sender_id: conv.lastMessageSenderId || conv.last_message_sender_id,
 		unread_count: conv.unreadCount ?? conv.unread_count ?? 0,
 		// Preserve enriched data
 		participants: conv.participants,
@@ -99,6 +101,35 @@ export function ChatProvider({ children }) {
 		}
 	}, [enrichConversations])
 
+	// Fetch user info and cache it
+	const fetchAndCacheUser = useCallback(async (userId) => {
+		if (!userId) return null
+		
+		// Check cache first
+		const cache = getParticipantsCache()
+		const cachedUser = cache[`user_${userId}`]
+		if (cachedUser) return cachedUser
+
+		try {
+			const response = await userApi.getUserById(userId)
+			const userData = response.data
+			if (userData) {
+				// Cache user info
+				cache[`user_${userId}`] = {
+					id: userData.id,
+					full_name: userData.full_name,
+					username: userData.username,
+					avatar_url: userData.avatar_url
+				}
+				setParticipantsCache(cache)
+				return cache[`user_${userId}`]
+			}
+		} catch (err) {
+			console.warn('[ChatContext] Failed to fetch user info:', userId, err)
+		}
+		return null
+	}, [])
+
 	// Load messages for a conversation
 	const loadMessages = useCallback(async (conversationId, options = {}) => {
 		try {
@@ -118,12 +149,114 @@ export function ChatProvider({ children }) {
 
 			if (options.beforeTimestamp) {
 				// Append older messages (pagination)
-				setMessages((prev) => [...(response.messages || []).map(normalizeMessage), ...prev])
+				const olderMsgs = (response.messages || []).map(normalizeMessage)
+				setMessages((prev) => {
+					// Deduplicate when adding older messages
+					const existingIds = new Set(prev.map(m => m.id))
+					const uniqueOlder = olderMsgs.filter(m => !existingIds.has(m.id))
+					return [...uniqueOlder, ...prev]
+				})
 			} else {
-				// Initial load - reverse to show oldest first
+				// Initial load or polling - smart merge
 				const msgs = (response.messages || []).map(normalizeMessage).reverse()
-				console.log('[ChatContext] Setting messages (normalized & reversed):', msgs)
-				setMessages(msgs)
+				console.log('[ChatContext] Messages from API (reversed):', msgs.length)
+				
+				setMessages((prev) => {
+					if (prev.length === 0) {
+						return msgs
+					}
+					
+					// Create a map of existing messages by ID for quick lookup
+					const existingMap = new Map(prev.map(m => [m.id, m]))
+					
+					// Merge: keep all unique messages, sorted by created_at
+					msgs.forEach(m => {
+						if (!existingMap.has(m.id)) {
+							existingMap.set(m.id, m)
+						}
+					})
+					
+					// Convert back to array and sort by created_at
+					const merged = Array.from(existingMap.values()).sort((a, b) => 
+						new Date(a.created_at) - new Date(b.created_at)
+					)
+					
+					// Only update if there are actual changes
+					if (merged.length === prev.length) {
+						return prev
+					}
+					
+					console.log('[ChatContext] Merged messages:', prev.length, '->', merged.length)
+					return merged
+				})
+
+				// Extract unique sender IDs to identify participants
+				if (msgs.length > 0) {
+					const senderIds = [...new Set(msgs.map(m => m.sender_id).filter(Boolean))]
+					console.log('[ChatContext] Found sender IDs:', senderIds)
+
+					// Fetch user info for unknown senders (not current user)
+					const otherSenderIds = senderIds.filter(id => 
+						id && String(id).toLowerCase() !== String(user?.id).toLowerCase()
+					)
+
+					if (otherSenderIds.length > 0) {
+						// Fetch and cache other participants' info
+						const otherUsers = await Promise.all(
+							otherSenderIds.map(id => fetchAndCacheUser(id))
+						)
+						const validOtherUsers = otherUsers.filter(Boolean)
+
+						if (validOtherUsers.length > 0) {
+							// Update conversation with participant info
+							const cache = getParticipantsCache()
+							cache[conversationId] = {
+								participants: [
+									{ id: user?.id, full_name: user?.full_name, username: user?.username, avatar_url: user?.avatar_url },
+									...validOtherUsers
+								],
+								recipient: validOtherUsers[0] // For direct chat, first other user is recipient
+							}
+							setParticipantsCache(cache)
+
+							// Update conversations state with new participant info
+							setConversations((prev) =>
+								prev.map((conv) =>
+									conv.id === conversationId
+										? { 
+											...conv, 
+											recipient: validOtherUsers[0],
+											participants: cache[conversationId].participants,
+											last_message_sender_id: msgs[msgs.length - 1].sender_id
+										}
+										: conv
+								)
+							)
+
+							// Also update activeConversation if it's the current one
+							setActiveConversationState((prev) => {
+								if (prev?.id === conversationId) {
+									return {
+										...prev,
+										recipient: validOtherUsers[0],
+										participants: cache[conversationId].participants,
+									}
+								}
+								return prev
+							})
+						}
+					}
+
+					// Update last message sender info
+					const lastMsg = msgs[msgs.length - 1]
+					setConversations((prev) =>
+						prev.map((conv) =>
+							conv.id === conversationId
+								? { ...conv, last_message_sender_id: lastMsg.sender_id }
+								: conv
+						)
+					)
+				}
 			}
 
 			return response
@@ -134,27 +267,66 @@ export function ChatProvider({ children }) {
 		} finally {
 			setIsLoading(false)
 		}
-	}, [])
+	}, [user, fetchAndCacheUser])
 
 	// Send a message
 	const sendMessage = useCallback(
-		async (conversationId, content) => {
+		async (conversationId, content, recipientId = null) => {
 			try {
 				setError(null)
-				const response = await chatApi.sendMessage(conversationId, content)
+				
+				// If recipientId not provided, try to get from current messages
+				let finalRecipientId = recipientId
+				if (!finalRecipientId && messages.length > 0) {
+					// Find any sender that isn't the current user
+					const otherSender = messages.find(m => 
+						m.sender_id && String(m.sender_id).toLowerCase() !== String(user?.id).toLowerCase()
+					)
+					if (otherSender) {
+						finalRecipientId = otherSender.sender_id
+						console.log('[ChatContext] Got recipient from messages:', finalRecipientId)
+					}
+				}
+				
+				// Always include receiver_ids to ensure recipient is added as participant
+				const receiverIds = finalRecipientId ? [finalRecipientId] : null
+				console.log('[ChatContext] Sending message with receiverIds:', receiverIds)
+				const response = await chatApi.sendMessage(conversationId, content, receiverIds)
+				
+				// API returns messageId (camelCase), normalize to message_id
+				const messageId = response.messageId || response.message_id
+				console.log('[ChatContext] Message sent, ID:', messageId)
 
-				// Optimistically add message to state
+				// Optimistically add message to state (avoid duplicates)
 				const newMessage = {
-					id: response.message_id,
+					id: messageId,
 					conversation_id: conversationId,
 					sender_id: user?.id,
 					content: content,
 					created_at: new Date().toISOString(),
 				}
-				setMessages((prev) => [...prev, newMessage])
+				setMessages((prev) => {
+					// Check if message already exists
+					if (prev.some(m => m.id === messageId)) {
+						console.log('[ChatContext] Message already exists, skipping:', messageId)
+						return prev
+					}
+					return [...prev, newMessage]
+				})
 
-				// Refresh conversations to update last_message
-				loadConversations()
+				// Optimistically update conversation with last message info
+				setConversations((prev) =>
+					prev.map((conv) =>
+						conv.id === conversationId
+							? {
+								...conv,
+								last_message_content: content,
+								last_message_at: new Date().toISOString(),
+								last_message_sender_id: user?.id,
+							}
+							: conv
+					)
+				)
 
 				return response
 			} catch (err) {
@@ -163,7 +335,7 @@ export function ChatProvider({ children }) {
 				throw err
 			}
 		},
-		[user?.id, loadConversations]
+		[user?.id, messages]
 	)
 
 	// Mark conversation as read
@@ -219,7 +391,9 @@ export function ChatProvider({ children }) {
 				// Pass current user ID to create deterministic conversation ID
 				const result = await chatApi.startConversation(user.id, recipientId, content)
 				
-				console.log('[ChatContext] startNewConversation result:', result)
+				// Normalize response - API returns messageId (camelCase)
+				const messageId = result.messageId || result.message_id
+				console.log('[ChatContext] startNewConversation result:', result, 'messageId:', messageId)
 
 				// Cache participant info for this conversation
 				if (recipientInfo || activeConversation?.recipient) {
@@ -260,15 +434,24 @@ export function ChatProvider({ children }) {
 					// Set as active conversation
 					setActiveConversationState(newConv)
 
-					// Optimistically add message to state
+					// Set the first message (check for duplicates)
 					const newMessage = {
-						id: result.message_id,
+						id: messageId,
 						conversation_id: result.conversation_id,
 						sender_id: user?.id,
 						content: content,
 						created_at: new Date().toISOString(),
 					}
-					setMessages([newMessage])
+					setMessages((prev) => {
+						if (prev.some(m => m.id === messageId)) {
+							return prev
+						}
+						// For new conversation, just set this message
+						if (prev.length === 0 || prev[0]?.conversation_id !== result.conversation_id) {
+							return [newMessage]
+						}
+						return [...prev, newMessage]
+					})
 
 					return result
 				}
@@ -287,14 +470,19 @@ export function ChatProvider({ children }) {
 				}
 				setActiveConversationState(minimalConv)
 				
-				const newMessage = {
-					id: result.message_id,
+				const newMessage2 = {
+					id: messageId,
 					conversation_id: result.conversation_id,
 					sender_id: user?.id,
 					content: content,
 					created_at: new Date().toISOString(),
 				}
-				setMessages([newMessage])
+				setMessages((prev) => {
+					if (prev.some(m => m.id === messageId)) {
+						return prev
+					}
+					return [newMessage2]
+				})
 
 				return result
 			} catch (err) {
@@ -384,6 +572,33 @@ export function ChatProvider({ children }) {
 			loadConversations()
 		}
 	}, [authed, user?.id, loadConversations])
+
+	// Auto-refresh conversations every 15 seconds (polling for new messages when WS is not available)
+	useEffect(() => {
+		if (!authed || !user?.id) return
+
+		// Only poll if WebSocket is not connected
+		if (wsConnected) return
+
+		const pollInterval = setInterval(() => {
+			console.log('[ChatContext] Polling for new conversations...')
+			loadConversations()
+		}, 5000) // Poll every 5 seconds
+
+		return () => clearInterval(pollInterval)
+	}, [authed, user?.id, wsConnected, loadConversations])
+
+	// Auto-refresh messages for active conversation (polling when WS not available)
+	useEffect(() => {
+		if (!authed || !user?.id || !activeConversation?.id || wsConnected) return
+
+		const pollMessages = setInterval(() => {
+			console.log('[ChatContext] Polling for new messages in conversation:', activeConversation.id)
+			loadMessages(activeConversation.id)
+		}, 3000) // Poll every 3 seconds for active conversation
+
+		return () => clearInterval(pollMessages)
+	}, [authed, user?.id, activeConversation?.id, wsConnected, loadMessages])
 
 	const value = {
 		// State

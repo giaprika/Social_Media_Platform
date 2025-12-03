@@ -4,7 +4,7 @@ const CHAT_WS_URL =
 	process.env.REACT_APP_CHAT_WS_URL || 'ws://34.158.60.36:8081'
 
 // Feature flag to enable/disable WebSocket
-// Set to false to use HTTP polling instead
+// WebSocket disabled - chat service doesn't support it yet, using HTTP polling
 const WEBSOCKET_ENABLED = false
 
 class ChatWebSocketService {
@@ -45,20 +45,23 @@ class ChatWebSocketService {
 			this.isConnecting = true
 			const cookies = new Cookies()
 			const userId = cookies.get('x-user-id')
-			const accessToken = cookies.get('accessToken')
 
-			if (!userId || !accessToken) {
+			if (!userId) {
 				this.isConnecting = false
-				console.warn('[ChatWS] Not authenticated, falling back to HTTP mode')
+				console.warn('[ChatWS] No user ID found, falling back to HTTP mode')
 				resolve() // Don't reject, just continue without WS
 				return
 			}
 
-			const wsUrl = `${CHAT_WS_URL}/ws?user_id=${userId}&token=${accessToken}`
-			console.log('[ChatWS] Connecting to:', wsUrl.replace(accessToken, '***'))
+			// Connect to WebSocket
+			// Note: Browser WebSocket API doesn't support custom headers directly
+			// We pass X-User-ID via query parameter and also try subprotocol
+			const wsUrl = `${CHAT_WS_URL}/ws?X-User-ID=${userId}`
+			console.log('[ChatWS] Connecting to:', wsUrl)
 
 			try {
-				this.ws = new WebSocket(wsUrl)
+				// Try connecting with user ID as subprotocol (some servers accept this)
+				this.ws = new WebSocket(wsUrl, [`X-User-ID.${userId}`])
 			} catch (error) {
 				this.isConnecting = false
 				console.warn(
