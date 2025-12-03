@@ -139,7 +139,7 @@ services:
       REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-your_super_secret_refresh_token_key}
       USER_SERVICE_URL: http://user-service:8001
       NOTIFICATION_SERVICE_URL: http://notification-service:8002
-      # POST_SERVICE_URL: http://post-service:8003
+      POST_SERVICE_URL: http://post-service:8003
       COMMUNITY_SERVICE_URL: http://community-service:8004
       CORS_ORIGIN: http://localhost:3000
     ports:
@@ -148,6 +148,7 @@ services:
       - user-service
       - notification-service
       - community-service
+      - post-service
     networks:
       - social-network
     restart: unless-stopped
@@ -225,17 +226,31 @@ services:
       retries: 3
       start_period: 40s
 
-  # post-service:
-  #   build:
-  #     context: ./post-service
-  #     dockerfile: Dockerfile
-  #   container_name: post-service
-  #   environment:
-  #     PORT: 8003
-  #   ports:
-  #     - "8003:8003"
-  #   networks:
-  #     - social-network
+  post-service:
+    build:
+      context: ./post-service
+      dockerfile: Dockerfile
+    container_name: post-service
+    environment:
+      PORT: 8003
+      SUPABASE_URL: ${SUPABASE_URL:-https://pfluzsnvvufmqxfuzhxo.supabase.co}
+      SUPABASE_KEY: ${SUPABASE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBmbHV6c252dnVmbXF4ZnV6aHhvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MTI3Nzc4MCwiZXhwIjoyMDc2ODUzNzgwfQ.WjxOFGtLhx7rTte4jbU2_0CaGXK7UbkcAb3D4Pv8EJ8}
+      POSTS_TABLE_NAME: posts
+      COMMENTS_TABLE_NAME: comments
+      POST_REACT_TABLE_NAME: post_reaction
+      COMMENT_REACT_TABLE_NAME: comment_reaction
+      STORAGE_BUCKET_NAME: posts_service
+    ports:
+      - "8003:8003"
+    networks:
+      - social-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   community-service:
     build:
