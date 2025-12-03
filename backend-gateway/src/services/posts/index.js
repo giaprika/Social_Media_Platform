@@ -4,7 +4,7 @@ import PostServiceController from "./controller.js";
 
 const router = express.Router();
 
-// Multer config để xử lý file upload
+// Multer config để xử lý file upload (cũng parse form-data fields)
 const upload = multer({
   storage: multer.memoryStorage(), // Lưu file vào memory buffer
   limits: {
@@ -20,6 +20,32 @@ const upload = multer({
   },
 });
 
+// Middleware để parse form-data (multipart) hoặc urlencoded
+const parseFormData = (req, res, next) => {
+  const contentType = req.headers['content-type'] || '';
+  
+  if (contentType.includes('multipart/form-data')) {
+    // Dùng multer cho multipart
+    upload.any()(req, res, (err) => {
+      if (err) return next(err);
+      // Chuyển req.files từ array sang đúng format nếu cần
+      if (req.files && !Array.isArray(req.files)) {
+        req.files = Object.values(req.files).flat();
+      }
+      next();
+    });
+  } else if (contentType.includes('application/x-www-form-urlencoded')) {
+    // Dùng express urlencoded parser
+    express.urlencoded({ extended: true })(req, res, next);
+  } else if (contentType.includes('application/json')) {
+    // Dùng express json parser
+    express.json()(req, res, next);
+  } else {
+    // Mặc định thử parse urlencoded
+    express.urlencoded({ extended: true })(req, res, next);
+  }
+};
+
 // Health check
 router.get("/", (req, res) => {
   res.json({ message: "post-aggregation service running" });
@@ -27,7 +53,7 @@ router.get("/", (req, res) => {
 
 // ============= POST ROUTES =============
 // POST /api/posts - Tạo post mới (với AI moderation)
-router.post("/", upload.array("files", 10), PostServiceController.createPost);
+router.post("/", parseFormData, PostServiceController.createPost);
 
 // GET /api/posts - Lấy danh sách posts
 router.get("/", PostServiceController.getPosts);
@@ -36,9 +62,22 @@ router.get("/", PostServiceController.getPosts);
 router.get("/:id", PostServiceController.getPostById);
 
 // PATCH /api/posts/:id - Cập nhật post (với AI moderation)
-router.patch("/:id", upload.array("files", 10), PostServiceController.updatePost);
+router.patch("/:id", parseFormData, PostServiceController.updatePost);
 
 // DELETE /api/posts/:id - Xóa post
 router.delete("/:id", PostServiceController.deletePost);
+
+// ============= COMMENT ROUTES =============
+// POST /api/posts/:postId/comments - Tạo comment (với AI moderation)
+router.post("/:postId/comments", PostServiceController.createComment);
+
+// GET /api/posts/:postId/comments - Lấy danh sách comments
+router.get("/:postId/comments", PostServiceController.getComments);
+
+// PATCH /api/comments/:commentId - Cập nhật comment (với AI moderation)
+router.patch("/comments/:commentId", PostServiceController.updateComment);
+
+// DELETE /api/comments/:commentId - Xóa comment
+router.delete("/comments/:commentId", PostServiceController.deleteComment);
 
 export default router;

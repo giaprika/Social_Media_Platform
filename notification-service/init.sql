@@ -1,4 +1,4 @@
-DROP TABLE notifications;
+DROP TABLE IF EXISTS notifications;
 
 CREATE TABLE IF NOT EXISTS notifications(
     id                  UUID PRIMARY KEY,

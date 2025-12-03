@@ -208,6 +208,183 @@ class PostServiceController {
       );
     }
   }
+
+  // ============= COMMENT ROUTES =============
+  
+  /**
+   * POST /api/posts/:postId/comments - Tạo comment (với AI moderation)
+   */
+  static async createComment(req, res) {
+    try {
+      const userId = req.headers["x-user-id"];
+      const postId = req.params.postId;
+      const commentData = req.body;
+
+      if (!userId) {
+        return res.status(401).json({ error: "User ID required" });
+      }
+
+      logger.info(`[Controller] Creating comment`, {
+        postId,
+        userId,
+        correlationId: req.correlationId,
+      });
+
+      const result = await postService.createComment(postId, commentData, userId);
+
+      res.status(201).json(result);
+    } catch (error) {
+      // Lỗi từ AI moderation
+      if (error.status && error.moderationResult) {
+        logger.warn(`[Controller] Comment rejected by moderation`, {
+          postId: req.params.postId,
+          userId: req.headers["x-user-id"],
+          reason: error.reason,
+          correlationId: req.correlationId,
+        });
+        return res.status(error.status).json({
+          status: "error",
+          message: error.message,
+          reason: error.reason,
+          moderation: error.moderationResult,
+        });
+      }
+
+      // Lỗi khác
+      logger.error("[Controller] Error creating comment", {
+        postId: req.params.postId,
+        error: error.message,
+        response: error.response?.data,
+        correlationId: req.correlationId,
+      });
+      
+      res.status(error.response?.status || 500).json(
+        error.response?.data || { error: error.message }
+      );
+    }
+  }
+
+  /**
+   * PATCH /api/comments/:commentId - Cập nhật comment (với AI moderation)
+   */
+  static async updateComment(req, res) {
+    try {
+      const userId = req.headers["x-user-id"];
+      const commentId = req.params.commentId;
+      const commentData = req.body;
+
+      if (!userId) {
+        return res.status(401).json({ error: "User ID required" });
+      }
+
+      logger.info(`[Controller] Updating comment`, {
+        commentId,
+        userId,
+        correlationId: req.correlationId,
+      });
+
+      const result = await postService.updateComment(commentId, commentData, userId);
+
+      res.status(200).json(result);
+    } catch (error) {
+      // Lỗi từ AI moderation
+      if (error.status && error.moderationResult) {
+        logger.warn(`[Controller] Comment update rejected by moderation`, {
+          commentId: req.params.commentId,
+          userId: req.headers["x-user-id"],
+          reason: error.reason,
+          correlationId: req.correlationId,
+        });
+        return res.status(error.status).json({
+          status: "error",
+          message: error.message,
+          reason: error.reason,
+          moderation: error.moderationResult,
+        });
+      }
+
+      // Lỗi khác
+      logger.error("[Controller] Error updating comment", {
+        commentId: req.params.commentId,
+        error: error.message,
+        response: error.response?.data,
+        correlationId: req.correlationId,
+      });
+      
+      res.status(error.response?.status || 500).json(
+        error.response?.data || { error: error.message }
+      );
+    }
+  }
+
+  /**
+   * GET /api/posts/:postId/comments - Lấy danh sách comments
+   */
+  static async getComments(req, res) {
+    try {
+      const userId = req.headers["x-user-id"];
+      const postId = req.params.postId;
+      const queryString = new URLSearchParams(req.query).toString();
+      const path = `/posts/${postId}/comments?${queryString}`;
+
+      logger.info(`[Controller] Getting comments`, {
+        postId,
+        path,
+        correlationId: req.correlationId,
+      });
+
+      const result = await postService.proxyRequest("GET", path, null, userId);
+
+      res.status(200).json(result);
+    } catch (error) {
+      logger.error("[Controller] Error getting comments", {
+        postId: req.params.postId,
+        error: error.message,
+        response: error.response?.data,
+        correlationId: req.correlationId,
+      });
+      
+      res.status(error.response?.status || 500).json(
+        error.response?.data || { error: error.message }
+      );
+    }
+  }
+
+  /**
+   * DELETE /api/comments/:commentId - Xóa comment
+   */
+  static async deleteComment(req, res) {
+    try {
+      const userId = req.headers["x-user-id"];
+      const commentId = req.params.commentId;
+
+      logger.info(`[Controller] Deleting comment`, {
+        commentId,
+        userId,
+        correlationId: req.correlationId,
+      });
+
+      await postService.proxyRequest(
+        "DELETE",
+        `/comments/${commentId}`,
+        null,
+        userId
+      );
+
+      res.status(204).send();
+    } catch (error) {
+      logger.error("[Controller] Error deleting comment", {
+        commentId: req.params.commentId,
+        error: error.message,
+        response: error.response?.data,
+        correlationId: req.correlationId,
+      });
+      
+      res.status(error.response?.status || 500).json(
+        error.response?.data || { error: error.message }
+      );
+    }
+  }
 }
 
 export default PostServiceController;

@@ -1,3 +1,9 @@
+import sys
+from pathlib import Path
+
+# Add parent directory to sys.path to allow importing tools and config
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from google.adk.agents.llm_agent import Agent
 from google.adk.models.google_llm import Gemini
 from google.adk.tools.google_search_tool import google_search

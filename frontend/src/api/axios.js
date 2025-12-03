@@ -4,7 +4,7 @@ import Cookies from "universal-cookie";
 const cookies = new Cookies();
 
 const instance = axios.create({
-  baseURL: process.env.BACKEND_URL || "http://localhost:8000",
+  baseURL: process.env.BACKEND_URL || "http://localhost:3000",
 });
 
 let isRefreshing = false;

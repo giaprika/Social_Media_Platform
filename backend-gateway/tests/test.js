@@ -20,13 +20,13 @@ const newMessage = {
          {
             "text":"fuckyou?"
          },
-        //  {
-        //     "inlineData":{
-        //        "displayName":"test_model.jpg",
-        //        "data":base64_string,
-        //        "mimeType":"image/png"
-        //     }
-        //  }
+         {
+            "inlineData":{
+               "displayName":"test_model.jpg",
+               "data":base64_string,
+               "mimeType":"image/png"
+            }
+         }
       ]
 }
 

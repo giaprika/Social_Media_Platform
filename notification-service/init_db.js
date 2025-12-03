@@ -10,9 +10,9 @@ const { Client } = pkg;
 const client = new Client({
   host: process.env.DB_HOST || "localhost",
   port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || "user_db",
+  database: process.env.DB_NAME || "notification_db",  // ✅ Sửa: notification_db
   user: process.env.DB_USER || "postgres",
-  password: process.env.DB_PASSWORD || "duyvu11052005",
+  password: process.env.DB_PASSWORD || "binh39",
 });
 
 async function initDB() {
@@ -21,7 +21,7 @@ async function initDB() {
     console.log("Connected to PostgreSQL");
 
     // Đọc file SQL
-    const sql = fs.readFileSync("./notification-service/init.sql", "utf8");
+    const sql = fs.readFileSync("./init.sql", "utf8");  // ✅ Sửa: ./init.sql
 
     // Chạy từng lệnh SQL trong file
     const commands = sql
