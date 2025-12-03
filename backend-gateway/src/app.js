@@ -1,125 +1,130 @@
-import express from "express";
-import dotenv from "dotenv";
-import cors from "cors";
-import helmet from "helmet";
-import logger from "./utils/logger.js";
-import router from "./routes/v1.js";
-import bodyParser from "body-parser";
-import cookieParser from "cookie-parser";
-import fileupload from "express-fileupload";
-import internalRoutes from "./routes/internal.js";
+import express from 'express'
+import dotenv from 'dotenv'
+import cors from 'cors'
+import helmet from 'helmet'
+import logger from './utils/logger.js'
+import router from './routes/v1.js'
+import bodyParser from 'body-parser'
+import cookieParser from 'cookie-parser'
+import fileupload from 'express-fileupload'
+import internalRoutes from './routes/internal.js'
 
 // Load environment variables
-dotenv.config();
+dotenv.config()
 
-const app = express();
+const app = express()
 // Middleware
-app.use(helmet());
+app.use(helmet())
 
-const allowedOrigins = (process.env.CORS_ORIGIN || "*")
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter((origin) => origin.length > 0);
+const allowedOrigins = (process.env.CORS_ORIGIN || '*')
+	.split(',')
+	.map((origin) => origin.trim())
+	.filter((origin) => origin.length > 0)
 
 const corsOptions = {
-  origin: function (origin, callback) {
-    // Cho phép request từ Postman hoặc môi trường không có origin
-    if (!origin) return callback(null, true);
+	origin: function (origin, callback) {
+		// Cho phép request từ Postman hoặc môi trường không có origin
+		if (!origin) return callback(null, true)
 
-    if (allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
-  },
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: [
-    "Content-Type",
-    "Authorization",
-    "x-correlation-id",
-    "x-user-id",
-  ],
-};
+		if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+			callback(null, true)
+		} else {
+			callback(new Error('Not allowed by CORS'))
+		}
+	},
+	credentials: true,
+	methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+	allowedHeaders: [
+		'Content-Type',
+		'Authorization',
+		'x-correlation-id',
+		'x-user-id',
+	],
+}
 
-app.use(cors(corsOptions));
+app.use(cors(corsOptions))
 
-app.options("*", cors(corsOptions));
+app.options('*', cors(corsOptions))
 
 // Static files
-app.use(express.static("public"));
+app.use(express.static('public'))
 
 // Cookie parser
-app.use(cookieParser());
+app.use(cookieParser())
 
 // Body parser + file upload
 app.use((req, res, next) => {
-  // Skip for proxy services and posts (posts uses multer separately)
-  if (req.path.startsWith("/api/service") || req.path.startsWith("/api/posts")) return next();
+	// Skip for proxy services, posts and chat (they handle body parsing themselves)
+	if (
+		req.path.startsWith('/api/service') ||
+		req.path.startsWith('/api/posts') ||
+		req.path.startsWith('/api/chat')
+	)
+		return next()
 
-  fileupload()(req, res, (err) => {
-    if (err) return next(err);
+	fileupload()(req, res, (err) => {
+		if (err) return next(err)
 
-    bodyParser.json({ limit: "30mb" })(req, res, (err) => {
-      if (err) return next(err);
-      bodyParser.urlencoded({ extended: true, limit: "30mb" })(req, res, next);
-    });
-  });
-});
+		bodyParser.json({ limit: '30mb' })(req, res, (err) => {
+			if (err) return next(err)
+			bodyParser.urlencoded({ extended: true, limit: '30mb' })(req, res, next)
+		})
+	})
+})
 
 // Additional body parser for internal routes
-app.use("/internal", bodyParser.json());
+app.use('/internal', bodyParser.json())
 
 // Request logging
 app.use((req, res, next) => {
-  req.correlationId = req.headers["x-correlation-id"] || Date.now().toString();
-  logger.info("Incoming request", {
-    method: req.method,
-    path: req.path,
-    correlationId: req.correlationId,
-  });
-  next();
-});
+	req.correlationId = req.headers['x-correlation-id'] || Date.now().toString()
+	logger.info('Incoming request', {
+		method: req.method,
+		path: req.path,
+		correlationId: req.correlationId,
+	})
+	next()
+})
 
-app.use(router);
+app.use(router)
 
 // Internal routes (must be before 404 handler)
-app.use("/internal", internalRoutes);
+app.use('/internal', internalRoutes)
 
 // Health check
-app.get("/health", (req, res) => {
-  res.json({ status: "ok", service: "api-gateway" });
-});
+app.get('/health', (req, res) => {
+	res.json({ status: 'ok', service: 'api-gateway' })
+})
 
 // 404 handler
 app.use((req, res) => {
-  logger.warn("Route not found", {
-    method: req.method,
-    path: req.path,
-    correlationId: req.correlationId,
-  });
-  res.status(404).json({
-    error: "Not Found",
-    message: "The requested resource does not exist",
-  });
-});
+	logger.warn('Route not found', {
+		method: req.method,
+		path: req.path,
+		correlationId: req.correlationId,
+	})
+	res.status(404).json({
+		error: 'Not Found',
+		message: 'The requested resource does not exist',
+	})
+})
 
 // Error handler
 app.use((err, req, res, next) => {
-  logger.error("Unhandled error", {
-    error: err.message,
-    stack: err.stack,
-    path: req.path,
-    correlationId: req.correlationId,
-  });
+	logger.error('Unhandled error', {
+		error: err.message,
+		stack: err.stack,
+		path: req.path,
+		correlationId: req.correlationId,
+	})
 
-  if (res.headersSent) {
-    return next(err);
-  }
+	if (res.headersSent) {
+		return next(err)
+	}
 
-  if (err.message === "Not allowed by CORS") {
-    return res.status(403).json({ error: "CORS Error", message: err.message });
-  }
-});
+	if (err.message === 'Not allowed by CORS') {
+		return res.status(403).json({ error: 'CORS Error', message: err.message })
+	}
+})
 
-export default app;
+export default app

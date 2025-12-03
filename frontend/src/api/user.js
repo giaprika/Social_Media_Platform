@@ -41,3 +41,6 @@ export const followUser = (targetId) =>
 
 export const unfollowUser = (targetId) =>
 	instance.delete(`${USER_SERVICE_BASE_URL}/follow/${targetId}`)
+
+export const searchUsers = (query) =>
+	instance.get(`${USER_SERVICE_BASE_URL}?q=${query}`)

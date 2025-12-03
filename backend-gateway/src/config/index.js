@@ -60,6 +60,14 @@ const config = {
 			],
 			timeout: 5000,
 		},
+		chat: {
+			target: process.env.CHAT_SERVICE_URL || 'http://34.158.60.36:8080',
+			pathRewrite: {
+				'^/api/service/chat': '', // /api/service/chat/v1/messages → /v1/messages
+			},
+			excludeList: [],
+			timeout: 10000,
+		},
 	},
 }
 

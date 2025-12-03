@@ -80,7 +80,8 @@ instance.interceptors.response.use(
 
 				// 2. CẬP NHẬT TOKEN MỚI
 				console.log('Nhận được accessToken mới:', newAccessToken)
-				cookies.set('accessToken', `<Bearer> ${newAccessToken}`, { path: '/' })
+				// Store raw token; header builder will add Bearer prefix
+				cookies.set('accessToken', newAccessToken, { path: '/' })
 				instance.defaults.headers.common[
 					'Authorization'
 				] = `Bearer ${newAccessToken}`
