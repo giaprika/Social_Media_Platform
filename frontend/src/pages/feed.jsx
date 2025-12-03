@@ -383,12 +383,39 @@ export default function Feed() {
   };
 
   const handleAuthorClick = (authorId) => {
-    navigate(`/profile/${authorId}`);
+    navigate(`/app/profile/${authorId}`);
   };
 
   const handleCommunityClick = (community) => {
     toast.info(`Navigating to c/${community}`);
     // navigate(`/community/${community}`);
+  };
+
+  const handleEditPost = (post) => {
+    // TODO: Open edit modal with post data
+    toast.info("Tính năng chỉnh sửa đang phát triển");
+  };
+
+  const handleDeletePost = async (postId) => {
+    try {
+      await postApi.deletePost(postId);
+      setPosts((prevPosts) => prevPosts.filter((p) => p.id !== postId));
+      toast.success("Đã xóa bài viết!");
+    } catch (error) {
+      console.error("Failed to delete post:", error);
+      toast.error("Không thể xóa bài viết");
+    }
+  };
+
+  const handleHidePost = (postId) => {
+    // Hide post locally (chưa có API)
+    setPosts((prevPosts) => prevPosts.filter((p) => p.id !== postId));
+    toast.success("Đã ẩn bài viết");
+  };
+
+  const handleReportPost = (postId) => {
+    // TODO: Open report modal
+    toast.info("Đã gửi báo cáo");
   };
 
   const selectedPost = posts.find((p) => p.id === selectedPostId);
@@ -478,6 +505,10 @@ export default function Feed() {
               onAuthorClick={handleAuthorClick}
               onFollow={handleFollow}
               onCommunityClick={handleCommunityClick}
+              onEdit={handleEditPost}
+              onDelete={handleDeletePost}
+              onHide={handleHidePost}
+              onReport={handleReportPost}
             />
           ))
         )}

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
 import { vi } from "date-fns/locale";
 import {
@@ -8,6 +9,11 @@ import {
   BookmarkIcon,
   PlusIcon,
   CheckIcon,
+  EllipsisHorizontalIcon,
+  EyeSlashIcon,
+  FlagIcon,
+  PencilIcon,
+  TrashIcon,
 } from "@heroicons/react/24/outline";
 import {
   HeartIcon as HeartIconSolid,
@@ -30,10 +36,28 @@ const PostCard = ({
   onAuthorClick,
   onFollow,
   onCommunityClick,
+  onEdit,
+  onDelete,
+  onHide,
+  onReport,
   loading = false,
 }) => {
+  const navigate = useNavigate();
   const [imageError, setImageError] = useState(false);
   const [isFollowing, setIsFollowing] = useState(post?.isFollowing || false);
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef(null);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   if (loading) {
     return (
@@ -80,22 +104,71 @@ const PostCard = ({
   const authorName = post.author?.name || post.author?.full_name || post.author;
   const authorUsername = post.author?.username || authorName;
   const authorAvatar = post.author?.avatar_url || post.author?.avatar;
+  const isOwnPost = currentUserId === (post.author?.id || post.authorId);
+
+  // Navigate to post detail page - use postId directly in URL
+  const handlePostClick = (e) => {
+    // Don't navigate if clicking on interactive elements
+    if (e.target.closest("button") || e.target.closest("a") || e.target.closest("video")) {
+      return;
+    }
+    navigate(`/app/p/${post.id}`);
+  };
+
+  // Handle comment click - navigate to post detail
+  const handleCommentClick = () => {
+    navigate(`/app/p/${post.id}`);
+  };
+
+  // Menu actions
+  const handleEdit = () => {
+    setShowMenu(false);
+    onEdit?.(post);
+  };
+
+  const handleDelete = () => {
+    setShowMenu(false);
+    if (window.confirm("Bạn có chắc chắn muốn xóa bài viết này?")) {
+      onDelete?.(post.id);
+    }
+  };
+
+  const handleHide = () => {
+    setShowMenu(false);
+    onHide?.(post.id);
+  };
+
+  const handleSaveFromMenu = () => {
+    setShowMenu(false);
+    onSave?.(post.id);
+  };
+
+  const handleReport = () => {
+    setShowMenu(false);
+    onReport?.(post.id);
+  };
 
   return (
     <Card hover>
-      <div className="w-full">
+      <div className="w-full cursor-pointer" onClick={handlePostClick}>
         {/* Header */}
         <div className="mb-3 flex items-center gap-2 flex-wrap">
           <Avatar
             src={authorAvatar}
             name={authorUsername}
             size="sm"
-            onClick={() => onAuthorClick?.(post.author?.id || post.authorId)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAuthorClick?.(post.author?.id || post.authorId);
+            }}
           />
           {/* Luôn hiển thị u/username trước */}
           <button
             type="button"
-            onClick={() => onAuthorClick?.(post.author?.id || post.authorId)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAuthorClick?.(post.author?.id || post.authorId);
+            }}
             className="text-xs font-semibold text-foreground hover:text-primary transition-colors"
           >
             u/{authorUsername}
@@ -106,7 +179,10 @@ const PostCard = ({
               <span className="text-xs text-muted-foreground">•</span>
               <button
                 type="button"
-                onClick={() => onCommunityClick?.(community)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCommunityClick?.(community);
+                }}
                 className="text-xs font-semibold text-foreground hover:text-primary transition-colors"
               >
                 c/{community}
@@ -117,112 +193,152 @@ const PostCard = ({
           <p className="text-xs text-muted-foreground">
             {formatTime(post.createdAt || post.timestamp)}
           </p>
-          {onFollow && currentUserId !== (post.author?.id || post.authorId) && (
+
+          {/* 3-dot menu */}
+          <div className="ml-auto relative" ref={menuRef}>
             <button
               type="button"
-              onClick={handleFollow}
-              className={clsx(
-                "ml-auto flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition-colors",
-                isFollowing
-                  ? "bg-muted text-foreground hover:bg-muted/80"
-                  : "bg-primary text-primary-foreground hover:opacity-90"
-              )}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowMenu(!showMenu);
+              }}
+              className="p-1.5 rounded-full hover:bg-muted transition-colors"
             >
-              {isFollowing ? (
-                <>
-                  <CheckIcon className="h-3 w-3" />
-                  Following
-                </>
-              ) : (
-                <>
-                  <PlusIcon className="h-3 w-3" />
-                  Follow
-                </>
-              )}
+              <EllipsisHorizontalIcon className="h-5 w-5 text-muted-foreground" />
             </button>
-          )}
+
+            {/* Dropdown Menu */}
+            {showMenu && (
+              <div className="absolute right-0 top-full mt-1 w-48 bg-card border border-border rounded-lg shadow-lg z-50 py-1">
+                {isOwnPost && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEdit();
+                      }}
+                      className="w-full flex items-center gap-2 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
+                    >
+                      <PencilIcon className="h-4 w-4" />
+                      Chỉnh sửa
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete();
+                      }}
+                      className="w-full flex items-center gap-2 px-4 py-2 text-sm text-destructive hover:bg-muted transition-colors"
+                    >
+                      <TrashIcon className="h-4 w-4" />
+                      Xóa bài viết
+                    </button>
+                    <div className="border-t border-border my-1" />
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleHide();
+                  }}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
+                >
+                  <EyeSlashIcon className="h-4 w-4" />
+                  Ẩn bài viết
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSaveFromMenu();
+                  }}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
+                >
+                  <BookmarkIcon className="h-4 w-4" />
+                  {post.saved ? "Bỏ lưu" : "Lưu bài viết"}
+                </button>
+                {!isOwnPost && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleReport();
+                    }}
+                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-destructive hover:bg-muted transition-colors"
+                  >
+                    <FlagIcon className="h-4 w-4" />
+                    Báo cáo
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Title */}
+        {/* Title - Main clickable area */}
         {post.title && (
-          <h2 className="mb-2 text-lg font-bold text-foreground hover:text-primary transition-colors cursor-pointer">
+          <h2 className="mb-2 text-lg font-bold text-foreground hover:text-primary transition-colors">
             {post.title}
           </h2>
         )}
 
-        {/* Content - chỉ hiện nếu khác title */}
-        {post.content && post.content !== post.title && (
-          <p className="mb-3 whitespace-pre-wrap text-sm text-muted-foreground">
-            {post.content}
-          </p>
+        {/* Thumbnail preview for media posts - show small preview if has images */}
+        {post.images && post.images.length > 0 && !imageError && (
+          <div className="mb-3 relative">
+            {(() => {
+              const url = post.images[0];
+              const isVideo = /\.(mp4|webm|mov|avi|mkv|m4v|ogg)$/i.test(url);
+              if (isVideo) {
+                return (
+                  <div className="relative bg-black rounded-lg overflow-hidden h-48">
+                    <video
+                      src={url}
+                      preload="metadata"
+                      className="w-full h-full object-cover"
+                      onError={() => setImageError(true)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
+                      <div className="w-12 h-12 rounded-full bg-white/80 flex items-center justify-center">
+                        <svg className="w-6 h-6 text-gray-800 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                      </div>
+                    </div>
+                    {post.images.length > 1 && (
+                      <span className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
+                        +{post.images.length - 1}
+                      </span>
+                    )}
+                  </div>
+                );
+              }
+              return (
+                <div className="relative">
+                  <img
+                    src={url}
+                    alt={post.title || "Post image"}
+                    className="w-full rounded-lg object-cover max-h-64"
+                    onError={() => setImageError(true)}
+                  />
+                  {post.images.length > 1 && (
+                    <span className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
+                      +{post.images.length - 1}
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
         )}
 
         {/* Link Preview */}
         {post.url && <LinkPreview url={post.url} compact />}
 
-        {/* Media (Images & Videos) */}
-        {post.images && post.images.length > 0 && !imageError && (
-          <div className="mb-3">
-            {post.images.length === 1 ? (
-              (() => {
-                const url = post.images[0];
-                const isVideo = /\.(mp4|webm|mov|avi|mkv|m4v|ogg)$/i.test(url);
-                if (isVideo) {
-                  return (
-                    <div className="relative group">
-                      <video
-                        src={url}
-                        controls
-                        preload="metadata"
-                        className="w-full rounded-lg max-h-[500px] bg-black"
-                        onError={() => setImageError(true)}
-                      />
-                    </div>
-                  );
-                }
-                return (
-                  <img
-                    src={url}
-                    alt={post.title || "Post image"}
-                    className="w-full rounded-lg object-cover max-h-[500px]"
-                    onError={() => setImageError(true)}
-                  />
-                );
-              })()
-            ) : (
-              <div className="grid grid-cols-2 gap-2">
-                {post.images.slice(0, 4).map((url, idx) => {
-                  const isVideo = /\.(mp4|webm|mov|avi|mkv|m4v|ogg)$/i.test(url);
-                  if (isVideo) {
-                    return (
-                      <div key={idx} className="relative group">
-                        <video
-                          src={url}
-                          controls
-                          preload="metadata"
-                          className="h-48 w-full rounded-lg object-cover bg-black"
-                          onError={() => setImageError(true)}
-                        />
-                      </div>
-                    );
-                  }
-                  return (
-                    <img
-                      key={idx}
-                      src={url}
-                      alt={`${post.title || "Post"} ${idx + 1}`}
-                      className="h-48 w-full rounded-lg object-cover"
-                      onError={() => setImageError(true)}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
         {/* Actions Bar - Horizontal Layout */}
-        <div className="flex items-center gap-1 pt-2 border-t border-border">
+        <div className="flex items-center gap-1 pt-2 border-t border-border" onClick={(e) => e.stopPropagation()}>
           {/* Like Button */}
           <button
             type="button"
@@ -248,10 +364,10 @@ const PostCard = ({
             </span>
           </button>
 
-          {/* Comment Button */}
+          {/* Comment Button - Navigate to detail */}
           <button
             type="button"
-            onClick={() => onComment?.(post.id)}
+            onClick={handleCommentClick}
             className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <ChatBubbleOvalLeftIcon className="h-5 w-5" />

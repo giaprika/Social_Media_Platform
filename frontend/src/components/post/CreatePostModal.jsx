@@ -43,8 +43,8 @@ const CreatePostModal = ({ isOpen, onClose, onSubmit }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!title.trim() && !content.trim()) {
-      toast.error("Vui lòng nhập tiêu đề hoặc nội dung");
+    if (!title.trim()) {
+      toast.error("Vui lòng nhập tiêu đề");
       return;
     }
 
@@ -55,10 +55,8 @@ const CreatePostModal = ({ isOpen, onClose, onSubmit }) => {
         content: content.trim(),
         images: images.map((img) => img.file),
       });
-      toast.success("Đã tạo bài viết thành công!");
       handleClose();
     } catch (error) {
-      toast.error("Có lỗi xảy ra khi tạo bài viết");
       console.error(error);
     } finally {
       setLoading(false);
@@ -91,16 +89,17 @@ const CreatePostModal = ({ isOpen, onClose, onSubmit }) => {
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input
-          label="Tiêu đề (tùy chọn)"
+          label="Tiêu đề"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Nhập tiêu đề..."
+          placeholder="Nhập tiêu đề bài viết..."
           maxLength={200}
+          required
         />
 
         <div>
           <label className="mb-2 block text-sm font-medium text-foreground">
-            Nội dung
+            Nội dung (tùy chọn)
           </label>
           <textarea
             value={content}
