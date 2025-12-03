@@ -8,11 +8,11 @@ dotenv.config();
 const { Client } = pkg;
 
 const client = new Client({
-  host: process.env.DB_HOST || "localhost",
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || "notification_db",
-  user: process.env.DB_USER || "postgres",
-  password: process.env.DB_PASSWORD || "binh39",
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  database: process.env.DB_NAME,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
 });
 
 async function initDB() {
@@ -20,10 +20,10 @@ async function initDB() {
     await client.connect();
     console.log("Connected to PostgreSQL");
 
-    // Đọc file SQL
+    // Read SQL file
     const sql = fs.readFileSync("./init.sql", "utf8");
 
-    // Chạy từng lệnh SQL trong file
+    // Execute each SQL command
     const commands = sql
       .split(";")
       .map((cmd) => cmd.trim())

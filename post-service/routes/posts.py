@@ -168,7 +168,6 @@ async def create_post(
     files: Optional[List[UploadFile]] = File(None),
     x_user_id: str = Header(..., alias="X-User-ID")
 ):
-    
     user_id = get_user_id(x_user_id)
     
     try:

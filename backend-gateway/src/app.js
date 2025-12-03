@@ -54,7 +54,8 @@ app.use(cookieParser());
 
 // Body parser + file upload
 app.use((req, res, next) => {
-  if (req.path.startsWith("/api/service")) return next();
+  // Skip for proxy services and posts (posts uses multer separately)
+  if (req.path.startsWith("/api/service") || req.path.startsWith("/api/posts")) return next();
 
   fileupload()(req, res, (err) => {
     if (err) return next(err);
