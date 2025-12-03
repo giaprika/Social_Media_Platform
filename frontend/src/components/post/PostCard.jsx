@@ -77,8 +77,9 @@ const PostCard = ({
   const likes = post.likes || post.upvotes || 0;
   const hasLiked = post.hasLiked || post.hasUpvoted || false;
   const community = post.community || post.group_id;
-  const authorName = post.author?.name || post.author;
+  const authorName = post.author?.name || post.author?.full_name || post.author;
   const authorUsername = post.author?.username || authorName;
+  const authorAvatar = post.author?.avatar_url || post.author?.avatar;
 
   return (
     <Card hover>
@@ -86,37 +87,32 @@ const PostCard = ({
         {/* Header */}
         <div className="mb-3 flex items-center gap-2 flex-wrap">
           <Avatar
-            src={post.author?.avatar}
-            name={authorName}
+            src={authorAvatar}
+            name={authorUsername}
             size="sm"
             onClick={() => onAuthorClick?.(post.author?.id || post.authorId)}
           />
-          {community ? (
-            // Post thuộc community
-            <button
-              type="button"
-              onClick={() => onCommunityClick?.(community)}
-              className="text-xs font-semibold text-foreground hover:text-primary transition-colors"
-            >
-              c/{community}
-            </button>
-          ) : (
-            // Post của user (không thuộc community)
-            <button
-              type="button"
-              onClick={() => onAuthorClick?.(post.author?.id || post.authorId)}
-              className="text-xs font-semibold text-foreground hover:text-primary transition-colors"
-            >
-              u/{authorUsername}
-            </button>
-          )}
-          <span className="text-xs text-muted-foreground">•</span>
-          <p
-            className="text-xs font-medium text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
+          {/* Luôn hiển thị u/username trước */}
+          <button
+            type="button"
             onClick={() => onAuthorClick?.(post.author?.id || post.authorId)}
+            className="text-xs font-semibold text-foreground hover:text-primary transition-colors"
           >
-            {authorName}
-          </p>
+            u/{authorUsername}
+          </button>
+          {/* Nếu có community thì hiển thị c/community */}
+          {community && (
+            <>
+              <span className="text-xs text-muted-foreground">•</span>
+              <button
+                type="button"
+                onClick={() => onCommunityClick?.(community)}
+                className="text-xs font-semibold text-foreground hover:text-primary transition-colors"
+              >
+                c/{community}
+              </button>
+            </>
+          )}
           <span className="text-xs text-muted-foreground">•</span>
           <p className="text-xs text-muted-foreground">
             {formatTime(post.createdAt || post.timestamp)}
@@ -170,22 +166,25 @@ const PostCard = ({
             {post.images.length === 1 ? (
               (() => {
                 const url = post.images[0];
-                const isVideo = /\.(mp4|webm|mov|avi|mkv)$/i.test(url);
+                const isVideo = /\.(mp4|webm|mov|avi|mkv|m4v|ogg)$/i.test(url);
                 if (isVideo) {
                   return (
-                    <video
-                      src={url}
-                      controls
-                      className="w-full rounded-lg max-h-96"
-                      onError={() => setImageError(true)}
-                    />
+                    <div className="relative group">
+                      <video
+                        src={url}
+                        controls
+                        preload="metadata"
+                        className="w-full rounded-lg max-h-[500px] bg-black"
+                        onError={() => setImageError(true)}
+                      />
+                    </div>
                   );
                 }
                 return (
                   <img
                     src={url}
                     alt={post.title || "Post image"}
-                    className="w-full rounded-lg object-cover max-h-96"
+                    className="w-full rounded-lg object-cover max-h-[500px]"
                     onError={() => setImageError(true)}
                   />
                 );
@@ -193,16 +192,18 @@ const PostCard = ({
             ) : (
               <div className="grid grid-cols-2 gap-2">
                 {post.images.slice(0, 4).map((url, idx) => {
-                  const isVideo = /\.(mp4|webm|mov|avi|mkv)$/i.test(url);
+                  const isVideo = /\.(mp4|webm|mov|avi|mkv|m4v|ogg)$/i.test(url);
                   if (isVideo) {
                     return (
-                      <video
-                        key={idx}
-                        src={url}
-                        controls
-                        className="h-48 w-full rounded-lg object-cover"
-                        onError={() => setImageError(true)}
-                      />
+                      <div key={idx} className="relative group">
+                        <video
+                          src={url}
+                          controls
+                          preload="metadata"
+                          className="h-48 w-full rounded-lg object-cover bg-black"
+                          onError={() => setImageError(true)}
+                        />
+                      </div>
                     );
                   }
                   return (

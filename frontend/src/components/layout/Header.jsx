@@ -18,6 +18,7 @@ import {
   Bars3Icon,
 } from "@heroicons/react/24/outline";
 import { PATHS } from "src/constants/paths";
+import Avatar from "../ui/Avatar";
 import useAuth from "src/hooks/useAuth";
 import { useTheme } from "src/contexts/ThemeContext";
 import NotificationDropdown from "./NotificationDropdown";
@@ -258,12 +259,16 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
             ref={profileButtonRef}
             onClick={() => setIsProfileMenuOpen((prev) => !prev)}
             className={clsx(
-              "flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full bg-primary font-bold text-primary-foreground transition-opacity",
+              "transition-opacity",
               isProfileMenuOpen ? "opacity-90" : "hover:opacity-90"
             )}
             aria-label="Account"
           >
-            {displayName.charAt(0).toUpperCase()}
+            <Avatar
+              src={user?.avatar_url || user?.avatar}
+              name={user?.username || displayName}
+              size="sm"
+            />
           </button>
         </div>
         {isProfileMenuOpen && (
@@ -281,9 +286,11 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
                 }}
                 className="w-full flex items-center gap-3 rounded-2xl bg-muted px-3 py-3 transition-colors hover:bg-muted/70 cursor-pointer"
               >
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary font-semibold text-primary-foreground">
-                  {displayName.charAt(0).toUpperCase()}
-                </div>
+                <Avatar
+                  src={user?.avatar_url || user?.avatar}
+                  name={user?.username || displayName}
+                  size="md"
+                />
                 <div className="flex min-w-0 flex-col text-left">
                   <span className="text-sm font-semibold text-foreground">{displayName}</span>
                   <span className="text-xs text-muted-foreground hover:text-foreground transition-colors">{userHandle}</span>

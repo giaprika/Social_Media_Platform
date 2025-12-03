@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate, useLocation, useOutletContext } from "react-router-dom";
 import Cookies from "universal-cookie";
 import PostCard from "src/components/post/PostCard";
@@ -28,6 +28,7 @@ const transformPost = (apiPost, userInfo = null) => ({
     name: "User",
     username: null,
     avatar: null,
+    avatar_url: null,
   },
   community: apiPost.group_id || null,  // null nếu không thuộc community
   title: apiPost.content, // content = title
@@ -81,9 +82,12 @@ export default function Feed() {
   const currentUserId = cookies.get("x-user-id");
   const { notifications } = useNotifications(token);
 
-  // Fetch user info and cache it
+  // Fetch user info and cache it - use ref to avoid dependency issues
+  const usersCacheRef = React.useRef(usersCache);
+  usersCacheRef.current = usersCache;
+
   const fetchUserInfo = useCallback(async (userId) => {
-    if (usersCache[userId]) return usersCache[userId];
+    if (usersCacheRef.current[userId]) return usersCacheRef.current[userId];
     
     try {
       const response = await getUserById(userId);
@@ -93,60 +97,69 @@ export default function Feed() {
         name: user.full_name || user.username || "User",
         username: user.username,
         avatar: user.avatar_url,
+        avatar_url: user.avatar_url,
       };
       setUsersCache((prev) => ({ ...prev, [userId]: userInfo }));
       return userInfo;
     } catch (error) {
       console.error("Failed to fetch user:", userId, error);
-      return { id: userId, name: "User", avatar: null };
+      return { id: userId, name: "User", username: null, avatar: null, avatar_url: null };
     }
-  }, [usersCache]);
-
-  // Enrich posts with user info and reactions
-  const enrichPosts = useCallback(async (rawPosts) => {
-    const enrichedPosts = await Promise.all(
-      rawPosts.map(async (post) => {
-        // Fetch user info
-        const userInfo = await fetchUserInfo(post.user_id);
-        const transformedPost = transformPost(post, userInfo);
-        
-        // Check if current user has reacted
-        if (currentUserId) {
-          try {
-            const reactionsRes = await postApi.getPostReactions(post.post_id);
-            const reactions = reactionsRes.data?.data || [];
-            const userReaction = reactions.find((r) => r.user_id === currentUserId);
-            transformedPost.hasUpvoted = !!userReaction;
-          } catch (error) {
-            console.error("Failed to fetch reactions:", error);
-          }
-        }
-        
-        return transformedPost;
-      })
-    );
-    return enrichedPosts;
-  }, [currentUserId, fetchUserInfo]);
-
-  // Load posts from API
-  const loadPosts = useCallback(async () => {
-    setLoading(true);
-    try {
-      const response = await postApi.getPosts({ limit: 20, offset: 0 });
-      const rawPosts = response.data?.data || [];
-      const enrichedPosts = await enrichPosts(rawPosts);
-      setPosts(enrichedPosts);
-    } catch (error) {
-      console.error("Failed to load posts:", error);
-      toast.error("Không thể tải bài viết");
-    } finally {
-      setLoading(false);
-    }
-  }, [enrichPosts, toast]);
-
-  useEffect(() => {
-    loadPosts();
   }, []);
+
+  // Load posts only once on mount
+  const hasLoadedRef = React.useRef(false);
+  const isLoadingRef = React.useRef(false);
+  
+  useEffect(() => {
+    console.log("[Feed] useEffect triggered, hasLoaded:", hasLoadedRef.current, "isLoading:", isLoadingRef.current);
+    if (!hasLoadedRef.current && !isLoadingRef.current) {
+      hasLoadedRef.current = true;
+      isLoadingRef.current = true;
+      
+      const fetchPosts = async () => {
+        setLoading(true);
+        try {
+          const response = await postApi.getPosts({ limit: 20, offset: 0 });
+          const rawPosts = response.data?.data || [];
+          console.log("[Feed] Raw posts from API:", rawPosts.length);
+          
+          // Enrich posts with user info
+          const enrichedPosts = await Promise.all(
+            rawPosts.map(async (post) => {
+              const userInfo = await fetchUserInfo(post.user_id);
+              const transformedPost = transformPost(post, userInfo);
+              
+              // Check if current user has reacted
+              if (currentUserId) {
+                try {
+                  const reactionsRes = await postApi.getPostReactions(post.post_id);
+                  const reactions = reactionsRes.data?.data || [];
+                  const userReaction = reactions.find((r) => r.user_id === currentUserId);
+                  transformedPost.hasUpvoted = !!userReaction;
+                } catch (error) {
+                  console.error("Failed to fetch reactions:", error);
+                }
+              }
+              
+              return transformedPost;
+            })
+          );
+          
+          console.log("[Feed] Setting posts:", enrichedPosts.length);
+          setPosts(enrichedPosts);
+        } catch (error) {
+          console.error("Failed to load posts:", error);
+          toast.error("Không thể tải bài viết");
+        } finally {
+          setLoading(false);
+          isLoadingRef.current = false;
+        }
+      };
+      
+      fetchPosts();
+    }
+  }, []); // Empty dependency - only run once
 
   // Open create modal if state indicates
   useEffect(() => {

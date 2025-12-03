@@ -4,6 +4,7 @@ import { ShareIcon, UserPlusIcon, CheckIcon, ChatBubbleLeftRightIcon } from "@he
 import clsx from "clsx";
 import { checkFollowStatus, followUser, unfollowUser } from "src/api/user";
 import { useToast } from "src/components/ui";
+import Avatar from "src/components/ui/Avatar";
 
 const ProfileHeader = ({ user, isOwnProfile = false, onFollowChange, onStartChat }) => {
   const navigate = useNavigate();
@@ -68,17 +69,12 @@ const ProfileHeader = ({ user, isOwnProfile = false, onFollowChange, onStartChat
     <div className="flex items-center gap-4">
       {/* Avatar */}
       <div className="relative flex-shrink-0">
-        {avatar ? (
-          <img
-            src={avatar}
-            alt={displayName}
-            className="h-20 w-20 rounded-full object-cover ring-2 ring-border/30"
-          />
-        ) : (
-          <div className="h-20 w-20 rounded-full bg-primary flex items-center justify-center text-2xl font-bold text-primary-foreground ring-2 ring-border/30">
-            {displayName.charAt(0).toUpperCase()}
-          </div>
-        )}
+        <Avatar
+          src={avatar}
+          name={username || displayName}
+          size="2xl"
+          className="ring-2 ring-border/30"
+        />
       </div>
 
       {/* User Info */}
