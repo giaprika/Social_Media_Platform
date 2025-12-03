@@ -47,8 +47,8 @@ const (
 )
 
 func serveWs(w http.ResponseWriter, r *http.Request) {
-	// Extract user_id from header (set by API Gateway after JWT validation)
-	userID, err := auth.ExtractUserIDFromHeader(r)
+	// Extract user_id from request (header first, then query param for browser WebSocket)
+	userID, err := auth.ExtractUserIDFromRequest(r)
 	if err != nil {
 		log.Printf("Auth failed: %v", err)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)

@@ -11,6 +11,8 @@ import (
 const (
 	// UserIDHeader is the header name for user ID set by API Gateway
 	UserIDHeader = "X-User-Id"
+	// UserIDQueryParam is the query parameter name for user ID (fallback for WebSocket from browsers)
+	UserIDQueryParam = "user_id"
 )
 
 var (
@@ -25,6 +27,25 @@ func ExtractUserIDFromHeader(r *http.Request) (string, error) {
 		return "", ErrMissingUserID
 	}
 	return userID, nil
+}
+
+// ExtractUserIDFromRequest extracts user_id from HTTP request.
+// Priority: 1) X-User-Id header, 2) user_id query parameter
+// This is useful for WebSocket connections where browsers don't support custom headers.
+func ExtractUserIDFromRequest(r *http.Request) (string, error) {
+	// Priority 1: Try header first
+	userID := r.Header.Get(UserIDHeader)
+	if userID != "" {
+		return userID, nil
+	}
+
+	// Priority 2: Fallback to query parameter (for browser WebSocket)
+	userID = r.URL.Query().Get(UserIDQueryParam)
+	if userID != "" {
+		return userID, nil
+	}
+
+	return "", ErrMissingUserID
 }
 
 // GetUserIDFromContext retrieves user_id from context

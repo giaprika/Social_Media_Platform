@@ -101,3 +101,66 @@ func TestSetUserIDInContext_OverwriteExisting(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "new-user", userID)
 }
+
+func TestExtractUserIDFromRequest_HeaderPriority(t *testing.T) {
+	// When both header and query param are present, header should take priority
+	req := httptest.NewRequest(http.MethodGet, "/ws?user_id=query-user", nil)
+	req.Header.Set(UserIDHeader, "header-user")
+
+	userID, err := ExtractUserIDFromRequest(req)
+
+	require.NoError(t, err)
+	assert.Equal(t, "header-user", userID)
+}
+
+func TestExtractUserIDFromRequest_HeaderOnly(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	req.Header.Set(UserIDHeader, "header-user")
+
+	userID, err := ExtractUserIDFromRequest(req)
+
+	require.NoError(t, err)
+	assert.Equal(t, "header-user", userID)
+}
+
+func TestExtractUserIDFromRequest_QueryParamFallback(t *testing.T) {
+	// When header is missing, should fallback to query param
+	req := httptest.NewRequest(http.MethodGet, "/ws?user_id=query-user", nil)
+
+	userID, err := ExtractUserIDFromRequest(req)
+
+	require.NoError(t, err)
+	assert.Equal(t, "query-user", userID)
+}
+
+func TestExtractUserIDFromRequest_MissingBoth(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+
+	userID, err := ExtractUserIDFromRequest(req)
+
+	require.Error(t, err)
+	assert.Equal(t, ErrMissingUserID, err)
+	assert.Empty(t, userID)
+}
+
+func TestExtractUserIDFromRequest_EmptyHeader_FallbackToQuery(t *testing.T) {
+	// Empty header should fallback to query param
+	req := httptest.NewRequest(http.MethodGet, "/ws?user_id=query-user", nil)
+	req.Header.Set(UserIDHeader, "")
+
+	userID, err := ExtractUserIDFromRequest(req)
+
+	require.NoError(t, err)
+	assert.Equal(t, "query-user", userID)
+}
+
+func TestExtractUserIDFromRequest_EmptyBoth(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/ws?user_id=", nil)
+	req.Header.Set(UserIDHeader, "")
+
+	userID, err := ExtractUserIDFromRequest(req)
+
+	require.Error(t, err)
+	assert.Equal(t, ErrMissingUserID, err)
+	assert.Empty(t, userID)
+}
