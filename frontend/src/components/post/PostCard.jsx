@@ -128,9 +128,8 @@ const PostCard = ({
 
   const handleDelete = () => {
     setShowMenu(false);
-    if (window.confirm("Bạn có chắc chắn muốn xóa bài viết này?")) {
-      onDelete?.(post.id);
-    }
+    // Delegate to parent component which handles ConfirmDialog
+    onDelete?.(post.id);
   };
 
   const handleHide = () => {

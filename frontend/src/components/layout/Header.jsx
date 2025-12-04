@@ -224,7 +224,7 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
             className="hidden sm:flex items-center gap-2 rounded-full bg-primary px-3 lg:px-4 py-2 text-xs sm:text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
           >
             <PlusIcon className="h-4 w-4 lg:h-5 lg:w-5" />
-            <span className="hidden lg:inline">Create Post</span>
+            <span className="inline">Create Post</span>
           </button>
           <button
             type="button"

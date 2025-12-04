@@ -7,6 +7,7 @@ const ProfileContent = ({
   posts = [],
   loading = false,
   isOwnProfile = false,
+  currentUserId,
   onUpvote,
   onDownvote,
   onComment,
@@ -15,6 +16,11 @@ const ProfileContent = ({
   onAuthorClick,
   onFollow,
   onCommunityClick,
+  onEdit,
+  onDelete,
+  onHide,
+  onReport,
+  onCreatePost,
 }) => {
   const renderEmptyState = () => {
     const emptyMessages = {
@@ -54,9 +60,12 @@ const ProfileContent = ({
         <p className="text-sm text-muted-foreground max-w-md mb-6 leading-relaxed">
           {emptyDescriptions[activeTab]}
         </p>
-        {activeTab === "overview" && isOwnProfile && (
-          <button className="px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors">
-            Update Settings
+        {(activeTab === "overview" || activeTab === "posts") && isOwnProfile && (
+          <button 
+            onClick={onCreatePost}
+            className="px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
+          >
+            Tạo bài viết đầu tiên
           </button>
         )}
       </div>
@@ -74,10 +83,12 @@ const ProfileContent = ({
             <ChevronDownIcon className="h-4 w-4" />
           </button>
 
-          <button className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors">
+          <button 
+            onClick={onCreatePost}
+            className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+          >
             <PlusIcon className="h-4 w-4" />
             <span>Create Post</span>
-            <ChevronDownIcon className="h-4 w-4" />
           </button>
         </div>
       )}
@@ -103,6 +114,7 @@ const ProfileContent = ({
             <PostCard
               key={post.id}
               post={post}
+              currentUserId={currentUserId}
               onUpvote={onUpvote}
               onDownvote={onDownvote}
               onComment={onComment}
@@ -111,6 +123,10 @@ const ProfileContent = ({
               onAuthorClick={onAuthorClick}
               onFollow={onFollow}
               onCommunityClick={onCommunityClick}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              onHide={onHide}
+              onReport={onReport}
             />
           ))
         )}

@@ -6,6 +6,7 @@ import CreatePostModal from "src/components/post/CreatePostModal";
 import CommentSection from "src/components/post/CommentSection";
 import FeedTabs from "src/components/feed/FeedTabs";
 import Modal from "src/components/ui/Modal";
+import ConfirmDialog from "src/components/ui/ConfirmDialog";
 import { useToast } from "src/components/ui";
 import { useNotifications } from "../hooks/useNotifications";
 import * as postApi from "src/api/post";
@@ -67,6 +68,9 @@ export default function Feed() {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editingPost, setEditingPost] = useState(null);
+  const [deletePostId, setDeletePostId] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [selectedPostId, setSelectedPostId] = useState(null);
   const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
   const [comments, setComments] = useState([]);
@@ -227,25 +231,24 @@ export default function Feed() {
 
       const formData = new FormData();
       
-      // Kết hợp title và content vào field content (post-service chỉ có content)
-      let fullContent = "";
-      if (postData.title) fullContent += postData.title;
+      // Gửi content trực tiếp (không còn title riêng)
       if (postData.content) {
-        if (fullContent) fullContent += "\n\n";
-        fullContent += postData.content;
+        formData.append("content", postData.content);
       }
       
-      if (fullContent) formData.append("content", fullContent);
-      if (postData.images && postData.images.length > 0) {
-        postData.images.forEach((file, index) => {
-          console.log(`📎 [Feed] Adding file ${index + 1}:`, {
-            name: file.name,
-            size: file.size,
-            type: file.type
-          })
-          formData.append("files", file)
-        });
+      // Gửi visibility
+      if (postData.visibility) {
+        formData.append("visibility", postData.visibility);
       }
+      if (postData.tags && postData.tags.length > 0) {
+        postData.tags.forEach((tag) => formData.append("tags", tag));
+      }
+      
+      // Gửi files (ảnh/video)
+      if (postData.files && postData.files.length > 0) {
+        postData.files.forEach((file) => formData.append("files", file));
+      }
+
 
       console.log('📤 [Feed] Sending FormData to API...')
       const response = await postApi.createPost(formData);
@@ -407,18 +410,63 @@ export default function Feed() {
   };
 
   const handleEditPost = (post) => {
-    // TODO: Open edit modal with post data
-    toast.info("Tính năng chỉnh sửa đang phát triển");
+    setEditingPost(post);
+  };
+
+  const handleUpdatePost = async (postData) => {
+    if (!editingPost) return;
+    
+    try {
+      const formData = new FormData();
+      
+      if (postData.content) {
+        formData.append("content", postData.content);
+      }
+      if (postData.visibility) {
+        formData.append("visibility", postData.visibility);
+      }
+      if (postData.tags && postData.tags.length > 0) {
+        postData.tags.forEach((tag) => formData.append("tags", tag));
+      }
+      if (postData.files && postData.files.length > 0) {
+        postData.files.forEach((file) => formData.append("files", file));
+      }
+
+      const response = await postApi.updatePost(editingPost.id, formData);
+      const updatedPostData = response.data?.data;
+      
+      if (updatedPostData) {
+        const userInfo = await fetchUserInfo(updatedPostData.user_id);
+        const updatedPost = transformPost(updatedPostData, userInfo);
+        setPosts((prev) => prev.map((p) => p.id === editingPost.id ? updatedPost : p));
+        toast.success("Đã cập nhật bài viết!");
+      }
+      setEditingPost(null);
+    } catch (error) {
+      console.error("Failed to update post:", error);
+      toast.error("Không thể cập nhật bài viết");
+      throw error;
+    }
   };
 
   const handleDeletePost = async (postId) => {
+    setDeletePostId(postId);
+  };
+
+  const confirmDeletePost = async () => {
+    if (!deletePostId) return;
+    
+    setIsDeleting(true);
     try {
-      await postApi.deletePost(postId);
-      setPosts((prevPosts) => prevPosts.filter((p) => p.id !== postId));
+      await postApi.deletePost(deletePostId);
+      setPosts((prevPosts) => prevPosts.filter((p) => p.id !== deletePostId));
       toast.success("Đã xóa bài viết!");
+      setDeletePostId(null);
     } catch (error) {
       console.error("Failed to delete post:", error);
       toast.error("Không thể xóa bài viết");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -456,6 +504,33 @@ export default function Feed() {
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onSubmit={handleCreatePost}
+      />
+
+      {/* Edit Post Modal */}
+      <CreatePostModal
+        isOpen={!!editingPost}
+        onClose={() => setEditingPost(null)}
+        onSubmit={handleUpdatePost}
+        initialData={editingPost ? {
+          content: editingPost.content,
+          visibility: editingPost.visibility || "public",
+          tags: editingPost.tags || [],
+          images: editingPost.images || [],
+        } : null}
+        isEditing
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!deletePostId}
+        onClose={() => setDeletePostId(null)}
+        onConfirm={confirmDeletePost}
+        title="Xóa bài viết"
+        message="Bạn có chắc chắn muốn xóa bài viết này? Hành động này không thể hoàn tác."
+        confirmText="Xóa"
+        cancelText="Hủy"
+        variant="danger"
+        loading={isDeleting}
       />
 
       <Modal
