@@ -46,17 +46,18 @@ class PostService {
       }
       
       // TODO: Add image parts with base64 encoding if needed
-      // if (files && files.length > 0) {
-      //   files.forEach(file => {
-      //     parts.push({
-      //       inlineData: {
-      //         displayName: file.originalname,
-      //         data: base64EncodedData,
-      //         mimeType: file.mimetype
-      //       }
-      //     });
-      //   });
-      // }
+      if (files && files.length > 0) {
+        files.forEach(file => {
+          const base64EncodedData = file.buffer.toString("base64");
+          parts.push({
+            inlineData: {
+              displayName: file.originalname,
+              data: base64EncodedData,
+              mimeType: "image/png"
+            }
+          });
+        });
+      }
 
       const newMessage = {
         role: "user",
@@ -116,7 +117,7 @@ class PostService {
       logger.info(`[Post Creation] Step 1: Moderating content with AI Agent`);
       const moderation = await this.moderateContentWithAI(
         postData.content, 
-        files, 
+        files,
         userId
       );
       

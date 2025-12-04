@@ -1,3 +1,4 @@
+import { ok } from "assert";
 import axios from "axios";
 import { request, response } from "express";
 import { v4 as uuidv4 } from "uuid"; 
@@ -35,7 +36,7 @@ async function createSession(userId) {
     }
  */
 //export default async function moderateContent(payload) {
-export default async function moderateContent(userId, content, List<File>) {
+export default async function moderateContent(payload) {
   // payload is expected to be the object the AI service accepts
   try {
     const userId = payload.userId || "anonymous_user";
@@ -45,8 +46,8 @@ export default async function moderateContent(userId, content, List<File>) {
     payload.sessionId = session_id;
 
     const res = await client.post(`/run`, payload);
-    //return res.data;
-    return true; // Or false if toxic
+    // return res.data;
+    return {ok: true, data: res.data[res.data.length - 1].content}; // Or false if toxic
   } catch (err) {
     const message = err?.response?.data || err.message || "Unknown error";
     return { ok: false, error: message, status: err?.response?.status };
