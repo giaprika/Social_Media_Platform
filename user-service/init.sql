@@ -74,6 +74,36 @@ VALUES (
 )
 ON CONFLICT (email) DO NOTHING;
 
+INSERT INTO users (id, username, email, hashed_password, full_name, birth_date, gender, status, created_at, metadata)
+VALUES (
+  'fa0fe1b0-7b9b-4351-a5e0-5ba54ece736e',
+  'binh39',
+  'binh39@gmail.com',
+  '$2b$10$ofSJ0SbMoblFbRimT/XoA.y.VJHSLjpUhiHyw3R50rOpdoq2iCOya',
+  'Binh Nguyen',
+  '1990-01-01',
+  'male',
+  'active',
+  CURRENT_TIMESTAMP,
+  '{"is_test_user": true}'::jsonb
+)
+ON CONFLICT (email) DO NOTHING;
+
+INSERT INTO users (id, username, email, hashed_password, full_name, birth_date, gender, status, created_at, metadata)
+VALUES (
+  'fa0fe1b0-7b9b-4351-a5e0-5ba54ece746e',
+  'mchienn',
+  'nmc27705@gmail.com',
+  '$2b$10$ofSJ0SbMoblFbRimT/XoA.y.VJHSLjpUhiHyw3R50rOpdoq2iCOya',
+  'Minh Chien',
+  '1990-01-01',
+  'male',
+  'active',
+  CURRENT_TIMESTAMP,
+  '{"is_test_user": true}'::jsonb
+)
+ON CONFLICT (email) DO NOTHING;
+
 -- ============================================
 -- SEED DATA: 10 Sample Users
 -- ============================================

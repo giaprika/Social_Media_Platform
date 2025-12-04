@@ -122,8 +122,8 @@ const MessageItem = ({ message, isOwn, senderName }) => {
     <div
       className={clsx('flex mb-2 group', isOwn ? 'justify-end' : 'justify-start')}
     >
-      <div className={clsx('flex items-center gap-2', isOwn ? 'flex-row-reverse' : 'flex-row')}>
-        <div className={clsx('max-w-[70%]', isOwn ? 'text-right' : 'text-left')}>
+      <div className={clsx('flex items-end gap-2', isOwn ? 'flex-row-reverse' : 'flex-row')}>
+        <div className={clsx('max-w-[70%]')}>
           {/* Show sender name for received messages in group chats */}
           {!isOwn && senderName && (
             <span className="text-xs text-muted-foreground mb-1 block px-2">
@@ -317,7 +317,19 @@ const ChatView = ({ conversation }) => {
         {messages.map((message) => {
           // Support both camelCase (from API) and snake_case (legacy)
           const senderId = message.senderId || message.sender_id
-          const isOwn = String(senderId).toLowerCase() === String(currentUserId).toLowerCase()
+          const isOwn = currentUserId && senderId && 
+            String(senderId).toLowerCase() === String(currentUserId).toLowerCase()
+          
+          // Debug log
+          if (messages.indexOf(message) === 0) {
+            console.log('[ChatPanel] Message comparison:', {
+              senderId,
+              currentUserId,
+              isOwn,
+              messageKeys: Object.keys(message),
+            })
+          }
+          
           return (
             <MessageItem
               key={message.id}
