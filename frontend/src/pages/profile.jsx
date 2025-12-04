@@ -52,6 +52,8 @@ export default function Profile() {
   const [activeTab, setActiveTab] = useState("overview");
   const [loading, setLoading] = useState(false);
   const [posts, setPosts] = useState([]);
+  const [comments, setComments] = useState([]);
+  const [likedPosts, setLikedPosts] = useState([]);
   
   // Create/Edit Post Modal
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -145,15 +147,116 @@ export default function Profile() {
     }
   }, [profileUser?.id, currentUser?.id, toast]);
 
-  useEffect(() => {
-    if (profileUser?.id && (activeTab === "overview" || activeTab === "posts")) {
-      fetchPosts();
-    } else if (activeTab !== "overview" && activeTab !== "posts") {
-      // Clear posts for other tabs
-      setPosts([]);
+  // Fetch comments for the profile user
+  // Lấy tất cả comments từ các posts của user
+  const fetchComments = useCallback(async () => {
+    if (!profileUser?.id) return;
+    
+    setLoading(true);
+    try {
+      // Fetch all posts of the user first
+      const postsResponse = await postApi.getPosts({ 
+        user_id: profileUser.id,
+        limit: 100,
+        offset: 0 
+      });
+      const userPosts = postsResponse.data?.data || [];
+      
+      // Fetch comments for each post and filter by user_id
+      const allComments = [];
+      for (const post of userPosts) {
+        try {
+          const commentsRes = await postApi.getComments(post.post_id, { limit: 100 });
+          const postComments = commentsRes.data?.data || [];
+          
+          // Filter comments by user and add post reference
+          const userComments = postComments
+            .filter(c => c.user_id === profileUser.id)
+            .map(c => ({
+              ...c,
+              id: c.comment_id,
+              post: { id: post.post_id, title: post.content?.substring(0, 50) },
+              author: {
+                id: profileUser.id,
+                name: profileUser.full_name || profileUser.username,
+                username: profileUser.username,
+                avatar_url: profileUser.avatar_url,
+              }
+            }));
+          allComments.push(...userComments);
+        } catch (err) {
+          console.error(`Failed to fetch comments for post ${post.post_id}:`, err);
+        }
+      }
+      
+      // Sort by created_at descending
+      allComments.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      setComments(allComments);
+    } catch (error) {
+      console.error("Failed to load comments:", error);
+    } finally {
       setLoading(false);
     }
-  }, [profileUser?.id, activeTab, fetchPosts]);
+  }, [profileUser?.id]);
+
+  // Fetch liked posts for the profile user
+  // Lấy các posts mà user đã like
+  const fetchLikedPosts = useCallback(async () => {
+    if (!profileUser?.id) return;
+    
+    setLoading(true);
+    try {
+      // Fetch all public posts
+      const postsResponse = await postApi.getPosts({ 
+        limit: 100,
+        offset: 0 
+      });
+      const allPosts = postsResponse.data?.data || [];
+      
+      // Check reactions for each post to find liked ones
+      const likedPostsList = [];
+      for (const post of allPosts) {
+        try {
+          const reactionsRes = await postApi.getPostReactions(post.post_id);
+          const reactions = reactionsRes.data?.data || [];
+          const userReaction = reactions.find(r => r.user_id === profileUser.id);
+          
+          if (userReaction) {
+            likedPostsList.push(transformPost(post, null));
+          }
+        } catch (err) {
+          // Skip if error
+        }
+      }
+      
+      setLikedPosts(likedPostsList);
+    } catch (error) {
+      console.error("Failed to load liked posts:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [profileUser?.id]);
+
+  useEffect(() => {
+    if (!profileUser?.id) return;
+
+    switch (activeTab) {
+      case "overview":
+      case "posts":
+        fetchPosts();
+        // Fetch comments in background for stats (Contributions)
+        fetchComments();
+        break;
+      case "comments":
+        fetchComments();
+        break;
+      case "likes":
+        fetchLikedPosts();
+        break;
+      default:
+        setLoading(false);
+    }
+  }, [profileUser?.id, activeTab, fetchPosts, fetchComments, fetchLikedPosts]);
 
   // Handle create post
   const handleCreatePost = async (postData) => {
@@ -432,6 +535,8 @@ export default function Profile() {
           <ProfileContent
             activeTab={activeTab}
             posts={posts}
+            comments={comments}
+            likedPosts={likedPosts}
             loading={loading}
             isOwnProfile={isOwnProfile}
             currentUserId={currentUser?.id}
@@ -454,7 +559,14 @@ export default function Profile() {
         {/* Profile Sidebar - Thống kê user, achievements, settings */}
         <div className="hidden xl:block w-80 flex-shrink-0 py-6">
           <div className="sticky top-28">
-            <ProfileSidebar key={statsKey} user={userDisplay} isOwnProfile={isOwnProfile} />
+            <ProfileSidebar 
+              key={statsKey} 
+              user={userDisplay} 
+              isOwnProfile={isOwnProfile}
+              postsCount={posts.length}
+              commentsCount={comments.length}
+              totalLikes={posts.reduce((sum, post) => sum + (post.upvotes || 0), 0)}
+            />
           </div>
         </div>
       </div>

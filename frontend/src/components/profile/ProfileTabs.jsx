@@ -8,10 +8,7 @@ const ProfileTabs = ({ activeTab = "overview", onTabChange, isOwnProfile = false
     { id: "posts", label: "Posts" },
     { id: "comments", label: "Comments" },
     { id: "saved", label: "Saved" },
-    { id: "history", label: "History" },
-    { id: "hidden", label: "Hidden" },
-    { id: "upvoted", label: "Upvoted" },
-    { id: "downvoted", label: "Downvoted" },
+    { id: "likes", label: "Likes" },
   ];
 
   // Tabs giới hạn cho profile người khác
