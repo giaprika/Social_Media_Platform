@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { 
   PhotoIcon, 
   XMarkIcon, 
@@ -19,9 +19,9 @@ const VISIBILITY_OPTIONS = [
   { value: "private", label: "Riêng tư", icon: LockClosedIcon, description: "Chỉ mình bạn xem được" },
 ];
 
-const CreatePostModal = ({ isOpen, onClose, onSubmit }) => {
+const CreatePostModal = ({ isOpen, onClose, onSubmit, initialData = null, isEditing = false }) => {
   const [content, setContent] = useState("");
-  const [media, setMedia] = useState([]); // { file, preview, type: 'image'|'video' }
+  const [media, setMedia] = useState([]); // { file, preview, type: 'image'|'video', isExisting?: boolean }
   const [visibility, setVisibility] = useState("public");
   const [tags, setTags] = useState([]);
   const [tagInput, setTagInput] = useState("");
@@ -29,6 +29,37 @@ const CreatePostModal = ({ isOpen, onClose, onSubmit }) => {
   const [showVisibilityMenu, setShowVisibilityMenu] = useState(false);
   const fileInputRef = useRef(null);
   const toast = useToast();
+
+  // Initialize form with initialData when editing
+  useEffect(() => {
+    if (isOpen && initialData) {
+      setContent(initialData.content || "");
+      setVisibility(initialData.visibility || "public");
+      setTags(initialData.tags || []);
+      
+      // Handle existing media (URLs from server)
+      if (initialData.images && initialData.images.length > 0) {
+        const existingMedia = initialData.images.map((url) => {
+          const isVideo = /\.(mp4|webm|mov|avi|mkv|m4v|ogg)$/i.test(url);
+          return {
+            file: null,
+            preview: url,
+            type: isVideo ? "video" : "image",
+            isExisting: true,
+            url,
+          };
+        });
+        setMedia(existingMedia);
+      }
+    } else if (isOpen && !initialData) {
+      // Reset form when opening for new post
+      setContent("");
+      setMedia([]);
+      setVisibility("public");
+      setTags([]);
+      setTagInput("");
+    }
+  }, [isOpen, initialData]);
 
   const handleMediaSelect = (e) => {
     const files = Array.from(e.target.files);
@@ -63,14 +94,14 @@ const CreatePostModal = ({ isOpen, onClose, onSubmit }) => {
           const ctx = canvas.getContext("2d");
           ctx.drawImage(video, 0, 0);
           const thumbnail = canvas.toDataURL("image/jpeg");
-          setMedia((prev) => [...prev, { file, preview: thumbnail, type: "video" }]);
+          setMedia((prev) => [...prev, { file, preview: thumbnail, type: "video", isExisting: false }]);
           URL.revokeObjectURL(video.src);
         };
         video.src = URL.createObjectURL(file);
       } else {
         const reader = new FileReader();
         reader.onload = (e) => {
-          setMedia((prev) => [...prev, { file, preview: e.target.result, type: "image" }]);
+          setMedia((prev) => [...prev, { file, preview: e.target.result, type: "image", isExisting: false }]);
         };
         reader.readAsDataURL(file);
       }
@@ -108,9 +139,12 @@ const CreatePostModal = ({ isOpen, onClose, onSubmit }) => {
 
     setLoading(true);
     try {
+      // Only include new files (not existing URLs)
+      const newFiles = media.filter((m) => !m.isExisting && m.file).map((m) => m.file);
+      
       await onSubmit({
         content: content.trim(),
-        files: media.map((m) => m.file),
+        files: newFiles.length > 0 ? newFiles : undefined,
         visibility,
         tags: tags.length > 0 ? tags : undefined,
       });
@@ -139,7 +173,7 @@ const CreatePostModal = ({ isOpen, onClose, onSubmit }) => {
     <Modal
       isOpen={isOpen}
       onClose={handleClose}
-      title="Tạo bài viết mới"
+      title={isEditing ? "Chỉnh sửa bài viết" : "Tạo bài viết mới"}
       size="lg"
       footer={
         <div className="flex items-center justify-between">
@@ -189,7 +223,7 @@ const CreatePostModal = ({ isOpen, onClose, onSubmit }) => {
               Hủy
             </Button>
             <Button onClick={handleSubmit} loading={loading}>
-              Đăng bài
+              {isEditing ? "Cập nhật" : "Đăng bài"}
             </Button>
           </div>
         </div>
@@ -271,6 +305,11 @@ const CreatePostModal = ({ isOpen, onClose, onSubmit }) => {
                       <div className="rounded-full bg-black/60 p-2">
                         <VideoCameraIcon className="h-6 w-6 text-white" />
                       </div>
+                    </div>
+                  )}
+                  {item.isExisting && (
+                    <div className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white">
+                      Hiện có
                     </div>
                   )}
                   <button
