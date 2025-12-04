@@ -356,10 +356,15 @@ export function ChatProvider({ children }) {
 	// Select a conversation
 	const selectConversation = useCallback(
 		async (conversation) => {
+			if (!conversation) {
+				console.warn('[ChatContext] selectConversation called with null/undefined conversation')
+				return
+			}
+
 			// Preserve existing participant info when selecting
 			const enrichedConv = conversation.recipient 
 				? conversation 
-				: enrichConversations([conversation])[0] || conversation
+				: (enrichConversations([conversation])[0] || conversation)
 			
 			setActiveConversationState(enrichedConv)
 			setMessages([])

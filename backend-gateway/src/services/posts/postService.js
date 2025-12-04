@@ -8,7 +8,7 @@ import mainConfig from "../../config/index.js";
 class PostService {
   constructor() {
     // Axios instance cho post-service - gọi trực tiếp đến post-service, không qua Gateway
-    const postServiceUrl = mainConfig.services.posts?.target || process.env.POST_SERVICE_URL || "http://localhost:8000";
+    const postServiceUrl = mainConfig.services.posts?.target || process.env.POST_SERVICE_URL || "http://localhost:8003";
     this.postServiceAxios = createAxiosInstance({
       serviceName: "posts",
       baseURL: `${postServiceUrl}/api/v1`,  // Direct to post-service
