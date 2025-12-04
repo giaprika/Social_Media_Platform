@@ -1,249 +1,249 @@
-import * as db from '../config/database.js'
+import * as db from "../config/database.js";
 
 export class UserRepository {
-	static async findUserById(id) {
-		const result = await db.query(
-			`SELECT id, username, email, full_name, avatar_url, birth_date, gender, status, created_at, metadata 
+  static async findUserById(id) {
+    const result = await db.query(
+      `SELECT id, username, email, full_name, avatar_url, birth_date, gender, status, created_at, metadata 
        FROM users WHERE id = $1`,
-			[id]
-		)
-		return result.rows[0] || null
-	}
+      [id]
+    );
+    return result.rows[0] || null;
+  }
 
-	static async findUserByEmail(email) {
-		const result = await db.query(
-			`SELECT id, username, email, full_name, birth_date, gender, status 
+  static async findUserByEmail(email) {
+    const result = await db.query(
+      `SELECT id, username, email, full_name, birth_date, gender, status, created_at, metadata
        FROM users WHERE email = $1`,
-			[email]
-		)
-		return result.rows[0] || null
-	}
+      [email]
+    );
+    return result.rows[0] || null;
+  }
 
-	static async findUserByEmailWithPassword(email) {
-		const result = await db.query(
-			`SELECT id, email, full_name, avatar_url, birth_date, gender, status, created_at, metadata, hashed_password
+  static async findUserByEmailWithPassword(email) {
+    const result = await db.query(
+      `SELECT id, email, full_name, avatar_url, birth_date, gender, status, created_at, metadata, hashed_password
        FROM users WHERE email = $1`,
-			[email]
-		)
-		return result.rows[0] || null
-	}
+      [email]
+    );
+    return result.rows[0] || null;
+  }
 
-	static async insertUser(userData) {
-		const {
-			id,
-			username,
-			email,
-			hashed_password,
-			full_name,
-			avatar_url,
-			birth_date,
-			gender,
-			metadata,
-		} = userData
+  static async insertUser(userData) {
+    const {
+      id,
+      username,
+      email,
+      hashed_password,
+      full_name,
+      avatar_url,
+      birth_date,
+      gender,
+      metadata,
+    } = userData;
 
-		const result = await db.query(
-			`INSERT INTO users 
+    const result = await db.query(
+      `INSERT INTO users 
         (id, username, email, hashed_password, full_name, avatar_url, birth_date, gender, status, created_at, metadata) 
        VALUES 
         ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, $10)
        RETURNING id, username, email, full_name, avatar_url, birth_date, gender, status, created_at, metadata`,
-			[
-				id,
-				username,
-				email,
-				hashed_password,
-				full_name,
-				avatar_url || null,
-				birth_date || null,
-				gender || null,
-				'active', // Default status for new users
-				metadata || {},
-			]
-		)
-		return result.rows[0]
-	}
+      [
+        id,
+        username,
+        email,
+        hashed_password,
+        full_name,
+        avatar_url || null,
+        birth_date || null,
+        gender || null,
+        "active", // Default status for new users
+        metadata || {},
+      ]
+    );
+    return result.rows[0];
+  }
 
-	static async findUserByUsername(username) {
-		const result = await db.query(
-			`SELECT id, username, email, full_name, avatar_url, birth_date, gender, status, created_at, metadata
+  static async findUserByUsername(username) {
+    const result = await db.query(
+      `SELECT id, username, email, full_name, avatar_url, birth_date, gender, status, created_at, metadata
        FROM users WHERE username = $1`,
-			[username]
-		)
-		return result.rows[0] || null
-	}
+      [username]
+    );
+    return result.rows[0] || null;
+  }
 
-	static async deleteUserById(id) {
-		const result = await db.query(
-			`DELETE FROM users WHERE id = $1 RETURNING *`,
-			[id]
-		)
-		return result.rows[0]
-	}
+  static async deleteUserById(id) {
+    const result = await db.query(
+      `DELETE FROM users WHERE id = $1 RETURNING *`,
+      [id]
+    );
+    return result.rows[0];
+  }
 
-	static async getUser() {
-		const result = await db.query(
-			`SELECT id, email, full_name, avatar_url, birth_date, gender, status, created_at, metadata 
+  static async getUser() {
+    const result = await db.query(
+      `SELECT id, email, full_name, avatar_url, birth_date, gender, status, created_at, metadata 
        FROM users`
-		)
-		return result.rows
-	}
+    );
+    return result.rows;
+  }
 
-	static async searchUsersByName(fullName) {
-		const result = await db.query(
-			`SELECT id, email, full_name, avatar_url, birth_date, gender, status, created_at, metadata 
+  static async searchUsersByName(fullName) {
+    const result = await db.query(
+      `SELECT id, email, full_name, avatar_url, birth_date, gender, status, created_at, metadata 
        FROM users 
        WHERE full_name ILIKE $1 AND status != 'banned'
        ORDER BY full_name ASC`,
-			[`%${fullName}%`]
-		)
-		return result.rows
-	}
+      [`%${fullName}%`]
+    );
+    return result.rows;
+  }
 
-	static async updateUserStatus(userId, status) {
-		const result = await db.query(
-			`UPDATE users SET status = $1 WHERE id = $2 
+  static async updateUserStatus(userId, status) {
+    const result = await db.query(
+      `UPDATE users SET status = $1 WHERE id = $2 
        RETURNING id, email, full_name, avatar_url, birth_date, gender, status, created_at, metadata`,
-			[status, userId]
-		)
-		return result.rows[0] || null
-	}
+      [status, userId]
+    );
+    return result.rows[0] || null;
+  }
 
-	static async getFollowersCount(userId) {
-		const result = await db.query(
-			`SELECT COUNT(*) as count 
+  static async getFollowersCount(userId) {
+    const result = await db.query(
+      `SELECT COUNT(*) as count 
        FROM relationships 
        WHERE target_id = $1 AND type = 'follow' AND status = 'accepted'`,
-			[userId]
-		)
-		return parseInt(result.rows[0]?.count || 0, 10)
-	}
+      [userId]
+    );
+    return parseInt(result.rows[0]?.count || 0, 10);
+  }
 
-	static async getFollowingCount(userId) {
-		const result = await db.query(
-			`SELECT COUNT(*) as count 
+  static async getFollowingCount(userId) {
+    const result = await db.query(
+      `SELECT COUNT(*) as count 
        FROM relationships 
        WHERE user_id = $1 AND type = 'follow' AND status = 'accepted'`,
-			[userId]
-		)
-		return parseInt(result.rows[0]?.count || 0, 10)
-	}
+      [userId]
+    );
+    return parseInt(result.rows[0]?.count || 0, 10);
+  }
 
-	static async checkFollowStatus(userId, targetId) {
-		const result = await db.query(
-			`SELECT id, status FROM relationships 
+  static async checkFollowStatus(userId, targetId) {
+    const result = await db.query(
+      `SELECT id, status FROM relationships 
        WHERE user_id = $1 AND target_id = $2 AND type = 'follow'`,
-			[userId, targetId]
-		)
-		return result.rows[0] || null
-	}
+      [userId, targetId]
+    );
+    return result.rows[0] || null;
+  }
 
-	static async followUser(userId, targetId) {
-		// Check if relationship already exists
-		const existing = await this.checkFollowStatus(userId, targetId)
-		if (existing) {
-			// Update existing relationship to accepted
-			const result = await db.query(
-				`UPDATE relationships SET status = 'accepted', updated_at = NOW() 
+  static async followUser(userId, targetId) {
+    // Check if relationship already exists
+    const existing = await this.checkFollowStatus(userId, targetId);
+    if (existing) {
+      // Update existing relationship to accepted
+      const result = await db.query(
+        `UPDATE relationships SET status = 'accepted', updated_at = NOW() 
          WHERE user_id = $1 AND target_id = $2 AND type = 'follow'
          RETURNING *`,
-				[userId, targetId]
-			)
-			return result.rows[0]
-		}
-		// Create new follow relationship
-		const result = await db.query(
-			`INSERT INTO relationships (user_id, target_id, type, status, created_at, updated_at)
+        [userId, targetId]
+      );
+      return result.rows[0];
+    }
+    // Create new follow relationship
+    const result = await db.query(
+      `INSERT INTO relationships (user_id, target_id, type, status, created_at, updated_at)
        VALUES ($1, $2, 'follow', 'accepted', NOW(), NOW())
        RETURNING *`,
-			[userId, targetId]
-		)
-		return result.rows[0]
-	}
+      [userId, targetId]
+    );
+    return result.rows[0];
+  }
 
-	static async unfollowUser(userId, targetId) {
-		const result = await db.query(
-			`DELETE FROM relationships 
+  static async unfollowUser(userId, targetId) {
+    const result = await db.query(
+      `DELETE FROM relationships 
        WHERE user_id = $1 AND target_id = $2 AND type = 'follow'
        RETURNING *`,
-			[userId, targetId]
-		)
-		return result.rows[0] || null
-	}
+      [userId, targetId]
+    );
+    return result.rows[0] || null;
+  }
 
-	static async updateUser(userId, updateData) {
-		const { email, username, full_name, birth_date, gender } = updateData
-		const updates = []
-		const values = []
-		let paramIndex = 1
+  static async updateUser(userId, updateData) {
+    const { email, username, full_name, birth_date, gender } = updateData;
+    const updates = [];
+    const values = [];
+    let paramIndex = 1;
 
-		if (email !== undefined) {
-			updates.push(`email = $${paramIndex++}`)
-			values.push(email)
-		}
-		if (username !== undefined) {
-			updates.push(`username = $${paramIndex++}`)
-			values.push(username)
-		}
-		if (full_name !== undefined) {
-			updates.push(`full_name = $${paramIndex++}`)
-			values.push(full_name)
-		}
-		if (birth_date !== undefined) {
-			updates.push(`birth_date = $${paramIndex++}`)
-			values.push(birth_date)
-		}
-		if (gender !== undefined) {
-			updates.push(`gender = $${paramIndex++}`)
-			values.push(gender)
-		}
+    if (email !== undefined) {
+      updates.push(`email = $${paramIndex++}`);
+      values.push(email);
+    }
+    if (username !== undefined) {
+      updates.push(`username = $${paramIndex++}`);
+      values.push(username);
+    }
+    if (full_name !== undefined) {
+      updates.push(`full_name = $${paramIndex++}`);
+      values.push(full_name);
+    }
+    if (birth_date !== undefined) {
+      updates.push(`birth_date = $${paramIndex++}`);
+      values.push(birth_date);
+    }
+    if (gender !== undefined) {
+      updates.push(`gender = $${paramIndex++}`);
+      values.push(gender);
+    }
 
-		if (updates.length === 0) {
-			throw new Error('No fields to update')
-		}
+    if (updates.length === 0) {
+      throw new Error("No fields to update");
+    }
 
-		values.push(userId)
-		const result = await db.query(
-			`UPDATE users SET ${updates.join(', ')} WHERE id = $${paramIndex}
+    values.push(userId);
+    const result = await db.query(
+      `UPDATE users SET ${updates.join(", ")} WHERE id = $${paramIndex}
        RETURNING id, username, email, full_name, avatar_url, birth_date, gender, status, created_at, metadata`,
-			values
-		)
-		return result.rows[0] || null
-	}
+      values
+    );
+    return result.rows[0] || null;
+  }
 
-	static async updatePassword(userId, hashedPassword) {
-		const result = await db.query(
-			`UPDATE users SET hashed_password = $1 WHERE id = $2
+  static async updatePassword(userId, hashedPassword) {
+    const result = await db.query(
+      `UPDATE users SET hashed_password = $1 WHERE id = $2
        RETURNING id, email, full_name, avatar_url, birth_date, gender, status, created_at, metadata`,
-			[hashedPassword, userId]
-		)
-		return result.rows[0] || null
-	}
+      [hashedPassword, userId]
+    );
+    return result.rows[0] || null;
+  }
 
-	static async getUserPassword(userId) {
-		const result = await db.query(
-			`SELECT hashed_password FROM users WHERE id = $1`,
-			[userId]
-		)
-		return result.rows[0]?.hashed_password || null
-	}
+  static async getUserPassword(userId) {
+    const result = await db.query(
+      `SELECT hashed_password FROM users WHERE id = $1`,
+      [userId]
+    );
+    return result.rows[0]?.hashed_password || null;
+  }
 
-	static async getUserSettings(userId) {
-		const result = await db.query(`SELECT metadata FROM users WHERE id = $1`, [
-			userId,
-		])
-		const metadata = result.rows[0]?.metadata || {}
-		return metadata.settings || {}
-	}
+  static async getUserSettings(userId) {
+    const result = await db.query(`SELECT metadata FROM users WHERE id = $1`, [
+      userId,
+    ]);
+    const metadata = result.rows[0]?.metadata || {};
+    return metadata.settings || {};
+  }
 
-	static async updateUserSettings(userId, settings) {
-		const result = await db.query(
-			`UPDATE users 
+  static async updateUserSettings(userId, settings) {
+    const result = await db.query(
+      `UPDATE users 
        SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('settings', COALESCE(metadata->'settings', '{}'::jsonb) || $1::jsonb)
        WHERE id = $2
        RETURNING metadata`,
-			[JSON.stringify(settings), userId]
-		)
-		const metadata = result.rows[0]?.metadata || {}
-		return metadata.settings || {}
-	}
+      [JSON.stringify(settings), userId]
+    );
+    const metadata = result.rows[0]?.metadata || {};
+    return metadata.settings || {};
+  }
 }

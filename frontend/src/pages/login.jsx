@@ -6,6 +6,8 @@ import useAuth from "src/hooks/useAuth";
 import { PATHS } from "src/constants/paths";
 import { validateEmail, validatePassword } from "src/utils/validate";
 import TestAccountCard from "src/components/TestAccountCard";
+import { GoogleLogin } from "@react-oauth/google";
+import { jwtDecode } from "jwt-decode";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -51,8 +53,8 @@ const Login = () => {
       navigate(PATHS.FEED);
     } catch (err) {
       console.error(err);
-  setError("Login failed. Please try again.");
-  message.error("Login failed. Please try again.");
+      setError("Login failed. Please try again.");
+      message.error("Login failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -76,7 +78,10 @@ const Login = () => {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="email">
+            <label
+              className="mb-2 block text-sm font-medium text-foreground"
+              htmlFor="email"
+            >
               Email
             </label>
             <input
@@ -91,7 +96,10 @@ const Login = () => {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="password">
+            <label
+              className="mb-2 block text-sm font-medium text-foreground"
+              htmlFor="password"
+            >
               Password
             </label>
             <input
@@ -120,10 +128,48 @@ const Login = () => {
           </button>
         </form>
 
+        <div className="mt-4">
+          <GoogleLogin
+            onSuccess={async (credentialResponse) => {
+              try {
+                const token = credentialResponse?.credential;
+                if (!token)
+                  return message.error("No credential returned from Google");
+
+                // const googleInfo = jwtDecode(token);
+
+                // Gửi token Google sang backend user-service
+                const { data } = await auth.loginWithGoogle({
+                  credential: token,
+                });
+
+                await login({
+                  accessToken: data.access_token,
+                  refreshToken: data.refresh_token,
+                  userId: data.user.id,
+                  user: data.user,
+                });
+
+                message.success("Login with Google successful!");
+                navigate(PATHS.FEED);
+              } catch (err) {
+                console.error(err);
+                message.error("Google login failed");
+              }
+            }}
+            onError={() => {
+              message.error("Google login failed");
+            }}
+          />
+        </div>
+
         <div className="mt-6 text-center">
           <p className="text-muted-foreground">
             Don't have an account?{" "}
-            <Link to={PATHS.SIGNUP} className="font-semibold text-primary hover:underline">
+            <Link
+              to={PATHS.SIGNUP}
+              className="font-semibold text-primary hover:underline"
+            >
               Sign up
             </Link>
           </p>
