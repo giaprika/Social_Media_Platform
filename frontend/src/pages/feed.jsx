@@ -221,17 +221,24 @@ export default function Feed() {
     try {
       const formData = new FormData();
       
-      // Kết hợp title và content vào field content (post-service chỉ có content)
-      let fullContent = "";
-      if (postData.title) fullContent += postData.title;
+      // Gửi content trực tiếp (không còn title riêng)
       if (postData.content) {
-        if (fullContent) fullContent += "\n\n";
-        fullContent += postData.content;
+        formData.append("content", postData.content);
       }
       
-      if (fullContent) formData.append("content", fullContent);
-      if (postData.images && postData.images.length > 0) {
-        postData.images.forEach((file) => formData.append("files", file));
+      // Gửi visibility
+      if (postData.visibility) {
+        formData.append("visibility", postData.visibility);
+      }
+      
+      // Gửi tags
+      if (postData.tags && postData.tags.length > 0) {
+        postData.tags.forEach((tag) => formData.append("tags", tag));
+      }
+      
+      // Gửi files (ảnh/video)
+      if (postData.files && postData.files.length > 0) {
+        postData.files.forEach((file) => formData.append("files", file));
       }
 
       const response = await postApi.createPost(formData);
