@@ -36,9 +36,13 @@ instance.interceptors.request.use(
 			config.headers['x-user-id'] = userId
 		}
 
-		console.log('Request Interceptor - Config:', {
+		console.log('🚀 [Axios Request]', {
+			method: config.method?.toUpperCase(),
 			url: config.url,
+			fullURL: config.baseURL + config.url,
 			headers: config.headers,
+			data: config.data,
+			contentType: config.headers['Content-Type']
 		})
 
 		return config

@@ -219,6 +219,12 @@ export default function Feed() {
 
   const handleCreatePost = async (postData) => {
     try {
+      console.log('🎨 [Feed] handleCreatePost called with:', {
+        title: postData.title,
+        content: postData.content,
+        imagesCount: postData.images?.length || 0
+      })
+
       const formData = new FormData();
       
       // Kết hợp title và content vào field content (post-service chỉ có content)
@@ -231,10 +237,19 @@ export default function Feed() {
       
       if (fullContent) formData.append("content", fullContent);
       if (postData.images && postData.images.length > 0) {
-        postData.images.forEach((file) => formData.append("files", file));
+        postData.images.forEach((file, index) => {
+          console.log(`📎 [Feed] Adding file ${index + 1}:`, {
+            name: file.name,
+            size: file.size,
+            type: file.type
+          })
+          formData.append("files", file)
+        });
       }
 
+      console.log('📤 [Feed] Sending FormData to API...')
       const response = await postApi.createPost(formData);
+      console.log('✅ [Feed] Post created successfully:', response.data)
       const newPostData = response.data?.data;
       
       if (newPostData) {
