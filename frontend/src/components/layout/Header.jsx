@@ -3,7 +3,6 @@ import clsx from "clsx";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRightOnRectangleIcon,
-  BanknotesIcon,
   ChatBubbleOvalLeftEllipsisIcon,
   Cog6ToothIcon,
   DocumentDuplicateIcon,
@@ -78,29 +77,22 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
   const profileMenuItems = [
     {
       id: "edit-avatar",
-      label: "Edit Avatar",
+      label: "Chỉnh sửa Avatar",
       icon: PencilSquareIcon,
       action: () => undefined,
     },
     {
       id: "drafts",
-      label: "Drafts",
-      description: "Saved posts",
+      label: "Bản nháp",
+      description: "Bài viết đã lưu",
       icon: DocumentDuplicateIcon,
       action: () => undefined,
     },
     {
       id: "achievements",
-      label: "Achievements",
-      description: "5 unlocked",
+      label: "Thành tựu",
+      description: "Chưa có thành tựu",
       icon: TrophyIcon,
-      action: () => undefined,
-    },
-    {
-      id: "earn",
-      label: "Earn",
-      description: "Earn cash on SocialApp",
-      icon: BanknotesIcon,
       action: () => undefined,
     },
     {
@@ -111,14 +103,14 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
     },
     {
       id: "dark-mode",
-      label: isDark ? "Dark Mode" : "Light Mode",
+      label: isDark ? "Chế độ tối" : "Chế độ sáng",
       icon: isDark ? MoonIcon : SunIcon,
       type: "toggle",
       action: toggleTheme,
     },
     {
       id: "logout",
-      label: "Log Out",
+      label: "Đăng xuất",
       icon: ArrowRightOnRectangleIcon,
       tone: "destructive",
       action: handleLogout,
@@ -129,7 +121,7 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
   const footerMenuItems = [
     {
       id: "settings",
-      label: "Settings",
+      label: "Cài đặt",
       icon: Cog6ToothIcon,
       action: () => navigate(PATHS.SETTINGS),
     },
@@ -224,7 +216,7 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
             className="hidden sm:flex items-center gap-2 rounded-full bg-primary px-3 lg:px-4 py-2 text-xs sm:text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
           >
             <PlusIcon className="h-4 w-4 lg:h-5 lg:w-5" />
-            <span className="hidden lg:inline">Create Post</span>
+            <span className="inline">Create Post</span>
           </button>
           <button
             type="button"

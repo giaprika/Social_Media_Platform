@@ -45,7 +45,7 @@ const StatsModal = ({ isOpen, onClose, title, children }) => {
   );
 };
 
-const ProfileSidebar = ({ user, stats: initialStats, isOwnProfile = false }) => {
+const ProfileSidebar = ({ user, stats: initialStats, isOwnProfile = false, postsCount = 0, commentsCount = 0, totalLikes = 0 }) => {
   const username = user?.username || "username";
   const [stats, setStats] = useState(initialStats);
   const [loading, setLoading] = useState(!initialStats);
@@ -122,13 +122,14 @@ const ProfileSidebar = ({ user, stats: initialStats, isOwnProfile = false }) => 
     }
   };
 
-  const userStats = stats || {
-    followers: 0,
-    following: 0,
-    likes: 0,
-    posts: 0,
-    comments: 0,
-    created_at: user?.created_at || new Date().toISOString(),
+  const userStats = {
+    followers: stats?.followers || 0,
+    following: stats?.following || 0,
+    likes: totalLikes || stats?.likes || 0,
+    posts: postsCount || stats?.posts || 0,
+    comments: commentsCount || stats?.comments || 0,
+    created_at: stats?.created_at || user?.created_at || new Date().toISOString(),
+    activeIn: stats?.activeIn || 0,
   };
 
   return (
@@ -265,17 +266,17 @@ const ProfileSidebar = ({ user, stats: initialStats, isOwnProfile = false }) => 
         <div className="px-4 py-3 border-b border-border">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-              Achievements
+              Thành tựu
             </h3>
             <button className="text-xs font-medium text-primary hover:underline">
-              View All
+              Xem tất cả
             </button>
           </div>
         </div>
 
         <div className="p-4">
           <div className="flex items-center justify-center py-6 text-muted-foreground">
-            <span className="text-sm">0 unlocked</span>
+            <span className="text-sm">Chưa có thành tựu</span>
           </div>
         </div>
       </div>
@@ -285,7 +286,7 @@ const ProfileSidebar = ({ user, stats: initialStats, isOwnProfile = false }) => 
         <div className="rounded-lg border border-border bg-card overflow-hidden">
           <div className="px-4 py-3 border-b border-border">
             <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-              Settings
+              Cài đặt
             </h3>
           </div>
 

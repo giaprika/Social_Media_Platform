@@ -68,6 +68,14 @@ const config = {
 			excludeList: [],
 			timeout: 10000,
 		},
+		community: {
+			target: process.env.COMMUNITY_SERVICE_URL || 'http://localhost:8004',
+			pathRewrite: {
+				'^/api/service/community': '', // /api/service/community/communities → /communities
+			},
+			excludeList: [],
+			timeout: 5000,
+		},
 	},
 }
 

@@ -38,6 +38,14 @@ export const getPostById = (postId) => {
  * @param {FormData} formData - content, files[], tags[], visibility, group_id
  */
 export const createPost = (formData) => {
+	console.log('📝 [Post API] Creating post with FormData:', {
+		url: `${POST_SERVICE_BASE_URL}/posts`,
+		contentType: 'multipart/form-data',
+		formDataEntries: Array.from(formData.entries()).map(([key, value]) => ({
+			key,
+			value: value instanceof File ? `File: ${value.name} (${value.size} bytes)` : value
+		}))
+	})
 	return instance.post(`${POST_SERVICE_BASE_URL}/posts`, formData, {
 		headers: { 'Content-Type': 'multipart/form-data' },
 	})
