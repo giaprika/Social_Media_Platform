@@ -16,14 +16,8 @@ const mockFile = {
     size: buffer.length
 };
 
-const mockFile2 = {
-    originalname: "3-que-la-gi-1-1675678242.jpg",
-    mimetype: "image/jpeg",
-    buffer: buffer,
-    size: buffer.length
-};
 
-postService.moderateContentWithAI("hello", [mockFile, mockFile2], test_user_id).then(result => {
+postService.moderateContentWithAI("hello", [mockFile], test_user_id).then(result => {
     console.log("Moderation Result:", result);
 }).catch(error => {
     console.error("Error during moderation:", error);

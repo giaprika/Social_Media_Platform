@@ -39,7 +39,7 @@ def set_user_id_before_tool_callback(callback_context: CallbackContext):
         image_content = callback_context.user_content.parts[1].inline_data.data # type: ignore
         if image_content:
             from config.context import set_image_content
-            print(f"Setting image_content in context: {image_content}")
+            print(f"Setting image_content in context: done!")
             set_image_content(image_content)
     except Exception as e:
         print(f"Error setting image content in context: {e}")
@@ -73,7 +73,7 @@ root_agent = Agent(
     14. Payday loan content: Identify and flag content promoting predatory lending practices or payday loans.
     15. Spiritual scams/abuse: Identify and flag content that promotes fraudulent spiritual practices or scams.
     16. Self-harm: Identify content that promotes or depicts self-harm or suicidal behavior (cutting, hanging, all bloody images is not allowed, etc).
-    
+
     When you find content that violates these guidelines, call report_user_violation tool. Finally, return only json result example:
     {
         "result": "Banned or Warning or Accepted", 

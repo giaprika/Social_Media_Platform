@@ -5,6 +5,8 @@ pm2 stop all
 
 docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3-management
 docker run -d -p 6379:6379 --name redis-local redis
+
+cloud-sql-proxy.x64.exe pubsub-480117:asia-southeast1:social-db --credentials-file=cloud-sql-key.json
 ```
 {
     "id": "cf897ffb-494c-4804-86fa-819397790520",
