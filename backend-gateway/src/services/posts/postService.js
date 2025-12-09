@@ -16,96 +16,90 @@ class PostService {
     });
   }
 
-  /**
-   * Kiểm duyệt nội dung (text + images) bằng AI Agent
-   * 
-   * @param {string} content - Nội dung text cần kiểm duyệt
-   * @param {Array} files - Danh sách files (optional) - chưa support trong agent hiện tại
-   * @param {string} userId - User ID
-   * @returns {Promise<{is_safe: boolean, result: string, message: string}>}
-   */
   async moderateContentWithAI(content, files, userId) {
     // Nếu không có content và files thì skip
     if (!content && (!files || files.length === 0)) {
-      return { is_safe: true, result: "Accepted", message: "No content to moderate" };
+      return { result: "Accepted", message: "No content to moderate" };
     }
 
-    try {
-      logger.info(`[AI Moderation] Checking content for user ${userId}`, {
-        hasText: !!content,
-        hasFiles: files && files.length > 0,
-      });
+    // Tạo message theo format của AI service
+    const parts = [];
+    
+    // Thêm text content
+    if (content) {
+      parts.push({ text: content });
+    }
 
-      // Tạo message theo format ADK Content
-      // AI API expects ADK format: { role: "user", parts: [{ text: "..." }] }
-      const parts = [];
-      
-      // Add text part
-      if (content) {
-        parts.push({ text: content });
-      }
-      
-      // TODO: Add image parts with base64 encoding if needed
-      if (files && files.length > 0) {
-        files.forEach(file => {
-          const base64EncodedData = file.buffer.toString("base64");
+    // Thêm images (nếu có)
+    if (files && files.length > 0) {
+      for (const file of files) {
+        if (file.mimetype.startsWith('image/')) {
           parts.push({
             inlineData: {
               displayName: file.originalname,
-              data: base64EncodedData,
-              mimeType: "image/png"
+              data: file.buffer.toString('base64'),
+              mimeType: file.mimetype
             }
           });
+        }
+      }
+    }
+
+    const newMessage = {
+      role: "user",
+      parts: parts
+    };
+
+    const res = await moderateContent({
+      userId: userId,
+      newMessage: newMessage
+    });
+
+    if (!res.ok) {
+      logger.error("[PostService] AI moderation failed", {
+        error: res.error,
+        status: res.status,
+      });
+      throw {
+        status: res.status || 500,
+        message: "AI moderation service error",
+        reason: res.error,
+      };
+    }
+
+    // Parse response từ AI (giống test.js)
+    const aiResponse = res.data;
+    let moderationResult = { result: "Rejected", message: "Failed to parse AI response" };
+
+    try {
+      if (aiResponse.parts && aiResponse.parts.length > 0) {
+        let textContent = aiResponse.parts[0].text;
+        
+        // Remove markdown code block wrapper
+        textContent = textContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        
+        // Parse JSON
+        const parsed = JSON.parse(textContent);
+        
+        moderationResult = {
+          result: parsed.result.trim(),    // "Accepted", "Warning", or "Rejected" - TRIM whitespace
+          message: parsed.message
+        };
+        
+        logger.info("[PostService] AI Moderation parsed successfully", {
+          result: moderationResult.result,
+          resultLength: moderationResult.result.length,
+          message: moderationResult.message
         });
       }
-
-      const newMessage = {
-        role: "user",
-        parts: parts
-      };
-
-      // Gọi AI Agent qua aiService
-      const payload = {
-        userId: userId,
-        newMessage: newMessage,
-      };
-
-      const aiResponse = await moderateContent(payload);
-      
-      logger.info(`[AI Moderation] AI Agent response:`, aiResponse);
-
-      // Parse response từ AI Agent
-      // Expected format: { result: "Accepted|Warning|Banned", message: "..." }
-      
-      if (aiResponse.ok === false) {
-        // AI service error
-        logger.error("[AI Moderation] AI service error", aiResponse.error);
-        throw new Error("AI moderation service unavailable");
-      }
-
-      // Extract result từ AI response
-      // AIService trả về response từ ADK agent
-      const result = aiResponse.result || "Accepted";
-      const message = aiResponse.message || "No issues detected";
-
-      const is_safe = result === "Accepted";
-
-      return {
-        is_safe,
-        result,
-        message,
-        raw_response: aiResponse,
-      };
-
-    } catch (error) {
-      logger.error("[AI Moderation] Content check failed", {
-        error: error.message,
-        userId,
+    } catch (parseError) {
+      logger.error("[PostService] Failed to parse AI response", {
+        error: parseError.message,
+        response: aiResponse
       });
-      
-      // Fallback: reject để đảm bảo an toàn
-      throw new Error("AI moderation service unavailable");
     }
+
+    return moderationResult;
   }
 
   /**
@@ -121,25 +115,45 @@ class PostService {
         userId
       );
       
-      if (!moderation.is_safe) {
-        logger.warn(`[Post Creation] Content rejected by AI`, {
+      logger.info(`[Post Creation] AI Moderation Result`, {
+        userId,
+        result: moderation.result,
+        message: moderation.message,
+      });
+
+      // DEBUG: Log chi tiết
+      logger.info(`[Post Creation] Checking moderation result`, {
+        'moderation.result': moderation.result,
+        'typeof result': typeof moderation.result,
+        'result === "Accepted"': moderation.result === "Accepted",
+        'result !== "Accepted"': moderation.result !== "Accepted",
+      });
+
+      // CHỈ CHO PHÉP tạo post nếu result === "Accepted"
+      if (moderation.result !== "Accepted") {
+        logger.warn(`[Post Creation] Content BLOCKED by AI`, {
           userId,
           result: moderation.result,
           reason: moderation.message,
         });
+        
+        // Xác định status code và message dựa trên result
+        const statusCode = moderation.result === "Warning" ? 403 : 400;
+        const errorMessage = moderation.result === "Warning" 
+          ? "Content contains potentially inappropriate material" 
+          : "Content violates community guidelines";
+        
         throw {
-          status: 400,
-          message: "Content violates community guidelines",
+          status: statusCode,
+          message: errorMessage,
           reason: moderation.message,
           moderationResult: moderation,
         };
       }
 
-      logger.info(`[Post Creation] Content passed AI moderation`, {
-        result: moderation.result,
-      });
+      logger.info(`[Post Creation] Content ACCEPTED by AI - Proceeding to create post`);
 
-      // BƯỚC 2: Tạo post (sau khi pass moderation)
+      // BƯỚC 2: Tạo post (CHỈ KHI result === "Accepted")
       logger.info(`[Post Creation] Step 2: Creating post in post-service`);
       
       const formData = new FormData();
@@ -207,24 +221,36 @@ class PostService {
           userId
         );
         
-        if (!moderation.is_safe) {
-          logger.warn(`[Post Update] Content rejected by AI`, {
+        logger.info(`[Post Update] AI Moderation Result`, {
+          userId,
+          postId,
+          result: moderation.result,
+          message: moderation.message,
+        });
+
+        // CHỈ CHO PHÉP update nếu result === "Accepted"
+        if (moderation.result !== "Accepted") {
+          logger.warn(`[Post Update] Content BLOCKED by AI`, {
             userId,
             postId,
             result: moderation.result,
             reason: moderation.message,
           });
+          
+          const statusCode = moderation.result === "Warning" ? 403 : 400;
+          const errorMessage = moderation.result === "Warning" 
+            ? "Content contains potentially inappropriate material" 
+            : "Content violates community guidelines";
+          
           throw {
-            status: 400,
-            message: "Content violates community guidelines",
+            status: statusCode,
+            message: errorMessage,
             reason: moderation.message,
             moderationResult: moderation,
           };
         }
 
-        logger.info(`[Post Update] Content passed AI moderation`, {
-          result: moderation.result,
-        });
+        logger.info(`[Post Update] Content ACCEPTED by AI - Proceeding to update post`);
       }
 
       // BƯỚC 2: Cập nhật post
@@ -294,24 +320,36 @@ class PostService {
         userId
       );
       
-      if (!moderation.is_safe) {
-        logger.warn(`[Comment Creation] Comment rejected by AI`, {
+      logger.info(`[Comment Creation] AI Moderation Result`, {
+        userId,
+        postId,
+        result: moderation.result,
+        message: moderation.message,
+      });
+
+      // CHỈ CHO PHÉP tạo comment nếu result === "Accepted"
+      if (moderation.result !== "Accepted") {
+        logger.warn(`[Comment Creation] Comment BLOCKED by AI`, {
           userId,
           postId,
           result: moderation.result,
           reason: moderation.message,
         });
+        
+        const statusCode = moderation.result === "Warning" ? 403 : 400;
+        const errorMessage = moderation.result === "Warning" 
+          ? "Comment contains potentially inappropriate material" 
+          : "Comment violates community guidelines";
+        
         throw {
-          status: 400,
-          message: "Comment violates community guidelines",
+          status: statusCode,
+          message: errorMessage,
           reason: moderation.message,
           moderationResult: moderation,
         };
       }
 
-      logger.info(`[Comment Creation] Comment passed AI moderation`, {
-        result: moderation.result,
-      });
+      logger.info(`[Comment Creation] Comment ACCEPTED by AI - Proceeding to create comment`);
 
       // BƯỚC 2: Tạo comment
       logger.info(`[Comment Creation] Step 2: Creating comment in post-service`);
@@ -367,24 +405,36 @@ class PostService {
           userId
         );
         
-        if (!moderation.is_safe) {
-          logger.warn(`[Comment Update] Comment rejected by AI`, {
+        logger.info(`[Comment Update] AI Moderation Result`, {
+          userId,
+          commentId,
+          result: moderation.result,
+          message: moderation.message,
+        });
+
+        // CHỈ CHO PHÉP update nếu result === "Accepted"
+        if (moderation.result !== "Accepted") {
+          logger.warn(`[Comment Update] Comment BLOCKED by AI`, {
             userId,
             commentId,
             result: moderation.result,
             reason: moderation.message,
           });
+          
+          const statusCode = moderation.result === "Warning" ? 403 : 400;
+          const errorMessage = moderation.result === "Warning" 
+            ? "Comment contains potentially inappropriate material" 
+            : "Comment violates community guidelines";
+          
           throw {
-            status: 400,
-            message: "Comment violates community guidelines",
+            status: statusCode,
+            message: errorMessage,
             reason: moderation.message,
             moderationResult: moderation,
           };
         }
 
-        logger.info(`[Comment Update] Comment passed AI moderation`, {
-          result: moderation.result,
-        });
+        logger.info(`[Comment Update] Comment ACCEPTED by AI - Proceeding to update comment`);
       }
 
       // BƯỚC 2: Cập nhật comment

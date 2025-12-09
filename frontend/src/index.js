@@ -5,6 +5,7 @@ import { AuthProvider } from "src/hooks/useAuth";
 import { ToastProvider } from "src/components/ui";
 import { ThemeProvider } from "src/contexts/ThemeContext";
 import { ChatProvider } from "src/contexts/ChatContext";
+import { NotificationsProvider } from "src/contexts/NotificationsContext";
 import ErrorBoundary from "src/components/ErrorBoundary";
 import App from "./App";
 import "./index.css";
@@ -16,11 +17,13 @@ root.render(
     <GoogleOAuthProvider clientId={process.env.REACT_APP_GOOGLE_CLIENT_ID}>
       <ThemeProvider>
         <AuthProvider>
-          <ChatProvider>
-            <ToastProvider>
-              <App />
-            </ToastProvider>
-          </ChatProvider>
+          <NotificationsProvider>
+            <ChatProvider>
+              <ToastProvider>
+                <App />
+              </ToastProvider>
+            </ChatProvider>
+          </NotificationsProvider>
         </AuthProvider>
       </ThemeProvider>
     </GoogleOAuthProvider>

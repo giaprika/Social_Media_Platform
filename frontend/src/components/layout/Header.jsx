@@ -21,6 +21,7 @@ import Avatar from "../ui/Avatar";
 import useAuth from "src/hooks/useAuth";
 import { useTheme } from "src/contexts/ThemeContext";
 import NotificationDropdown from "./NotificationDropdown";
+import { useNotifications } from "src/contexts/NotificationsContext";
 
 // Navigation items removed - search bar moved to left
 
@@ -33,6 +34,7 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
   const profileButtonRef = useRef(null);
   const { user, logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
+  const { notifications, fetchNotifications } = useNotifications();
 
   const displayName = user?.displayName || user?.fullName || user?.username || "SocialUser";
   const userHandle = user?.username ? `u/${user.username}` : "u/socialuser";
@@ -241,10 +243,15 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
             <ChatBubbleOvalLeftEllipsisIcon className="h-5 w-5" />
           </button>
           <NotificationDropdown
-            notifications={[]} // Will be populated from useNotifications hook
+            notifications={notifications}
             isOpen={isNotificationOpen}
             onClose={() => setIsNotificationOpen(false)}
-            onToggle={() => setIsNotificationOpen((prev) => !prev)}
+            onToggle={() => {
+              setIsNotificationOpen((prev) => !prev);
+              if (!isNotificationOpen) {
+                fetchNotifications();
+              }
+            }}
           />
           <button
             type="button"

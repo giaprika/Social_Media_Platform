@@ -6,7 +6,19 @@ pm2 stop all
 docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3-management
 docker run -d -p 6379:6379 --name redis-local redis
 
+
+gcloud auth login
+gcloud sql instances patch social-db --activation-policy=ALWAYS --project=pubsub-480117
+taskkill /PID 9564 /F
 cloud-sql-proxy.x64.exe pubsub-480117:asia-southeast1:social-db --credentials-file=cloud-sql-key.json
+
+
+docker-compose up -d --build
+
+
+docker logs backend-gateway --follow #log ra console
+docker exec -it postgres-notification psql -U postgres -d notification_db -c "TRUNCATE TABLE notifications CASCADE;" # xóa dữ liệu
+
 ```
 {
     "id": "cf897ffb-494c-4804-86fa-819397790520",

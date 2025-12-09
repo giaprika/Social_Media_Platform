@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo, memo } from "react";
 import { BellIcon } from "@heroicons/react/24/outline";
 import { BellIcon as BellIconSolid } from "@heroicons/react/24/solid";
 import clsx from "clsx";
@@ -7,9 +7,14 @@ import Avatar from "../ui/Avatar";
 import { formatDistanceToNow } from "date-fns";
 import { vi } from "date-fns/locale";
 
-const NotificationDropdown = ({ notifications = [], isOpen, onClose, onToggle }) => {
+const NotificationDropdown = memo(({ notifications = [], isOpen, onClose, onToggle }) => {
   const dropdownRef = useRef(null);
   const buttonRef = useRef(null);
+
+  // Memoize unread count để tránh re-calculate
+  const unreadCount = useMemo(() => {
+    return notifications.filter((n) => !n.read).length;
+  }, [notifications]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -51,8 +56,6 @@ const NotificationDropdown = ({ notifications = [], isOpen, onClose, onToggle })
       return "Vừa xong";
     }
   };
-
-  const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
     <div className="relative">
@@ -129,11 +132,11 @@ const NotificationDropdown = ({ notifications = [], isOpen, onClose, onToggle })
                               : "text-muted-foreground"
                           )}
                         >
-                          {notification.title || notification.message}
+                          {notification.title_template || notification.title || notification.message}
                         </p>
-                        {notification.content && (
-                          <p className="mt-1 truncate text-xs text-muted-foreground">
-                            {notification.content}
+                        {(notification.body_template || notification.content) && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {notification.body_template || notification.content}
                           </p>
                         )}
                         <p className="mt-1 text-xs text-muted-foreground">
@@ -161,7 +164,7 @@ const NotificationDropdown = ({ notifications = [], isOpen, onClose, onToggle })
       )}
     </div>
   );
-};
+});
 
 export default NotificationDropdown;
 

@@ -1,5 +1,8 @@
 import instance from './axios'
 
+// Custom route với AI moderation (cho create/update post và comment)
+const POST_CUSTOM_BASE_URL = '/api/posts'
+// Service proxy route (cho các API còn lại)
 const POST_SERVICE_BASE_URL = '/api/service/posts'
 
 // ============= POSTS =============
@@ -39,14 +42,14 @@ export const getPostById = (postId) => {
  */
 export const createPost = (formData) => {
 	console.log('📝 [Post API] Creating post with FormData:', {
-		url: `${POST_SERVICE_BASE_URL}/posts`,
+		url: `${POST_CUSTOM_BASE_URL}`,
 		contentType: 'multipart/form-data',
 		formDataEntries: Array.from(formData.entries()).map(([key, value]) => ({
 			key,
 			value: value instanceof File ? `File: ${value.name} (${value.size} bytes)` : value
 		}))
 	})
-	return instance.post(`${POST_SERVICE_BASE_URL}/posts`, formData, {
+	return instance.post(`${POST_CUSTOM_BASE_URL}`, formData, {
 		headers: { 'Content-Type': 'multipart/form-data' },
 	})
 }
@@ -57,7 +60,7 @@ export const createPost = (formData) => {
  * @param {FormData} formData - content, files[], tags[], visibility
  */
 export const updatePost = (postId, formData) => {
-	return instance.patch(`${POST_SERVICE_BASE_URL}/posts/${postId}`, formData, {
+	return instance.patch(`${POST_CUSTOM_BASE_URL}/${postId}`, formData, {
 		headers: { 'Content-Type': 'multipart/form-data' },
 	})
 }
@@ -104,7 +107,7 @@ export const getComments = (postId, params = {}) => {
  */
 export const createComment = (postId, formData) => {
 	return instance.post(
-		`${POST_SERVICE_BASE_URL}/posts/${postId}/comments`,
+		`${POST_CUSTOM_BASE_URL}/${postId}/comments`,
 		formData,
 		{
 			headers: { 'Content-Type': 'multipart/form-data' },
@@ -120,7 +123,7 @@ export const createComment = (postId, formData) => {
  */
 export const updateComment = (postId, commentId, formData) => {
 	return instance.patch(
-		`${POST_SERVICE_BASE_URL}/posts/${postId}/comments/${commentId}`,
+		`${POST_CUSTOM_BASE_URL}/${postId}/comments/${commentId}`,
 		formData,
 		{
 			headers: { 'Content-Type': 'multipart/form-data' },

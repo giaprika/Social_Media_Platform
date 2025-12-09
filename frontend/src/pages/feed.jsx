@@ -8,7 +8,7 @@ import FeedTabs from "src/components/feed/FeedTabs";
 import Modal from "src/components/ui/Modal";
 import ConfirmDialog from "src/components/ui/ConfirmDialog";
 import { useToast } from "src/components/ui";
-import { useNotifications } from "../hooks/useNotifications";
+import { useNotifications } from "src/contexts/NotificationsContext";
 import * as postApi from "src/api/post";
 import { getUserById } from "src/api/user";
 
@@ -84,7 +84,7 @@ export default function Feed() {
 
   const token = getCookie("accessToken");
   const currentUserId = cookies.get("x-user-id");
-  const { notifications } = useNotifications(token);
+  const { onNewNotification } = useNotifications();
 
   // Fetch user info and cache it - use ref to avoid dependency issues
   const usersCacheRef = React.useRef(usersCache);
@@ -174,12 +174,18 @@ export default function Feed() {
     }
   }, [location.state, navigate, location.pathname]);
 
+  // Subscribe to NEW realtime notifications only (not fetched ones)
   useEffect(() => {
-    if (notifications.length > 0) {
-      const latest = notifications[0];
-      toast.info(`Bạn có thông báo mới: ${latest.title || "Thông báo"}`);
-    }
-  }, [notifications, toast]);
+    if (!onNewNotification) return;
+
+    const unsubscribe = onNewNotification((notification) => {
+      if (notification?.title_template || notification?.title) {
+        toast.info(`Bạn có thông báo mới: ${notification.title_template || notification.title || "Thông báo"}`);
+      }
+    });
+
+    return unsubscribe;
+  }, [onNewNotification, toast]);
 
   // Load comments for a post
   const loadComments = useCallback(async (postId) => {
