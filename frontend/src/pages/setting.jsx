@@ -6,6 +6,7 @@ import Card from "src/components/ui/Card";
 import Modal from "src/components/ui/Modal";
 import Input from "src/components/ui/Input";
 import Button from "src/components/ui/Button";
+import Avatar from "src/components/ui/Avatar";
 import { useToast } from "src/components/ui";
 import { updateUser, updatePassword, getUserSettings, updateUserSettings } from "src/api/user";
 
@@ -1531,15 +1532,11 @@ export default function Settings() {
         </p>
         <div className="space-y-4">
           <div className="flex items-center justify-center">
-            <div className="h-32 w-32 rounded-full bg-muted flex items-center justify-center">
-              {user?.avatar ? (
-                <img src={user.avatar} alt="Avatar" className="h-32 w-32 rounded-full object-cover" />
-              ) : (
-                <span className="text-4xl font-bold text-muted-foreground">
-                  {user?.full_name?.charAt(0)?.toUpperCase() || "U"}
-                </span>
-              )}
-            </div>
+            <Avatar
+              src={user?.avatar || user?.avatar_url}
+              name={user?.username || user?.full_name}
+              size="3xl"
+            />
           </div>
           <input
             type="file"

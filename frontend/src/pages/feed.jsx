@@ -1,12 +1,18 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate, useLocation, useOutletContext } from "react-router-dom";
+import Cookies from "universal-cookie";
 import PostCard from "src/components/post/PostCard";
 import CreatePostModal from "src/components/post/CreatePostModal";
 import CommentSection from "src/components/post/CommentSection";
 import FeedTabs from "src/components/feed/FeedTabs";
 import Modal from "src/components/ui/Modal";
+import ConfirmDialog from "src/components/ui/ConfirmDialog";
 import { useToast } from "src/components/ui";
 import { useNotifications } from "../hooks/useNotifications";
+import * as postApi from "src/api/post";
+import { getUserById } from "src/api/user";
+
+const cookies = new Cookies();
 
 function getCookie(name) {
   const value = `; ${document.cookie}`;
@@ -15,89 +21,149 @@ function getCookie(name) {
   return null;
 }
 
-// Mock data - sẽ thay thế bằng API calls sau
-const mockPosts = [
-  {
-    id: "1",
-    author: { id: "1", name: "John Doe", avatar: null },
-    community: "nature",
-    title: "Amazing sunset today!",
-    content:
-      "Just captured this beautiful sunset at the beach. Nature is incredible!",
-    url: "https://www.example.com/sunset-photography",
-    upvotes: 1234,
-    downvotes: 45,
-    comments: 89,
-    hasUpvoted: false,
-    hasDownvoted: false,
-    saved: false,
-    isFollowing: false,
-    createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    images: [],
+// Transform API post to frontend format
+const transformPost = (apiPost, userInfo = null) => ({
+  id: apiPost.post_id,
+  author: userInfo || {
+    id: apiPost.user_id,
+    name: "User",
+    username: null,
+    avatar: null,
+    avatar_url: null,
   },
-  {
-    id: "2",
-    author: { id: "2", name: "Jane Smith", avatar: null },
-    community: "webdev",
-    title: "New project launch",
-    content:
-      "Excited to announce the launch of our new web application. Check it out!",
-    upvotes: 2456,
-    downvotes: 123,
-    comments: 234,
-    hasUpvoted: true,
-    hasDownvoted: false,
-    saved: true,
-    isFollowing: true,
-    createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-    images: [],
+  community: apiPost.group_id || null,  // null nếu không thuộc community
+  title: apiPost.content, // content = title
+  content: apiPost.content,
+  images: apiPost.media_urls || [],
+  upvotes: apiPost.reacts_count || 0,
+  downvotes: 0,
+  comments: apiPost.comments_count || 0,
+  hasUpvoted: false, // Will be enriched later
+  hasDownvoted: false,
+  saved: false,
+  isFollowing: false,
+  createdAt: apiPost.created_at,
+  tags: apiPost.tags || [],
+  visibility: apiPost.visibility,
+});
+
+// Transform API comment to frontend format
+const transformComment = (apiComment, userInfo = null) => ({
+  id: apiComment.comment_id,
+  author: userInfo || {
+    id: apiComment.user_id,
+    name: "User",
+    avatar: null,
   },
-  {
-    id: "3",
-    author: { id: "3", name: "Tech News", avatar: null },
-    community: "technology",
-    title: "Latest AI breakthroughs",
-    content:
-      "Researchers announce major advances in artificial intelligence and machine learning.",
-    url: "https://www.technews.com/ai-breakthroughs-2025",
-    upvotes: 5678,
-    downvotes: 234,
-    comments: 567,
-    hasUpvoted: false,
-    hasDownvoted: false,
-    saved: false,
-    isFollowing: false,
-    createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    images: [],
-  },
-];
+  content: apiComment.content,
+  likes: apiComment.reacts_count || 0,
+  liked: false,
+  createdAt: apiComment.created_at,
+  replies: [],
+  media_urls: apiComment.media_urls,
+  parentId: apiComment.parent_id,
+});
 
 export default function Feed() {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editingPost, setEditingPost] = useState(null);
+  const [deletePostId, setDeletePostId] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [selectedPostId, setSelectedPostId] = useState(null);
   const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
+  const [comments, setComments] = useState([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("forYou");
+  const [usersCache, setUsersCache] = useState({});
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
   const { addRecentPost } = useOutletContext() || { addRecentPost: () => {} };
 
   const token = getCookie("accessToken");
+  const currentUserId = cookies.get("x-user-id");
   const { notifications } = useNotifications(token);
 
-  useEffect(() => {
-    // Simulate API call
-    const loadPosts = async () => {
-      setLoading(true);
-      // Simulate network delay
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      setPosts(mockPosts);
-      setLoading(false);
-    };
-    loadPosts();
+  // Fetch user info and cache it - use ref to avoid dependency issues
+  const usersCacheRef = React.useRef(usersCache);
+  usersCacheRef.current = usersCache;
+
+  const fetchUserInfo = useCallback(async (userId) => {
+    if (usersCacheRef.current[userId]) return usersCacheRef.current[userId];
+    
+    try {
+      const response = await getUserById(userId);
+      const user = response.data;
+      const userInfo = {
+        id: user.id,
+        name: user.full_name || user.username || "User",
+        username: user.username,
+        avatar: user.avatar_url,
+        avatar_url: user.avatar_url,
+      };
+      setUsersCache((prev) => ({ ...prev, [userId]: userInfo }));
+      return userInfo;
+    } catch (error) {
+      console.error("Failed to fetch user:", userId, error);
+      return { id: userId, name: "User", username: null, avatar: null, avatar_url: null };
+    }
   }, []);
+
+  // Load posts only once on mount
+  const hasLoadedRef = React.useRef(false);
+  const isLoadingRef = React.useRef(false);
+  
+  useEffect(() => {
+    console.log("[Feed] useEffect triggered, hasLoaded:", hasLoadedRef.current, "isLoading:", isLoadingRef.current);
+    if (!hasLoadedRef.current && !isLoadingRef.current) {
+      hasLoadedRef.current = true;
+      isLoadingRef.current = true;
+      
+      const fetchPosts = async () => {
+        setLoading(true);
+        try {
+          const response = await postApi.getPosts({ limit: 20, offset: 0 });
+          const rawPosts = response.data?.data || [];
+          console.log("[Feed] Raw posts from API:", rawPosts.length);
+          
+          // Enrich posts with user info
+          const enrichedPosts = await Promise.all(
+            rawPosts.map(async (post) => {
+              const userInfo = await fetchUserInfo(post.user_id);
+              const transformedPost = transformPost(post, userInfo);
+              
+              // Check if current user has reacted
+              if (currentUserId) {
+                try {
+                  const reactionsRes = await postApi.getPostReactions(post.post_id);
+                  const reactions = reactionsRes.data?.data || [];
+                  const userReaction = reactions.find((r) => r.user_id === currentUserId);
+                  transformedPost.hasUpvoted = !!userReaction;
+                } catch (error) {
+                  console.error("Failed to fetch reactions:", error);
+                }
+              }
+              
+              return transformedPost;
+            })
+          );
+          
+          console.log("[Feed] Setting posts:", enrichedPosts.length);
+          setPosts(enrichedPosts);
+        } catch (error) {
+          console.error("Failed to load posts:", error);
+          toast.error("Không thể tải bài viết");
+        } finally {
+          setLoading(false);
+          isLoadingRef.current = false;
+        }
+      };
+      
+      fetchPosts();
+    }
+  }, []); // Empty dependency - only run once
 
   // Open create modal if state indicates
   useEffect(() => {
@@ -115,83 +181,140 @@ export default function Feed() {
     }
   }, [notifications, toast]);
 
-  const handleCreatePost = async (postData) => {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    
-    const newPost = {
-      id: Date.now().toString(),
-      author: { id: "current-user", name: "You", avatar: null },
-      community: "general",
-      title: postData.title,
-      content: postData.content,
-      upvotes: 0,
-      downvotes: 0,
-      comments: 0,
-      hasUpvoted: false,
-      hasDownvoted: false,
-      saved: false,
-      isFollowing: false,
-      createdAt: new Date().toISOString(),
-      images: postData.images.map((img) => URL.createObjectURL(img)),
-    };
+  // Load comments for a post
+  const loadComments = useCallback(async (postId) => {
+    setCommentsLoading(true);
+    try {
+      const response = await postApi.getComments(postId, { limit: 50 });
+      const rawComments = response.data?.data || [];
+      
+      // Enrich comments with user info
+      const enrichedComments = await Promise.all(
+        rawComments.map(async (comment) => {
+          const userInfo = await fetchUserInfo(comment.user_id);
+          return transformComment(comment, userInfo);
+        })
+      );
+      
+      // Build nested structure (parent/child)
+      const commentMap = new Map();
+      const rootComments = [];
+      
+      enrichedComments.forEach((c) => {
+        commentMap.set(c.id, { ...c, replies: [] });
+      });
+      
+      enrichedComments.forEach((c) => {
+        if (c.parentId && commentMap.has(c.parentId)) {
+          commentMap.get(c.parentId).replies.push(commentMap.get(c.id));
+        } else {
+          rootComments.push(commentMap.get(c.id));
+        }
+      });
+      
+      setComments(rootComments);
+    } catch (error) {
+      console.error("Failed to load comments:", error);
+      toast.error("Không thể tải bình luận");
+    } finally {
+      setCommentsLoading(false);
+    }
+  }, [fetchUserInfo, toast]);
 
-    setPosts((prev) => [newPost, ...prev]);
-    addRecentPost(newPost);
-    toast.success("Đã tạo bài viết thành công!");
+  const handleCreatePost = async (postData) => {
+    try {
+      console.log('🎨 [Feed] handleCreatePost called with:', {
+        title: postData.title,
+        content: postData.content,
+        imagesCount: postData.images?.length || 0
+      })
+
+      const formData = new FormData();
+      
+      // Gửi content trực tiếp (không còn title riêng)
+      if (postData.content) {
+        formData.append("content", postData.content);
+      }
+      
+      // Gửi visibility
+      if (postData.visibility) {
+        formData.append("visibility", postData.visibility);
+      }
+      if (postData.tags && postData.tags.length > 0) {
+        postData.tags.forEach((tag) => formData.append("tags", tag));
+      }
+      
+      // Gửi files (ảnh/video)
+      if (postData.files && postData.files.length > 0) {
+        postData.files.forEach((file) => formData.append("files", file));
+      }
+
+
+      console.log('📤 [Feed] Sending FormData to API...')
+      const response = await postApi.createPost(formData);
+      console.log('✅ [Feed] Post created successfully:', response.data)
+      const newPostData = response.data?.data;
+      
+      if (newPostData) {
+        const userInfo = await fetchUserInfo(newPostData.user_id);
+        const newPost = transformPost(newPostData, userInfo);
+        setPosts((prev) => [newPost, ...prev]);
+        addRecentPost(newPost);
+        toast.success("Đã tạo bài viết thành công!");
+      }
+    } catch (error) {
+      console.error("Failed to create post:", error);
+      toast.error("Không thể tạo bài viết");
+      throw error;
+    }
   };
 
-  const handleUpvote = (postId) => {
+  const handleUpvote = async (postId) => {
+    const post = posts.find((p) => p.id === postId);
+    if (!post) return;
+
+    // Optimistic update
     setPosts((prevPosts) =>
-      prevPosts.map((post) => {
-        if (post.id === postId) {
-          const newPost = { ...post };
-          if (post.hasUpvoted) {
-            // Remove upvote
-            newPost.hasUpvoted = false;
-            newPost.upvotes = post.upvotes - 1;
-          } else {
-            // Add upvote
-            newPost.hasUpvoted = true;
-            newPost.upvotes = post.upvotes + 1;
-            // Remove downvote if exists
-            if (post.hasDownvoted) {
-              newPost.hasDownvoted = false;
-              newPost.downvotes = post.downvotes - 1;
-            }
-          }
-          addRecentPost(newPost);
-          return newPost;
+      prevPosts.map((p) => {
+        if (p.id === postId) {
+          return {
+            ...p,
+            hasUpvoted: !p.hasUpvoted,
+            upvotes: p.hasUpvoted ? p.upvotes - 1 : p.upvotes + 1,
+          };
         }
-        return post;
+        return p;
       })
     );
+
+    try {
+      if (post.hasUpvoted) {
+        await postApi.removePostReaction(postId);
+      } else {
+        await postApi.reactToPost(postId, "like");
+      }
+    } catch (error) {
+      console.error("Failed to react:", error);
+      // Revert on error
+      setPosts((prevPosts) =>
+        prevPosts.map((p) => {
+          if (p.id === postId) {
+            return {
+              ...p,
+              hasUpvoted: post.hasUpvoted,
+              upvotes: post.upvotes,
+            };
+          }
+          return p;
+        })
+      );
+      toast.error("Không thể thực hiện");
+    }
   };
 
   const handleDownvote = (postId) => {
-    setPosts((prevPosts) =>
-      prevPosts.map((post) => {
-        if (post.id === postId) {
-          const newPost = { ...post };
-          if (post.hasDownvoted) {
-            // Remove downvote
-            newPost.hasDownvoted = false;
-            newPost.downvotes = post.downvotes - 1;
-          } else {
-            // Add downvote
-            newPost.hasDownvoted = true;
-            newPost.downvotes = post.downvotes + 1;
-            // Remove upvote if exists
-            if (post.hasUpvoted) {
-              newPost.hasUpvoted = false;
-              newPost.upvotes = post.upvotes - 1;
-            }
-          }
-          return newPost;
-        }
-        return post;
-      })
-    );
+    // Downvote không được hỗ trợ bởi post-service, bỏ qua
+    toast.info("Tính năng này chưa được hỗ trợ");
   };
 
   const handleFollow = (authorId, shouldFollow) => {
@@ -206,6 +329,7 @@ export default function Feed() {
   };
 
   const handleSave = (postId) => {
+    // Save tạm thời ở local, chưa có API
     setPosts((prevPosts) =>
       prevPosts.map((post) =>
         post.id === postId ? { ...post, saved: !post.saved } : post
@@ -216,43 +340,148 @@ export default function Feed() {
   const handleComment = (postId) => {
     setSelectedPostId(postId);
     setIsCommentModalOpen(true);
+    loadComments(postId);
   };
 
-  const handleAddComment = (postId, content) => {
-    // Simulate adding comment
-    setPosts((prevPosts) =>
-      prevPosts.map((post) =>
-        post.id === postId
-          ? { ...post, comments: (post.comments || 0) + 1 }
-          : post
-      )
-    );
-    toast.success("Đã thêm bình luận!");
+  const handleAddComment = async (postId, content) => {
+    try {
+      const formData = new FormData();
+      formData.append("content", content);
+
+      await postApi.createComment(postId, formData);
+
+      // Reload comments
+      await loadComments(postId);
+
+      // Update post comment count
+      setPosts((prevPosts) =>
+        prevPosts.map((post) =>
+          post.id === postId
+            ? { ...post, comments: (post.comments || 0) + 1 }
+            : post
+        )
+      );
+      toast.success("Đã thêm bình luận!");
+    } catch (error) {
+      console.error("Failed to add comment:", error);
+      toast.error("Không thể thêm bình luận");
+    }
+  };
+
+  const handleLikeComment = async (commentId) => {
+    try {
+      await postApi.reactToComment(commentId, "like");
+      // Update local state
+      setComments((prevComments) =>
+        prevComments.map((c) =>
+          c.id === commentId
+            ? { ...c, liked: !c.liked, likes: c.liked ? c.likes - 1 : c.likes + 1 }
+            : c
+        )
+      );
+    } catch (error) {
+      console.error("Failed to like comment:", error);
+      toast.error("Không thể thích bình luận");
+    }
+  };
+
+  const handleReplyComment = async (commentId, content) => {
+    try {
+      const formData = new FormData();
+      formData.append("content", content);
+      formData.append("parent_id", commentId);
+
+      await postApi.createComment(selectedPostId, formData);
+      await loadComments(selectedPostId);
+      toast.success("Đã phản hồi!");
+    } catch (error) {
+      console.error("Failed to reply:", error);
+      toast.error("Không thể phản hồi");
+    }
   };
 
   const handleAuthorClick = (authorId) => {
-    navigate(`/profile/${authorId}`);
+    navigate(`/app/profile/${authorId}`);
   };
 
   const handleCommunityClick = (community) => {
-    toast.info(`Navigating to s/${community}`);
+    toast.info(`Navigating to c/${community}`);
     // navigate(`/community/${community}`);
   };
 
+  const handleEditPost = (post) => {
+    setEditingPost(post);
+  };
+
+  const handleUpdatePost = async (postData) => {
+    if (!editingPost) return;
+    
+    try {
+      const formData = new FormData();
+      
+      if (postData.content) {
+        formData.append("content", postData.content);
+      }
+      if (postData.visibility) {
+        formData.append("visibility", postData.visibility);
+      }
+      if (postData.tags && postData.tags.length > 0) {
+        postData.tags.forEach((tag) => formData.append("tags", tag));
+      }
+      if (postData.files && postData.files.length > 0) {
+        postData.files.forEach((file) => formData.append("files", file));
+      }
+
+      const response = await postApi.updatePost(editingPost.id, formData);
+      const updatedPostData = response.data?.data;
+      
+      if (updatedPostData) {
+        const userInfo = await fetchUserInfo(updatedPostData.user_id);
+        const updatedPost = transformPost(updatedPostData, userInfo);
+        setPosts((prev) => prev.map((p) => p.id === editingPost.id ? updatedPost : p));
+        toast.success("Đã cập nhật bài viết!");
+      }
+      setEditingPost(null);
+    } catch (error) {
+      console.error("Failed to update post:", error);
+      toast.error("Không thể cập nhật bài viết");
+      throw error;
+    }
+  };
+
+  const handleDeletePost = async (postId) => {
+    setDeletePostId(postId);
+  };
+
+  const confirmDeletePost = async () => {
+    if (!deletePostId) return;
+    
+    setIsDeleting(true);
+    try {
+      await postApi.deletePost(deletePostId);
+      setPosts((prevPosts) => prevPosts.filter((p) => p.id !== deletePostId));
+      toast.success("Đã xóa bài viết!");
+      setDeletePostId(null);
+    } catch (error) {
+      console.error("Failed to delete post:", error);
+      toast.error("Không thể xóa bài viết");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleHidePost = (postId) => {
+    // Hide post locally (chưa có API)
+    setPosts((prevPosts) => prevPosts.filter((p) => p.id !== postId));
+    toast.success("Đã ẩn bài viết");
+  };
+
+  const handleReportPost = (postId) => {
+    // TODO: Open report modal
+    toast.info("Đã gửi báo cáo");
+  };
+
   const selectedPost = posts.find((p) => p.id === selectedPostId);
-  const mockComments = selectedPost
-    ? [
-        {
-          id: "1",
-          author: { id: "2", name: "Jane Smith", avatar: null },
-          content: "Great post!",
-          likes: 5,
-          liked: false,
-          createdAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-          replies: [],
-        },
-      ]
-    : [];
 
   const handleTabChange = (tabId) => {
     setActiveTab(tabId);
@@ -277,11 +506,39 @@ export default function Feed() {
         onSubmit={handleCreatePost}
       />
 
+      {/* Edit Post Modal */}
+      <CreatePostModal
+        isOpen={!!editingPost}
+        onClose={() => setEditingPost(null)}
+        onSubmit={handleUpdatePost}
+        initialData={editingPost ? {
+          content: editingPost.content,
+          visibility: editingPost.visibility || "public",
+          tags: editingPost.tags || [],
+          images: editingPost.images || [],
+        } : null}
+        isEditing
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!deletePostId}
+        onClose={() => setDeletePostId(null)}
+        onConfirm={confirmDeletePost}
+        title="Xóa bài viết"
+        message="Bạn có chắc chắn muốn xóa bài viết này? Hành động này không thể hoàn tác."
+        confirmText="Xóa"
+        cancelText="Hủy"
+        variant="danger"
+        loading={isDeleting}
+      />
+
       <Modal
         isOpen={isCommentModalOpen}
         onClose={() => {
           setIsCommentModalOpen(false);
           setSelectedPostId(null);
+          setComments([]);
         }}
         title="Bình luận"
         size="lg"
@@ -289,14 +546,11 @@ export default function Feed() {
         {selectedPost && (
           <CommentSection
             postId={selectedPostId}
-            comments={mockComments}
+            comments={comments}
+            loading={commentsLoading}
             onAddComment={handleAddComment}
-            onLikeComment={(commentId) => {
-              toast.info("Đã thích bình luận");
-            }}
-            onReplyComment={(commentId, content) => {
-              toast.info("Đã phản hồi");
-            }}
+            onLikeComment={handleLikeComment}
+            onReplyComment={handleReplyComment}
           />
         )}
       </Modal>
@@ -329,6 +583,7 @@ export default function Feed() {
             <PostCard
               key={post.id}
               post={post}
+              currentUserId={currentUserId}
               onUpvote={handleUpvote}
               onDownvote={handleDownvote}
               onComment={handleComment}
@@ -340,6 +595,10 @@ export default function Feed() {
               onAuthorClick={handleAuthorClick}
               onFollow={handleFollow}
               onCommunityClick={handleCommunityClick}
+              onEdit={handleEditPost}
+              onDelete={handleDeletePost}
+              onHide={handleHidePost}
+              onReport={handleReportPost}
             />
           ))
         )}

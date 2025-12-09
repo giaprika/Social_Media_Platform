@@ -12,7 +12,7 @@ export class UserRepository {
 
   static async findUserByEmail(email) {
     const result = await db.query(
-      `SELECT id, username, email, full_name, birth_date, gender, status 
+      `SELECT id, username, email, full_name, birth_date, gender, status, created_at, metadata
        FROM users WHERE email = $1`,
       [email]
     );
@@ -56,7 +56,7 @@ export class UserRepository {
         avatar_url || null,
         birth_date || null,
         gender || null,
-        'active', // Default status for new users
+        "active", // Default status for new users
         metadata || {},
       ]
     );
@@ -118,6 +118,58 @@ export class UserRepository {
     return parseInt(result.rows[0]?.count || 0, 10);
   }
 
+  static async getFollowingCount(userId) {
+    const result = await db.query(
+      `SELECT COUNT(*) as count 
+       FROM relationships 
+       WHERE user_id = $1 AND type = 'follow' AND status = 'accepted'`,
+      [userId]
+    );
+    return parseInt(result.rows[0]?.count || 0, 10);
+  }
+
+  static async checkFollowStatus(userId, targetId) {
+    const result = await db.query(
+      `SELECT id, status FROM relationships 
+       WHERE user_id = $1 AND target_id = $2 AND type = 'follow'`,
+      [userId, targetId]
+    );
+    return result.rows[0] || null;
+  }
+
+  static async followUser(userId, targetId) {
+    // Check if relationship already exists
+    const existing = await this.checkFollowStatus(userId, targetId);
+    if (existing) {
+      // Update existing relationship to accepted
+      const result = await db.query(
+        `UPDATE relationships SET status = 'accepted', updated_at = NOW() 
+         WHERE user_id = $1 AND target_id = $2 AND type = 'follow'
+         RETURNING *`,
+        [userId, targetId]
+      );
+      return result.rows[0];
+    }
+    // Create new follow relationship
+    const result = await db.query(
+      `INSERT INTO relationships (user_id, target_id, type, status, created_at, updated_at)
+       VALUES ($1, $2, 'follow', 'accepted', NOW(), NOW())
+       RETURNING *`,
+      [userId, targetId]
+    );
+    return result.rows[0];
+  }
+
+  static async unfollowUser(userId, targetId) {
+    const result = await db.query(
+      `DELETE FROM relationships 
+       WHERE user_id = $1 AND target_id = $2 AND type = 'follow'
+       RETURNING *`,
+      [userId, targetId]
+    );
+    return result.rows[0] || null;
+  }
+
   static async updateUser(userId, updateData) {
     const { email, username, full_name, birth_date, gender } = updateData;
     const updates = [];
@@ -176,10 +228,9 @@ export class UserRepository {
   }
 
   static async getUserSettings(userId) {
-    const result = await db.query(
-      `SELECT metadata FROM users WHERE id = $1`,
-      [userId]
-    );
+    const result = await db.query(`SELECT metadata FROM users WHERE id = $1`, [
+      userId,
+    ]);
     const metadata = result.rows[0]?.metadata || {};
     return metadata.settings || {};
   }

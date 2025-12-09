@@ -7,6 +7,7 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { vi } from "date-fns/locale";
 import useAuth from "src/hooks/useAuth";
+import Avatar from "src/components/ui/Avatar";
 
 const UserStatsWidget = () => {
   const { user } = useAuth();
@@ -48,9 +49,12 @@ const UserStatsWidget = () => {
       {/* Profile Section */}
       <div className="px-4 pb-4">
         <div className="flex items-end gap-3 -mt-8 mb-3">
-          <div className="h-16 w-16 rounded-full bg-primary text-primary-foreground font-bold text-2xl flex items-center justify-center border-4 border-card">
-            {(user?.displayName || user?.username || "U").charAt(0).toUpperCase()}
-          </div>
+          <Avatar
+            src={user?.avatar_url || user?.avatar}
+            name={user?.username || user?.displayName}
+            size="xl"
+            className="border-4 border-card"
+          />
           <div className="flex-1 pt-2">
             <h3 className="text-sm font-bold text-foreground">
               {user?.displayName || user?.username || "User"}

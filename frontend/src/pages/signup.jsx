@@ -4,6 +4,8 @@ import { message } from "antd";
 import { signup } from "src/api/auth";
 import { validatePassword } from "src/utils/validate";
 import { PATHS } from "src/constants/paths";
+import { GoogleLogin } from "@react-oauth/google";
+import { signupWithGoogle } from "src/api/auth";
 
 const defaultForm = {
   fullName: "",
@@ -104,7 +106,10 @@ const SignUp = () => {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="fullName">
+            <label
+              className="mb-2 block text-sm font-medium text-foreground"
+              htmlFor="fullName"
+            >
               Full Name
             </label>
             <input
@@ -119,7 +124,10 @@ const SignUp = () => {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="username">
+            <label
+              className="mb-2 block text-sm font-medium text-foreground"
+              htmlFor="username"
+            >
               Username
             </label>
             <input
@@ -141,7 +149,10 @@ const SignUp = () => {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="email">
+            <label
+              className="mb-2 block text-sm font-medium text-foreground"
+              htmlFor="email"
+            >
               Email
             </label>
             <input
@@ -157,7 +168,10 @@ const SignUp = () => {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="birthDate">
+            <label
+              className="mb-2 block text-sm font-medium text-foreground"
+              htmlFor="birthDate"
+            >
               Birth Date
             </label>
             <input
@@ -172,7 +186,10 @@ const SignUp = () => {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="gender">
+            <label
+              className="mb-2 block text-sm font-medium text-foreground"
+              htmlFor="gender"
+            >
               Gender
             </label>
             <select
@@ -193,7 +210,10 @@ const SignUp = () => {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="password">
+            <label
+              className="mb-2 block text-sm font-medium text-foreground"
+              htmlFor="password"
+            >
               Password
             </label>
             <input
@@ -209,7 +229,10 @@ const SignUp = () => {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="confirmPassword">
+            <label
+              className="mb-2 block text-sm font-medium text-foreground"
+              htmlFor="confirmPassword"
+            >
               Confirm Password
             </label>
             <input
@@ -239,10 +262,39 @@ const SignUp = () => {
           </button>
         </form>
 
+        <div className="mt-4">
+          <GoogleLogin
+            text="signup_with"
+            onSuccess={async (credentialResponse) => {
+              try {
+                const googleToken = credentialResponse?.credential;
+                if (!googleToken)
+                  return message.error("No credential returned from Google");
+
+                const { data } = await signupWithGoogle({
+                  credential: googleToken,
+                });
+
+                message.success("Account created with Google!");
+                navigate(PATHS.LOGIN);
+              } catch (err) {
+                console.error(err);
+                message.error("Google signup failed");
+              }
+            }}
+            onError={() => {
+              message.error("Google Signup Failed");
+            }}
+          />
+        </div>
+
         <div className="mt-6 text-center">
           <p className="text-muted-foreground">
             Already have an account?{" "}
-            <Link to={PATHS.LOGIN} className="font-semibold text-primary hover:underline">
+            <Link
+              to={PATHS.LOGIN}
+              className="font-semibold text-primary hover:underline"
+            >
               Log in
             </Link>
           </p>

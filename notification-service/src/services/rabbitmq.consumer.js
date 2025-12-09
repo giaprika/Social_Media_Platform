@@ -1,15 +1,28 @@
 import amqp from "amqplib";
-import Redis from "ioredis"; // Import Redis
-import crypto from "crypto"; // Import Crypto để tạo hash
+import Redis from "ioredis";
+import crypto from "crypto";
 import { NotificationService } from "../services/notification.service.js";
 
 const RABBITMQ_URL = process.env.RABBITMQ_URL || "amqp://localhost";
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+const REDIS_ENABLED = process.env.REDIS_ENABLED !== "false"; // Default true, set REDIS_ENABLED=false to disable
 const EXCHANGE_NAME = "social.events";
 const QUEUE_NAME = "notification.queue";
 
-// Khởi tạo Redis Client
-const redis = new Redis(REDIS_URL);
+// Khởi tạo Redis Client (optional)
+let redis = null;
+if (REDIS_ENABLED) {
+  redis = new Redis(REDIS_URL);
+  redis.on('error', (err) => {
+    console.warn('[Redis] Connection error (continuing without Redis):', err.message);
+    redis = null; // Disable redis on error
+  });
+  redis.on('connect', () => {
+    console.log('[Redis] Connected successfully');
+  });
+} else {
+  console.log('[Redis] Disabled by configuration');
+}
 
 export class NotificationConsumer {
   static async start() {
@@ -35,23 +48,24 @@ export class NotificationConsumer {
         const content = JSON.parse(contentString);
         const routingKey = msg.fields.routingKey;
 
-        // --- BẮT ĐẦU XỬ LÝ TRÙNG LẶP ---
+        // --- BẮT ĐẦU XỬ LÝ TRÙNG LẶP (chỉ khi Redis available) ---
         
-        // Bước 1: Tạo ID duy nhất cho tin nhắn này
-        // Nếu message có ID từ producer thì dùng luôn
-        // Nếu không hash toàn bộ nội dung để tạo ID
-        const messageId = msg.properties.messageId || this.generateSignature(msg.content.toString());
+        if (redis) {
+          // Bước 1: Tạo ID duy nhất cho tin nhắn này
+          const messageId = msg.properties.messageId || this.generateSignature(msg.content.toString());
 
-        // Bước 2: Kiểm tra trong Redis
-        // set(key, value, "EX", seconds, "NX")
-        // EX 3600: Key tự xóa sau 1 giờ (tùy chỉnh theo nhu cầu)
-        const isNewMessage = await redis.set(`processed_msg:${messageId}`, "1", "EX", 3600, "NX");
-
-        if (!isNewMessage) {
-          console.warn(`[Duplicate] Message ${messageId} dropped.`);
-          // ACK ngay để xóa khỏi hàng đợi vì nó là tin rác/trùng lặp
-          channel.ack(msg);
-          return; 
+          // Bước 2: Kiểm tra trong Redis
+          try {
+            const isNewMessage = await redis.set(`processed_msg:${messageId}`, "1", "EX", 3600, "NX");
+            
+            if (!isNewMessage) {
+              console.warn(`[Duplicate] Message ${messageId} dropped.`);
+              channel.ack(msg);
+              return; 
+            }
+          } catch (redisErr) {
+            console.warn('[Redis] Check failed, processing message anyway:', redisErr.message);
+          }
         }
         // --- KẾT THÚC XỬ LÝ TRÙNG LẶP ---
 
@@ -62,11 +76,17 @@ export class NotificationConsumer {
           channel.ack(msg);
         } catch (error) {
           console.error("Error processing message:", error);
-          // Nếu xử lý lỗi, bạn cần cân nhắc:
-          // 1. Nếu muốn retry: Xóa key trong Redis đi để lần sau nhận lại được
-          await redis.del(`processed_msg:${messageSignature}`); 
+          // Nếu xử lý lỗi và muốn retry: xóa key trong Redis
+          if (redis) {
+            try {
+              const messageId = msg.properties.messageId || this.generateSignature(msg.content.toString());
+              await redis.del(`processed_msg:${messageId}`);
+            } catch (redisErr) {
+              console.warn('[Redis] Delete failed:', redisErr.message);
+            }
+          }
           
-          // 2. NACK để RabbitMQ gửi lại (hoặc đẩy vào Dead Letter Queue)
+          // NACK để RabbitMQ gửi lại (hoặc đẩy vào Dead Letter Queue)
           channel.nack(msg, false, false); 
         }
       });

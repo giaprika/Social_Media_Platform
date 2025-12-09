@@ -1,44 +1,4 @@
-version: "3.8"
-
 services:
-  # ============================================
-  # Databases
-  # ============================================
-  postgres-social:
-    image: postgres:15-alpine
-    container_name: postgres-social
-    environment:
-      POSTGRES_DB: social_media
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    volumes:
-      - postgres-social-data:/var/lib/postgresql/data
-      - ./user-service/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-      - ./user-service/init-db.sh:/usr/local/bin/init-db.sh:ro
-    command: >
-      sh -c "
-        docker-entrypoint.sh postgres &
-        sleep 5 &&
-        until pg_isready -U postgres; do sleep 1; done &&
-        psql -U postgres -d social_media -tAc \"SELECT 1 FROM information_schema.tables WHERE table_name='users'\" | grep -q 1 ||
-        (echo 'Initializing database...' && psql -U postgres -d social_media -f /docker-entrypoint-initdb.d/init.sql && echo 'Database initialized!') &&
-        wait
-      "
-    ports:
-      - "5432:5432"
-    networks:
-      - social-network
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          'pg_isready -U postgres && psql -U postgres -d social_media -tAc "SELECT 1 FROM information_schema.tables WHERE table_name=''users''" | grep -q 1',
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-
   # ============================================
   # Databases cho services chưa hoàn thiện (commented)
   # ============================================
@@ -139,7 +99,7 @@ services:
       REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-your_super_secret_refresh_token_key}
       USER_SERVICE_URL: http://user-service:8001
       NOTIFICATION_SERVICE_URL: http://notification-service:8002
-      # POST_SERVICE_URL: http://post-service:8003
+      POST_SERVICE_URL: http://post-service:8003
       COMMUNITY_SERVICE_URL: http://community-service:8004
       CORS_ORIGIN: http://localhost:3000
     ports:
@@ -148,6 +108,7 @@ services:
       - user-service
       - notification-service
       - community-service
+      - post-service
     networks:
       - social-network
     restart: unless-stopped
@@ -160,20 +121,17 @@ services:
     environment:
       NODE_ENV: production
       PORT: 8001
-      DB_HOST: postgres-social
+      DB_HOST: host.docker.internal
       DB_PORT: 5432
-      DB_NAME: social_media
+      DB_NAME: user_db
       DB_USER: postgres
-      DB_PASSWORD: postgres
+      DB_PASSWORD: Daylamatkhaumanh123_
       DB_MAX_CONNECTIONS: 10
       DB_SSL: "false"
       ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:-your_super_secret_access_token_key}
       REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-your_super_secret_refresh_token_key}
     ports:
       - "8001:8001"
-    depends_on:
-      postgres-social:
-        condition: service_healthy
     networks:
       - social-network
     restart: unless-stopped
@@ -206,10 +164,14 @@ services:
       DB_PASSWORD: postgres
       DB_MAX_CONNECTIONS: 10
       DB_SSL: "false"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     ports:
       - "8002:8002"
     depends_on:
       postgres-notification:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - social-network
@@ -225,17 +187,31 @@ services:
       retries: 3
       start_period: 40s
 
-  # post-service:
-  #   build:
-  #     context: ./post-service
-  #     dockerfile: Dockerfile
-  #   container_name: post-service
-  #   environment:
-  #     PORT: 8003
-  #   ports:
-  #     - "8003:8003"
-  #   networks:
-  #     - social-network
+  post-service:
+    build:
+      context: ./post-service
+      dockerfile: Dockerfile
+    container_name: post-service
+    environment:
+      PORT: 8003
+      SUPABASE_URL: ${SUPABASE_URL:-https://pfluzsnvvufmqxfuzhxo.supabase.co}
+      SUPABASE_KEY: ${SUPABASE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBmbHV6c252dnVmbXF4ZnV6aHhvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MTI3Nzc4MCwiZXhwIjoyMDc2ODUzNzgwfQ.WjxOFGtLhx7rTte4jbU2_0CaGXK7UbkcAb3D4Pv8EJ8}
+      POSTS_TABLE_NAME: posts
+      COMMENTS_TABLE_NAME: comments
+      POST_REACT_TABLE_NAME: post_reaction
+      COMMENT_REACT_TABLE_NAME: comment_reaction
+      STORAGE_BUCKET_NAME: posts_service
+    ports:
+      - "8003:8003"
+    networks:
+      - social-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   community-service:
     build:
@@ -272,23 +248,102 @@ services:
       start_period: 40s
 
   # ============================================
-  # Frontend (Optional - có thể chạy ngoài)
+  # AI Service - Content Moderation
   # ============================================
-  frontend:
+  ai-service:
     build:
-      context: ./frontend
+      context: ./ai-service
       dockerfile: Dockerfile
-    container_name: frontend
+    container_name: ai-service
     environment:
-      REACT_APP_GATEWAY_URL: http://localhost:8000
-      REACT_APP_USER_SERVICE_BASE_URL: http://localhost:8001
+      PORT: 9000
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-AIzaSyAoGPpAaA-lp-sk8eKFGI9_EhcKJF3EiFI}
+      GOOGLE_GENAI_USE_VERTEXAI: 0
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      DB_HOST: postgres-ai
+      DB_PORT: 5432
+      DB_NAME: violations_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      GATEWAY_URL: http://backend-gateway:8000
+      INTERNAL_SECRET: your-super-secret-key-for-internal-services
     ports:
-      - "3000:3000"
+      - "9000:9000"
     depends_on:
-      - backend-gateway
+      rabbitmq:
+        condition: service_healthy
+      postgres-ai:
+        condition: service_healthy
     networks:
       - social-network
     restart: unless-stopped
+
+  # ============================================
+  # Message Queue
+  # ============================================
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - social-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ============================================
+  # Redis Cache
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - social-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ============================================
+  # Database for AI Service
+  # ============================================
+  postgres-ai:
+    image: postgres:15-alpine
+    container_name: postgres-ai
+    environment:
+      POSTGRES_DB: violations_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-ai-data:/var/lib/postgresql/data
+      - ./ai-service/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5436:5432"
+    networks:
+      - social-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
 networks:
   social-network:
@@ -298,4 +353,6 @@ volumes:
   postgres-social-data:
   postgres-community-data:
   postgres-notification-data:
-  # postgres-posts-data:  # Uncomment khi cần post service
+  postgres-ai-data:
+  rabbitmq-data:
+  redis-data:
