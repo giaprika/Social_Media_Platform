@@ -8,7 +8,7 @@ import mainConfig from "../../config/index.js";
 class PostService {
   constructor() {
     // Axios instance cho post-service - gọi trực tiếp đến post-service, không qua Gateway
-    const postServiceUrl = mainConfig.services.posts?.target || process.env.POST_SERVICE_URL || "http://localhost:8003";
+    const postServiceUrl = mainConfig.services.posts?.target || process.env.POST_SERVICE_URL || "http://localhost:8000";
     this.postServiceAxios = createAxiosInstance({
       serviceName: "posts",
       baseURL: `${postServiceUrl}/api/v1`,  // Direct to post-service
@@ -16,94 +16,39 @@ class PostService {
     });
   }
 
-  /**
-   * Kiểm duyệt nội dung (text + images) bằng AI Agent
-   * 
-   * @param {string} content - Nội dung text cần kiểm duyệt
-   * @param {Array} files - Danh sách files (optional) - chưa support trong agent hiện tại
-   * @param {string} userId - User ID
-   * @returns {Promise<{is_safe: boolean, result: string, message: string}>}
-   */
   async moderateContentWithAI(content, files, userId) {
     // Nếu không có content và files thì skip
-    if (!content && (!files || files.length === 0)) {
-      return { is_safe: true, result: "Accepted", message: "No content to moderate" };
+    if ((!content || content.trim() === "") && (!files || files.length === 0)) {
+      return { result: "no_content", is_safe: true, message: "No content to moderate" };
     }
-
     try {
-      logger.info(`[AI Moderation] Checking content for user ${userId}`, {
-        hasText: !!content,
-        hasFiles: files && files.length > 0,
-      });
-
-      // Tạo message theo format ADK Content
-      // AI API expects ADK format: { role: "user", parts: [{ text: "..." }] }
-      const parts = [];
-      
-      // Add text part
-      if (content) {
-        parts.push({ text: content });
-      }
-      
-      // TODO: Add image parts with base64 encoding if needed
-      // if (files && files.length > 0) {
-      //   files.forEach(file => {
-      //     parts.push({
-      //       inlineData: {
-      //         displayName: file.originalname,
-      //         data: base64EncodedData,
-      //         mimeType: file.mimetype
-      //       }
-      //     });
-      //   });
-      // }
-
-      const newMessage = {
-        role: "user",
-        parts: parts
-      };
-
-      // Gọi AI Agent qua aiService
-      const payload = {
-        userId: userId,
-        newMessage: newMessage,
-      };
-
-      const aiResponse = await moderateContent(payload);
-      
-      logger.info(`[AI Moderation] AI Agent response:`, aiResponse);
-
-      // Parse response từ AI Agent
-      // Expected format: { result: "Accepted|Warning|Banned", message: "..." }
-      
-      if (aiResponse.ok === false) {
-        // AI service error
-        logger.error("[AI Moderation] AI service error", aiResponse.error);
-        throw new Error("AI moderation service unavailable");
-      }
-
-      // Extract result từ AI response
-      // AIService trả về response từ ADK agent
-      const result = aiResponse.result || "Accepted";
-      const message = aiResponse.message || "No issues detected";
-
-      const is_safe = result === "Accepted";
-
-      return {
-        is_safe,
-        result,
-        message,
-        raw_response: aiResponse,
-      };
-
-    } catch (error) {
-      logger.error("[AI Moderation] Content check failed", {
-        error: error.message,
+      logger.info(`[AI Moderation] Sending content to AI service for moderation`, {
         userId,
+        hasContent: !!content,
+        fileCount: files ? files.length : 0,
       });
-      
-      // Fallback: reject để đảm bảo an toàn
-      throw new Error("AI moderation service unavailable");
+      const moderationResult = await moderateContent({
+        text: content,
+        files: files,
+        timeout: config.aiTimeout,
+      });
+      logger.info(`[AI Moderation] Received moderation result from AI service`, {
+        userId,
+        result: moderationResult,
+      });
+      return moderationResult;
+    } catch (error) {
+      logger.error("[AI Moderation] Error during content moderation", {
+        error: error.message,
+      });
+      // Trong trường hợp lỗi với AI service, ta có thể chọn cách xử lý:
+      // 1. Từ chối nội dung (an toàn hơn)
+      // 2. Chấp nhận nội dung (có rủi ro)
+      // Ở đây ta chọn từ chối nội dung để đảm bảo an toàn cộng đồng
+      return {
+        result: "error",
+        message: "Error during AI moderation",
+      };
     }
   }
 
@@ -116,7 +61,7 @@ class PostService {
       logger.info(`[Post Creation] Step 1: Moderating content with AI Agent`);
       const moderation = await this.moderateContentWithAI(
         postData.content, 
-        files, 
+        files,
         userId
       );
       
