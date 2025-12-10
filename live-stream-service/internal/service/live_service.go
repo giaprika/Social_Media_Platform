@@ -20,7 +20,9 @@ type LiveService interface {
 	CreateStream(ctx context.Context, userID int64, req *entity.CreateStreamRequest) (*entity.CreateStreamResponse, error)
 	GetStreamDetail(ctx context.Context, id int64, userID int64) (*entity.StreamDetailResponse, error)
 	ListStreams(ctx context.Context, params entity.PaginationParams) (*entity.ListStreamsResponse, error)
-	UpdateStreamStatus(streamKey string, status entity.LiveSessionStatus) error
+	// Webhook handlers
+	HandleOnPublish(ctx context.Context, streamKey string) error
+	HandleOnUnpublish(ctx context.Context, streamKey string) error
 }
 
 type liveService struct {
@@ -161,8 +163,40 @@ func (s *liveService) ListStreams(ctx context.Context, params entity.PaginationP
 	}, nil
 }
 
-func (s *liveService) UpdateStreamStatus(streamKey string, status entity.LiveSessionStatus) error {
-	// This will be implemented in the next tasks
-	// For now, return a placeholder
+// HandleOnPublish validates stream key and updates session status to LIVE
+func (s *liveService) HandleOnPublish(ctx context.Context, streamKey string) error {
+	// Find session by stream key
+	session, err := s.repo.GetByStreamKey(ctx, streamKey)
+	if err != nil {
+		return fmt.Errorf("invalid stream key: %w", err)
+	}
+
+	// Validate status transition (only IDLE can go LIVE)
+	if !session.Status.CanTransitionTo(entity.StatusLive) {
+		return fmt.Errorf("invalid status transition: current status is %s", session.Status)
+	}
+
+	// Update status to LIVE and set started_at
+	if err := s.repo.SetStarted(ctx, session.ID); err != nil {
+		return fmt.Errorf("failed to start stream: %w", err)
+	}
+
+	return nil
+}
+
+// HandleOnUnpublish updates session status to ENDED when stream stops
+func (s *liveService) HandleOnUnpublish(ctx context.Context, streamKey string) error {
+	// Find session by stream key
+	session, err := s.repo.GetByStreamKey(ctx, streamKey)
+	if err != nil {
+		return fmt.Errorf("stream not found: %w", err)
+	}
+
+	// Update status to ENDED and set ended_at
+	if err := s.repo.SetEnded(ctx, session.ID); err != nil {
+		// Log but don't fail - stream might already be ended
+		return fmt.Errorf("failed to end stream: %w", err)
+	}
+
 	return nil
 }

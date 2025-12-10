@@ -174,18 +174,75 @@ func (h *LiveHandler) GetStreamDetail(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// OnPublish handles SRS callback when stream starts
+// OnPublish handles SRS callback when stream starts publishing
+// POST /api/v1/callbacks/on_publish
+// @Summary SRS on_publish webhook
+// @Description Validates stream key and updates session status to LIVE
+// @Tags callbacks
+// @Accept json
+// @Produce json
+// @Param request body entity.SRSCallbackRequest true "SRS callback request"
+// @Success 200 {object} entity.SRSCallbackResponse "code=0 allows publish"
+// @Failure 403 {object} entity.SRSCallbackResponse "code=1 rejects publish"
+// @Router /api/v1/callbacks/on_publish [post]
 func (h *LiveHandler) OnPublish(c *gin.Context) {
-	// This will be implemented in the next tasks
-	c.JSON(http.StatusOK, gin.H{
-		"code": 0,
-	})
+	var req entity.SRSCallbackRequest
+
+	// SRS sends data as form-urlencoded or JSON
+	if err := c.ShouldBind(&req); err != nil {
+		// Log error but return proper SRS response format
+		c.JSON(http.StatusForbidden, entity.SRSCallbackResponse{Code: 1})
+		return
+	}
+
+	// Extract stream key from request
+	streamKey := req.GetStreamKey()
+	if streamKey == "" {
+		c.JSON(http.StatusForbidden, entity.SRSCallbackResponse{Code: 1})
+		return
+	}
+
+	// Validate stream key and update status
+	if err := h.service.HandleOnPublish(c.Request.Context(), streamKey); err != nil {
+		// Return 403 with code=1 to reject the stream
+		c.JSON(http.StatusForbidden, entity.SRSCallbackResponse{Code: 1})
+		return
+	}
+
+	// Return 200 with code=0 to allow the stream
+	c.JSON(http.StatusOK, entity.SRSCallbackResponse{Code: 0})
 }
 
-// OnUnpublish handles SRS callback when stream ends
+// OnUnpublish handles SRS callback when stream stops publishing
+// POST /api/v1/callbacks/on_unpublish
+// @Summary SRS on_unpublish webhook
+// @Description Updates session status to ENDED when stream stops
+// @Tags callbacks
+// @Accept json
+// @Produce json
+// @Param request body entity.SRSCallbackRequest true "SRS callback request"
+// @Success 200 {object} entity.SRSCallbackResponse
+// @Router /api/v1/callbacks/on_unpublish [post]
 func (h *LiveHandler) OnUnpublish(c *gin.Context) {
-	// This will be implemented in the next tasks
-	c.JSON(http.StatusOK, gin.H{
-		"code": 0,
-	})
+	var req entity.SRSCallbackRequest
+
+	// SRS sends data as form-urlencoded or JSON
+	if err := c.ShouldBind(&req); err != nil {
+		// Still return 200 for unpublish - stream already stopped
+		c.JSON(http.StatusOK, entity.SRSCallbackResponse{Code: 0})
+		return
+	}
+
+	// Extract stream key from request
+	streamKey := req.GetStreamKey()
+	if streamKey == "" {
+		c.JSON(http.StatusOK, entity.SRSCallbackResponse{Code: 0})
+		return
+	}
+
+	// Update status to ENDED (ignore errors - stream already stopped)
+	_ = h.service.HandleOnUnpublish(c.Request.Context(), streamKey)
+
+	// Always return 200 for unpublish
+	c.JSON(http.StatusOK, entity.SRSCallbackResponse{Code: 0})
 }
