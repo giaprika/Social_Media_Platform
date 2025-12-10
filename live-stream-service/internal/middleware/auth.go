@@ -2,41 +2,30 @@ package middleware
 
 import (
 	"net/http"
-	"strings"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
 
-// Auth middleware validates JWT tokens and extracts user information
+// Auth middleware extracts user ID from X-User-ID header
+// This assumes authentication is handled by API Gateway or upstream service
 func Auth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
+		userIDStr := c.GetHeader("X-User-ID")
+		if userIDStr == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Authorization header required",
+				"error":   "unauthorized",
+				"message": "X-User-ID header required",
 			})
 			c.Abort()
 			return
 		}
 
-		// Extract token from "Bearer <token>"
-		tokenParts := strings.Split(authHeader, " ")
-		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Invalid authorization header format",
-			})
-			c.Abort()
-			return
-		}
-
-		token := tokenParts[1]
-
-		// TODO: Implement JWT validation with auth service
-		// For now, we'll use a stub implementation
-		userID, err := validateTokenStub(token)
-		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Invalid token",
+		userID, err := strconv.ParseInt(userIDStr, 10, 64)
+		if err != nil || userID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "invalid_user_id",
+				"message": "X-User-ID must be a valid positive integer",
 			})
 			c.Abort()
 			return
@@ -48,14 +37,51 @@ func Auth() gin.HandlerFunc {
 	}
 }
 
-// validateTokenStub is a placeholder for JWT validation
-// This will be replaced with actual JWT validation logic
-func validateTokenStub(token string) (int64, error) {
-	// Stub implementation - always return user ID 1 for valid-looking tokens
-	if len(token) > 10 {
-		return 1, nil
+// AuthWebSocket middleware extracts user ID from query param for WebSocket connections
+// WebSocket uses ?user_id= query param since headers are not easily set
+func AuthWebSocket() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userIDStr := c.Query("user_id")
+		if userIDStr == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error":   "unauthorized",
+				"message": "user_id query parameter required",
+			})
+			c.Abort()
+			return
+		}
+
+		userID, err := strconv.ParseInt(userIDStr, 10, 64)
+		if err != nil || userID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "invalid_user_id",
+				"message": "user_id must be a valid positive integer",
+			})
+			c.Abort()
+			return
+		}
+
+		c.Set("user_id", userID)
+		c.Next()
 	}
-	return 0, gin.Error{Err: nil, Type: gin.ErrorTypePublic}
+}
+
+// OptionalAuth middleware extracts user ID if present, but doesn't require it
+// Useful for public endpoints that show extra info to authenticated users
+func OptionalAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userIDStr := c.GetHeader("X-User-ID")
+		if userIDStr == "" {
+			c.Next()
+			return
+		}
+
+		userID, err := strconv.ParseInt(userIDStr, 10, 64)
+		if err == nil && userID > 0 {
+			c.Set("user_id", userID)
+		}
+		c.Next()
+	}
 }
 
 // GetUserIDFromContext extracts user ID from gin context
