@@ -54,7 +54,9 @@ func main() {
 		}
 
 		// Webhook routes for SRS callbacks
+		// Protected by IP whitelist - only SRS server can call these
 		callbacks := v1.Group("/callbacks")
+		callbacks.Use(middleware.SRSWebhookWhitelist(cfg.SRS.ServerIP))
 		{
 			callbacks.POST("/on_publish", liveHandler.OnPublish)
 			callbacks.POST("/on_unpublish", liveHandler.OnUnpublish)
