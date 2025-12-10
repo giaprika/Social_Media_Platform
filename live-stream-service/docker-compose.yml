@@ -20,8 +20,10 @@ services:
     volumes:
       # SRS configuration file
       - ./configs/srs.conf:/usr/local/srs/conf/srs.conf
-      # HLS output directory (mount to GCS in production)
-      - ./data/hls:/usr/local/srs/objs/nginx/html
+      # HLS output directory
+      # Development: mount local folder
+      # Production: mount /mnt/live_data (gcsfuse mounted GCS bucket) to /data in container
+      - ${HLS_DATA_PATH:-./data/hls}:/data
     environment:
       # Public IP for WebRTC (set your server's public IP in production)
       - CANDIDATE=${SRS_PUBLIC_IP:-127.0.0.1}
