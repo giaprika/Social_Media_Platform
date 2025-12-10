@@ -1,4 +1,6 @@
 import { v4 as uuidv4 } from 'uuid'
+import { RabbitMQProducer } from './rabbitmq.producer.js'
+
 import axios from 'axios'
 import {
 	hashPassword,
@@ -224,20 +226,28 @@ export class UserService {
 
 		const result = await UserRepository.followUser(userId, targetId)
 
-		// Send follow notification to target user
+		// [DEBUG] Log follow success
+		console.log(`[DEBUG] Follow success. User ${userId} followed ${targetId}`)
+
+		// Publish "user.followed" event
 		try {
 			const follower = await UserRepository.findUserById(userId)
 			if (follower) {
-				await axios.post(`${NOTIFICATION_SERVICE_URL}/notifications`, {
-					user_ids: [targetId],
+				const eventData = {
+					user_id: targetId,
+					follower_id: userId,
+					follower_username: follower.username,
+					follower_avatar: follower.avatar_url || follower.avatar,
 					title_template: 'New Follower',
 					body_template: `u/${follower.username} started following you`,
 					link_url: `/app/u/${follower.username}`,
-				})
+					timestamp: new Date().toISOString()
+				};
+
+				await RabbitMQProducer.publish('user.followed', eventData);
 			}
 		} catch (err) {
-			// Log error but don't fail the follow action
-			console.error('Failed to send follow notification:', err.message)
+			console.error('[UserService] Failed to publish follow event:', err);
 		}
 
 		return result

@@ -35,6 +35,15 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Health check
+app.get("/", (req, res) => {
+  res.json({
+    service: "notification-service",
+    status: "running",
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Route 404
 app.use((req, res) => {
   res.status(404).json({ message: "API không tồn tại" });

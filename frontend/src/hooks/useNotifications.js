@@ -24,6 +24,13 @@ export const useNotifications = (token) => {
 
       // Transform API data to match component format
       const rawNotifications = Array.isArray(data) ? data : (data?.data || []);
+
+      const extractSender = (body) => {
+        if (!body) return null;
+        const match = body.match(/^u\/([^\s]+)/);
+        return match ? match[1] : null;
+      };
+
       const transformed = rawNotifications.map((n) => ({
         id: n.id,
         title: n.title_template,
@@ -33,6 +40,7 @@ export const useNotifications = (token) => {
         link: n.link_url,
         createdAt: n.created_at,
         type: n.type,
+        sender: extractSender(n.body_template),
       }));
 
       setNotifications(transformed);
@@ -110,6 +118,7 @@ export const useNotifications = (token) => {
         link: data.link,
         createdAt: data.createdAt || new Date().toISOString(),
         type: data.type,
+        sender: data.body && data.body.match(/^u\/([^\s]+)/) ? data.body.match(/^u\/([^\s]+)/)[1] : null,
       };
 
       setNotifications((prev) => [newNotification, ...prev]);

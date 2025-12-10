@@ -166,9 +166,37 @@ async def upsert_post_reaction(
         
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to upsert reaction")
-        
+
         reaction = result.data[0]
-        
+
+        # Publish notification event khi like bài viết (chỉ khi là like, không phải update reaction khác)
+        try:
+            if reaction_data.reaction_type == "like":
+                import aio_pika
+                import asyncio
+                post_owner = post_result.data[0]["user_id"]
+                async def publish_post_liked():
+                    connection = await aio_pika.connect_robust(os.getenv("RABBITMQ_URL", "amqp://rabbitmq"))
+                    channel = await connection.channel()
+                    await channel.default_exchange.publish(
+                        aio_pika.Message(
+                            body=bytes(json.dumps({
+                                "user_id": post_owner,
+                                "liker_id": user_id,
+                                "liker_username": None,
+                                "title_template": "Bài viết của bạn được thích!",
+                                "body_template": "Ai đó đã thích bài viết của bạn!",
+                                "link_url": f"/posts/{post_id}"
+                            }), encoding="utf-8"),
+                            delivery_mode=aio_pika.DeliveryMode.PERSISTENT
+                        ),
+                        routing_key="post.liked"
+                    )
+                    await connection.close()
+                await publish_post_liked()
+        except Exception as e:
+            print(f"[Notification] Failed to publish post.liked event: {str(e)}")
+
         return ReactionSingleResponse(
             status="success",
             message=message,

@@ -6,7 +6,8 @@ import { CommunityRepository } from '../repositories/community.repository.js'
 import { Membership, Invitation } from '../models/models.js'
 
 // Notification service URL
-const NOTIFICATION_SERVICE_URL = process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:8002'
+const NOTIFICATION_SERVICE_URL =
+	process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:8002'
 
 export class MembershipService {
 	/**
@@ -43,21 +44,31 @@ export class MembershipService {
 			status,
 		})
 
-		// Send welcome notification if status is approved
+		// Publish notification event nếu status là approved
 		if (status === 'approved') {
 			try {
 				const community = await CommunityRepository.findById(communityId)
 				if (community) {
-					await axios.post(`${NOTIFICATION_SERVICE_URL}/notifications`, {
-						user_ids: [userId],
-						title_template: 'Welcome!',
-						body_template: `Welcome to c/${community.slug}! Start exploring and connecting with the community.`,
+					// Publish qua RabbitMQ
+					const { RabbitMQProducer } = await import(
+						'../../user-service/src/services/rabbitmq.producer.js'
+					)
+					await RabbitMQProducer.connect()
+					await RabbitMQProducer.publish('community.joined', {
+						user_id: userId,
+						community_id: communityId,
+						community_name: community.name,
+						title_template: 'Bạn đã tham gia cộng đồng mới!',
+						body_template: `Bạn vừa tham gia cộng đồng: ${community.name}`,
 						link_url: `/c/${community.slug}`,
 					})
 				}
 			} catch (err) {
-				// Log error but don't fail the join action
-				console.error('Failed to send welcome notification:', err.message)
+				// Log error nhưng không fail action
+				console.error(
+					'Failed to publish community.joined notification:',
+					err.message
+				)
 			}
 		}
 

@@ -113,6 +113,27 @@ services:
       - social-network
     restart: unless-stopped
 
+  postgres-user:
+    image: postgres:15-alpine
+    container_name: postgres-user
+    environment:
+      POSTGRES_DB: user_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-user-data:/var/lib/postgresql/data
+      - ./user-service/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5437:5432"
+    networks:
+      - social-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   user-service:
     build:
       context: ./user-service
@@ -121,17 +142,23 @@ services:
     environment:
       NODE_ENV: production
       PORT: 8001
-      DB_HOST: host.docker.internal
+      DB_HOST: postgres-user
       DB_PORT: 5432
       DB_NAME: user_db
       DB_USER: postgres
-      DB_PASSWORD: Daylamatkhaumanh123_
+      DB_PASSWORD: postgres
       DB_MAX_CONNECTIONS: 10
       DB_SSL: "false"
       ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:-your_super_secret_access_token_key}
       REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-your_super_secret_refresh_token_key}
+      RABBITMQ_URL: amqp://rabbitmq
     ports:
       - "8001:8001"
+    depends_on:
+      postgres-user:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     networks:
       - social-network
     restart: unless-stopped
@@ -166,12 +193,18 @@ services:
       DB_SSL: "false"
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://rabbitmq
+      GATEWAY_URL: http://backend-gateway:8000
+      INTERNAL_SECRET: your-super-secret-key-for-internal-services
     ports:
       - "8002:8002"
     depends_on:
       postgres-notification:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     networks:
       - social-network
@@ -356,3 +389,4 @@ volumes:
   postgres-ai-data:
   rabbitmq-data:
   redis-data:
+  postgres-user-data:

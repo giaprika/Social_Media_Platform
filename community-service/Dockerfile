@@ -7,7 +7,7 @@ COPY package*.json ./
 
 # Install dependencies
 # Use npm install instead of npm ci since package-lock.json may not exist
-RUN npm install --only=production
+RUN npm install --only=production && npm install axios
 
 # Copy source code
 COPY . .

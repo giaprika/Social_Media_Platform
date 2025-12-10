@@ -245,6 +245,33 @@ async def create_comment(
             "comments_count": new_count
         }).eq("post_id", post_id).execute()
         
+        # Publish notification event qua RabbitMQ
+        try:
+            import aio_pika
+            import asyncio
+            async def publish_post_commented():
+                connection = await aio_pika.connect_robust(os.getenv("RABBITMQ_URL", "amqp://rabbitmq"))
+                channel = await connection.channel()
+                await channel.default_exchange.publish(
+                    aio_pika.Message(
+                        body=bytes(json.dumps({
+                            "user_id": post_result.data[0]["user_id"],
+                            "commenter_id": user_id,
+                            "commenter_username": None,
+                            "comment_content": content,
+                            "title_template": "Bài viết của bạn có bình luận mới!",
+                            "body_template": f"Ai đó đã bình luận: {content}",
+                            "link_url": f"/posts/{post_id}#comment-{created_comment.get('comment_id')}"
+                        }), encoding="utf-8"),
+                        delivery_mode=aio_pika.DeliveryMode.PERSISTENT
+                    ),
+                    routing_key="post.commented"
+                )
+                await connection.close()
+            await publish_post_commented()
+        except Exception as e:
+            print(f"[Notification] Failed to publish post.commented event: {str(e)}")
+
         return CommentSingleResponse(
             status="success",
             message="Comment created successfully",
