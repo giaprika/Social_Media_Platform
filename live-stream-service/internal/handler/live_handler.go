@@ -190,7 +190,6 @@ func (h *LiveHandler) OnPublish(c *gin.Context) {
 
 	// SRS sends data as form-urlencoded or JSON
 	if err := c.ShouldBind(&req); err != nil {
-		// Log error but return proper SRS response format
 		c.JSON(http.StatusForbidden, entity.SRSCallbackResponse{Code: 1})
 		return
 	}
@@ -202,9 +201,17 @@ func (h *LiveHandler) OnPublish(c *gin.Context) {
 		return
 	}
 
+	// Handle context timeout
+	ctx := c.Request.Context()
+	if ctx.Err() != nil {
+		c.JSON(http.StatusForbidden, entity.SRSCallbackResponse{Code: 1})
+		return
+	}
+
 	// Validate stream key and update status
-	if err := h.service.HandleOnPublish(c.Request.Context(), streamKey); err != nil {
-		// Return 403 with code=1 to reject the stream
+	if err := h.service.HandleOnPublish(ctx, streamKey); err != nil {
+		// Determine appropriate error response
+		// All errors result in rejection (code=1) for SRS
 		c.JSON(http.StatusForbidden, entity.SRSCallbackResponse{Code: 1})
 		return
 	}
@@ -240,9 +247,20 @@ func (h *LiveHandler) OnUnpublish(c *gin.Context) {
 		return
 	}
 
-	// Update status to ENDED (ignore errors - stream already stopped)
-	_ = h.service.HandleOnUnpublish(c.Request.Context(), streamKey)
+	// Handle context timeout gracefully
+	ctx := c.Request.Context()
+	if ctx.Err() != nil {
+		// Context cancelled but still return success
+		// Stream is already stopped regardless
+		c.JSON(http.StatusOK, entity.SRSCallbackResponse{Code: 0})
+		return
+	}
 
-	// Always return 200 for unpublish
+	// Update status to ENDED
+	// Errors are logged in service layer but we always return success
+	// because the stream has already stopped on SRS side
+	_ = h.service.HandleOnUnpublish(ctx, streamKey)
+
+	// Always return 200 for unpublish - idempotent operation
 	c.JSON(http.StatusOK, entity.SRSCallbackResponse{Code: 0})
 }

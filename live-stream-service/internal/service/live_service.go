@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
 
 	"live-service/internal/config"
 	"live-service/internal/entity"
@@ -14,6 +16,11 @@ import (
 var (
 	ErrStreamKeyGeneration = fmt.Errorf("failed to generate stream key")
 	ErrStreamCreation      = fmt.Errorf("failed to create stream")
+	ErrInvalidStreamKey    = fmt.Errorf("invalid stream key")
+	ErrStreamNotFound      = fmt.Errorf("stream not found")
+	ErrInvalidTransition   = fmt.Errorf("invalid status transition")
+	ErrDuplicatePublish    = fmt.Errorf("stream already publishing")
+	ErrStreamAlreadyEnded  = fmt.Errorf("stream already ended")
 )
 
 type LiveService interface {
@@ -165,38 +172,102 @@ func (s *liveService) ListStreams(ctx context.Context, params entity.PaginationP
 
 // HandleOnPublish validates stream key and updates session status to LIVE
 func (s *liveService) HandleOnPublish(ctx context.Context, streamKey string) error {
+	// Validate stream key format
+	if streamKey == "" {
+		log.Printf("[on_publish] ERROR: empty stream key")
+		return ErrInvalidStreamKey
+	}
+
+	// Mask stream key for logging
+	maskedKey := utils.MaskStreamKey(streamKey)
+
 	// Find session by stream key
 	session, err := s.repo.GetByStreamKey(ctx, streamKey)
 	if err != nil {
-		return fmt.Errorf("invalid stream key: %w", err)
+		if errors.Is(err, repository.ErrNotFound) {
+			log.Printf("[on_publish] REJECTED: stream key not found: %s", maskedKey)
+			return fmt.Errorf("%w: %s", ErrInvalidStreamKey, maskedKey)
+		}
+		log.Printf("[on_publish] ERROR: database error for %s: %v", maskedKey, err)
+		return fmt.Errorf("database error: %w", err)
 	}
 
-	// Validate status transition (only IDLE can go LIVE)
-	if !session.Status.CanTransitionTo(entity.StatusLive) {
-		return fmt.Errorf("invalid status transition: current status is %s", session.Status)
+	// Check current status
+	switch session.Status {
+	case entity.StatusLive:
+		log.Printf("[on_publish] REJECTED: duplicate publish attempt for stream %d (%s)", session.ID, maskedKey)
+		return fmt.Errorf("%w: stream %d is already live", ErrDuplicatePublish, session.ID)
+
+	case entity.StatusEnded:
+		log.Printf("[on_publish] REJECTED: stream %d already ended (%s)", session.ID, maskedKey)
+		return fmt.Errorf("%w: stream %d has ended, create a new stream", ErrStreamAlreadyEnded, session.ID)
+
+	case entity.StatusIdle:
+		// Valid transition, continue
+	default:
+		log.Printf("[on_publish] REJECTED: unknown status %s for stream %d", session.Status, session.ID)
+		return fmt.Errorf("%w: unknown status %s", ErrInvalidTransition, session.Status)
 	}
 
 	// Update status to LIVE and set started_at
 	if err := s.repo.SetStarted(ctx, session.ID); err != nil {
+		if errors.Is(err, repository.ErrInvalidStatus) {
+			// Race condition: another request already started the stream
+			log.Printf("[on_publish] REJECTED: race condition for stream %d (%s)", session.ID, maskedKey)
+			return fmt.Errorf("%w: stream state changed", ErrDuplicatePublish)
+		}
+		log.Printf("[on_publish] ERROR: failed to start stream %d: %v", session.ID, err)
 		return fmt.Errorf("failed to start stream: %w", err)
 	}
 
+	log.Printf("[on_publish] SUCCESS: stream %d started (user: %d, key: %s)", session.ID, session.UserID, maskedKey)
 	return nil
 }
 
 // HandleOnUnpublish updates session status to ENDED when stream stops
 func (s *liveService) HandleOnUnpublish(ctx context.Context, streamKey string) error {
+	// Validate stream key
+	if streamKey == "" {
+		log.Printf("[on_unpublish] WARNING: empty stream key")
+		return nil // Don't fail for unpublish
+	}
+
+	maskedKey := utils.MaskStreamKey(streamKey)
+
 	// Find session by stream key
 	session, err := s.repo.GetByStreamKey(ctx, streamKey)
 	if err != nil {
-		return fmt.Errorf("stream not found: %w", err)
+		if errors.Is(err, repository.ErrNotFound) {
+			log.Printf("[on_unpublish] WARNING: stream key not found: %s (may be deleted)", maskedKey)
+			return nil // Stream might have been deleted
+		}
+		log.Printf("[on_unpublish] ERROR: database error for %s: %v", maskedKey, err)
+		return fmt.Errorf("database error: %w", err)
 	}
 
-	// Update status to ENDED and set ended_at
+	// Check if already ended
+	if session.Status == entity.StatusEnded {
+		log.Printf("[on_unpublish] INFO: stream %d already ended (%s)", session.ID, maskedKey)
+		return nil // Idempotent - already ended
+	}
+
+	// Check if never started (IDLE -> ENDED is allowed but unusual)
+	if session.Status == entity.StatusIdle {
+		log.Printf("[on_unpublish] WARNING: stream %d was never started (%s)", session.ID, maskedKey)
+		// Still end it to clean up
+	}
+
+	// Update status to ENDED
 	if err := s.repo.SetEnded(ctx, session.ID); err != nil {
-		// Log but don't fail - stream might already be ended
+		if errors.Is(err, repository.ErrInvalidStatus) {
+			// Already ended by another request
+			log.Printf("[on_unpublish] INFO: stream %d already ended (race condition)", session.ID)
+			return nil
+		}
+		log.Printf("[on_unpublish] ERROR: failed to end stream %d: %v", session.ID, err)
 		return fmt.Errorf("failed to end stream: %w", err)
 	}
 
+	log.Printf("[on_unpublish] SUCCESS: stream %d ended (user: %d, key: %s)", session.ID, session.UserID, maskedKey)
 	return nil
 }
