@@ -160,3 +160,30 @@ func (s LiveSessionStatus) CanTransitionTo(target LiveSessionStatus) bool {
 		return false
 	}
 }
+
+// SRSCallbackRequest represents the webhook request from SRS server
+// Documentation: https://ossrs.io/lts/en-us/docs/v5/doc/http-callback
+type SRSCallbackRequest struct {
+	Action   string `json:"action" form:"action"`     // Event type: on_publish, on_unpublish, etc.
+	ClientID string `json:"client_id" form:"client_id"` // SRS client ID
+	IP       string `json:"ip" form:"ip"`             // Client IP address
+	Vhost    string `json:"vhost" form:"vhost"`       // Virtual host
+	App      string `json:"app" form:"app"`           // Application name (e.g., "live")
+	Stream   string `json:"stream" form:"stream"`     // Stream name (this is our stream_key)
+	Param    string `json:"param" form:"param"`       // URL parameters
+	ServerID string `json:"server_id" form:"server_id"` // SRS server ID
+	ServiceID string `json:"service_id" form:"service_id"` // SRS service ID
+	TcUrl    string `json:"tcUrl" form:"tcUrl"`       // RTMP tcUrl
+}
+
+// SRSCallbackResponse represents the response to SRS webhook
+// Return code 0 to allow, non-zero to reject
+type SRSCallbackResponse struct {
+	Code int `json:"code"`
+}
+
+// GetStreamKey extracts the stream key from the SRS callback
+// Stream key is the "stream" field in the callback
+func (r *SRSCallbackRequest) GetStreamKey() string {
+	return r.Stream
+}
