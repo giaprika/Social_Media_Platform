@@ -1,15 +1,23 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { BellIcon } from "@heroicons/react/24/outline";
 import { BellIcon as BellIconSolid } from "@heroicons/react/24/solid";
 import clsx from "clsx";
-import Badge from "../ui/Badge";
 import Avatar from "../ui/Avatar";
 import { formatDistanceToNow } from "date-fns";
-import { vi } from "date-fns/locale";
 
-const NotificationDropdown = ({ notifications = [], isOpen, onClose, onToggle }) => {
+const NotificationDropdown = ({
+  notifications = [],
+  unreadCount: propUnreadCount,
+  isOpen,
+  onClose,
+  onToggle,
+  onMarkAsRead,
+  onMarkAllAsRead,
+}) => {
   const dropdownRef = useRef(null);
   const buttonRef = useRef(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -41,18 +49,38 @@ const NotificationDropdown = ({ notifications = [], isOpen, onClose, onToggle })
   }, [isOpen, onClose]);
 
   const formatTime = (timestamp) => {
-    if (!timestamp) return "Vừa xong";
+    if (!timestamp) return "Just now";
     try {
       return formatDistanceToNow(new Date(timestamp), {
         addSuffix: true,
-        locale: vi,
       });
     } catch {
-      return "Vừa xong";
+      return "Just now";
     }
   };
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  // Use prop unreadCount if provided, otherwise calculate
+  const unreadCount = propUnreadCount ?? notifications.filter((n) => !n.read).length;
+
+  const handleNotificationClick = (notification) => {
+    // Mark as read if not already
+    if (!notification.read && onMarkAsRead) {
+      onMarkAsRead(notification.id);
+    }
+
+    // Navigate to link if provided
+    if (notification.link) {
+      navigate(notification.link);
+    }
+
+    onClose();
+  };
+
+  const handleMarkAllRead = () => {
+    if (onMarkAllAsRead) {
+      onMarkAllAsRead();
+    }
+  };
 
   return (
     <div className="relative">
@@ -82,10 +110,13 @@ const NotificationDropdown = ({ notifications = [], isOpen, onClose, onToggle })
         >
           <div className="border-b border-border px-4 py-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-foreground">Thông báo</h3>
+              <h3 className="text-lg font-bold text-foreground">Notifications</h3>
               {unreadCount > 0 && (
-                <button className="text-sm text-primary hover:underline">
-                  Đánh dấu tất cả đã đọc
+                <button
+                  onClick={handleMarkAllRead}
+                  className="text-sm text-primary hover:underline"
+                >
+                  Mark all as read
                 </button>
               )}
             </div>
@@ -96,7 +127,7 @@ const NotificationDropdown = ({ notifications = [], isOpen, onClose, onToggle })
               <div className="px-4 py-8 text-center">
                 <BellIcon className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">
-                  Chưa có thông báo nào
+                  No notifications yet
                 </p>
               </div>
             ) : (
@@ -109,10 +140,7 @@ const NotificationDropdown = ({ notifications = [], isOpen, onClose, onToggle })
                       "w-full px-4 py-3 text-left transition-colors hover:bg-muted",
                       !notification.read && "bg-primary/5"
                     )}
-                    onClick={() => {
-                      // Handle notification click
-                      onClose();
-                    }}
+                    onClick={() => handleNotificationClick(notification)}
                   >
                     <div className="flex gap-3">
                       <Avatar
@@ -131,7 +159,7 @@ const NotificationDropdown = ({ notifications = [], isOpen, onClose, onToggle })
                         >
                           {notification.title || notification.message}
                         </p>
-                        {notification.content && (
+                        {notification.content && notification.content !== notification.title && (
                           <p className="mt-1 truncate text-xs text-muted-foreground">
                             {notification.content}
                           </p>
@@ -141,7 +169,7 @@ const NotificationDropdown = ({ notifications = [], isOpen, onClose, onToggle })
                         </p>
                       </div>
                       {!notification.read && (
-                        <div className="h-2 w-2 rounded-full bg-primary" />
+                        <div className="h-2 w-2 rounded-full bg-primary flex-shrink-0 mt-2" />
                       )}
                     </div>
                   </button>
@@ -152,8 +180,14 @@ const NotificationDropdown = ({ notifications = [], isOpen, onClose, onToggle })
 
           {notifications.length > 0 && (
             <div className="border-t border-border px-4 py-3">
-              <button className="w-full text-center text-sm font-medium text-primary hover:underline">
-                Xem tất cả thông báo
+              <button
+                onClick={() => {
+                  navigate("/app/notifications");
+                  onClose();
+                }}
+                className="w-full text-center text-sm font-medium text-primary hover:underline"
+              >
+                View all notifications
               </button>
             </div>
           )}
@@ -164,4 +198,3 @@ const NotificationDropdown = ({ notifications = [], isOpen, onClose, onToggle })
 };
 
 export default NotificationDropdown;
-

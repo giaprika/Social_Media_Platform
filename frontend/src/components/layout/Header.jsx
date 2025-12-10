@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { useNavigate } from "react-router-dom";
+import Cookies from "universal-cookie";
 import {
   ArrowRightOnRectangleIcon,
   ChatBubbleOvalLeftEllipsisIcon,
@@ -13,13 +14,13 @@ import {
   PlusIcon,
   ShieldCheckIcon,
   TrophyIcon,
-  UserCircleIcon,
   Bars3Icon,
 } from "@heroicons/react/24/outline";
 import { PATHS } from "src/constants/paths";
 import Avatar from "../ui/Avatar";
 import useAuth from "src/hooks/useAuth";
 import { useTheme } from "src/contexts/ThemeContext";
+import { useNotifications } from "src/hooks/useNotifications";
 import NotificationDropdown from "./NotificationDropdown";
 
 // Navigation items removed - search bar moved to left
@@ -34,9 +35,22 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
   const { user, logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
 
+  // Get token for notifications
+  const cookies = new Cookies();
+  const accessToken = cookies.get("accessToken");
+  const token = accessToken ? accessToken.replace("Bearer ", "") : null;
+
+  // Use notifications hook
+  const {
+    notifications,
+    unreadCount,
+    markAsRead: handleMarkAsRead,
+    markAllAsRead: handleMarkAllAsRead,
+  } = useNotifications(token);
+
   const displayName = user?.displayName || user?.fullName || user?.username || "SocialUser";
   const userHandle = user?.username ? `u/${user.username}` : "u/socialuser";
-  
+
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (!isProfileMenuOpen) {
@@ -241,10 +255,13 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
             <ChatBubbleOvalLeftEllipsisIcon className="h-5 w-5" />
           </button>
           <NotificationDropdown
-            notifications={[]} // Will be populated from useNotifications hook
+            notifications={notifications}
+            unreadCount={unreadCount}
             isOpen={isNotificationOpen}
             onClose={() => setIsNotificationOpen(false)}
             onToggle={() => setIsNotificationOpen((prev) => !prev)}
+            onMarkAsRead={handleMarkAsRead}
+            onMarkAllAsRead={handleMarkAllAsRead}
           />
           <button
             type="button"

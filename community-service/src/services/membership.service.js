@@ -1,8 +1,12 @@
 import { v4 as uuidv4 } from 'uuid'
 import { randomBytes } from 'crypto'
+import axios from 'axios'
 import { MembershipRepository } from '../repositories/membership.repository.js'
 import { CommunityRepository } from '../repositories/community.repository.js'
 import { Membership, Invitation } from '../models/models.js'
+
+// Notification service URL
+const NOTIFICATION_SERVICE_URL = process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:8002'
 
 export class MembershipService {
 	/**
@@ -38,6 +42,25 @@ export class MembershipService {
 			role: 'member',
 			status,
 		})
+
+		// Send welcome notification if status is approved
+		if (status === 'approved') {
+			try {
+				const community = await CommunityRepository.findById(communityId)
+				if (community) {
+					await axios.post(`${NOTIFICATION_SERVICE_URL}/notifications`, {
+						user_ids: [userId],
+						title_template: 'Welcome!',
+						body_template: `Welcome to c/${community.slug}! Start exploring and connecting with the community.`,
+						link_url: `/c/${community.slug}`,
+					})
+				}
+			} catch (err) {
+				// Log error but don't fail the join action
+				console.error('Failed to send welcome notification:', err.message)
+			}
+		}
+
 		return new Membership(membership)
 	}
 
@@ -60,8 +83,24 @@ export class MembershipService {
 			status: 'approved',
 		})
 		if (!updated) {
-			throw new Error('Membership không tồn tại.')
+			throw new Error('Membership not found.')
 		}
+
+		// Send welcome notification to the approved user
+		try {
+			const community = await CommunityRepository.findById(updated.community_id)
+			if (community) {
+				await axios.post(`${NOTIFICATION_SERVICE_URL}/notifications`, {
+					user_ids: [updated.user_id],
+					title_template: 'Membership Approved!',
+					body_template: `Your request to join c/${community.slug} has been approved. Welcome!`,
+					link_url: `/c/${community.slug}`,
+				})
+			}
+		} catch (err) {
+			console.error('Failed to send approval notification:', err.message)
+		}
+
 		return new Membership(updated)
 	}
 

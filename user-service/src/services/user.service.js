@@ -1,10 +1,14 @@
 import { v4 as uuidv4 } from 'uuid'
+import axios from 'axios'
 import {
 	hashPassword,
 	comparePassword,
 	recordToken,
 } from '../utils/authUtils.js'
 import { UserRepository } from '../repositories/user.repository.js'
+
+// Notification service URL
+const NOTIFICATION_SERVICE_URL = process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:8002'
 
 export class UserService {
 	static async createUser(userData) {
@@ -210,15 +214,33 @@ export class UserService {
 
 	static async followUser(userId, targetId) {
 		if (userId === targetId) {
-			throw new Error('Không thể follow chính mình.')
+			throw new Error('Cannot follow yourself.')
 		}
 
 		const targetUser = await UserRepository.findUserById(targetId)
 		if (!targetUser) {
-			throw new Error('Người dùng không tồn tại.')
+			throw new Error('User not found.')
 		}
 
-		return await UserRepository.followUser(userId, targetId)
+		const result = await UserRepository.followUser(userId, targetId)
+
+		// Send follow notification to target user
+		try {
+			const follower = await UserRepository.findUserById(userId)
+			if (follower) {
+				await axios.post(`${NOTIFICATION_SERVICE_URL}/notifications`, {
+					user_ids: [targetId],
+					title_template: 'New Follower',
+					body_template: `u/${follower.username} started following you`,
+					link_url: `/app/u/${follower.username}`,
+				})
+			}
+		} catch (err) {
+			// Log error but don't fail the follow action
+			console.error('Failed to send follow notification:', err.message)
+		}
+
+		return result
 	}
 
 	static async unfollowUser(userId, targetId) {
