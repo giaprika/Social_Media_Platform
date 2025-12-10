@@ -52,6 +52,29 @@ docker-build:
 docker-run:
 	docker run -p 8080:8080 $(DOCKER_IMAGE)
 
+# Docker Compose operations
+compose-up:
+	docker-compose up -d
+
+compose-down:
+	docker-compose down
+
+compose-logs:
+	docker-compose logs -f
+
+compose-ps:
+	docker-compose ps
+
+# Start only SRS container
+srs-up:
+	docker-compose up -d srs
+
+srs-logs:
+	docker-compose logs -f srs
+
+srs-health:
+	curl -s http://localhost:1985/api/v1/versions | jq .
+
 # Development helpers
 dev: deps
 	go run $(MAIN_PATH)
@@ -86,6 +109,13 @@ help:
 	@echo "  migrate-create - Create new migration"
 	@echo "  docker-build - Build Docker image"
 	@echo "  docker-run   - Run Docker container"
+	@echo "  compose-up   - Start all services with Docker Compose"
+	@echo "  compose-down - Stop all services"
+	@echo "  compose-logs - View logs from all services"
+	@echo "  compose-ps   - List running containers"
+	@echo "  srs-up       - Start only SRS container"
+	@echo "  srs-logs     - View SRS logs"
+	@echo "  srs-health   - Check SRS health"
 	@echo "  dev          - Run in development mode"
 	@echo "  fmt          - Format code"
 	@echo "  lint         - Lint code"
