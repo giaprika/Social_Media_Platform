@@ -1,4 +1,7 @@
 -- Create enum type for session status
+-- IDLE: Stream created but not started
+-- LIVE: Stream is currently broadcasting
+-- ENDED: Stream has finished
 CREATE TYPE session_status AS ENUM ('IDLE', 'LIVE', 'ENDED');
 
 -- Create live_sessions table
