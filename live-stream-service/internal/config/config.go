@@ -234,7 +234,7 @@ func setDefaults() {
 	viper.SetDefault("srs.callback_url", "http://localhost:8080/api/v1/callbacks")
 
 	// GCS defaults
-	viper.SetDefault("gcs.bucket_name", "live-hls-bucket")
+	viper.SetDefault("gcs.bucket_name", "social-app-live-hls-staging")
 	viper.SetDefault("gcs.project_id", "your-project-id")
 	viper.SetDefault("gcs.mount_path", "/mnt/live_data")
 
