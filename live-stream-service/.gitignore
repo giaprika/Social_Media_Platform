@@ -2,7 +2,7 @@
 .kiro/
 
 # Documentation (if you want to ignore docs)
-# docs/
+docs/
 
 # Environment files
 .env
