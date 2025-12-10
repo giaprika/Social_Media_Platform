@@ -200,12 +200,7 @@ export default function Feed() {
     }
   }, [location.state, navigate, location.pathname]);
 
-  useEffect(() => {
-    if (notifications.length > 0) {
-      const latest = notifications[0];
-      toast.info(`Bạn có thông báo mới: ${latest.title || "Thông báo"}`);
-    }
-  }, [notifications, toast]);
+
 
   // Load comments for a post
   const loadComments = useCallback(async (postId) => {
