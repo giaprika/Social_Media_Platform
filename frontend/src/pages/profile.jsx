@@ -14,7 +14,7 @@ import { getUserStats, getUserByUsername, getUserById, getMe } from "src/api/use
 import * as postApi from "src/api/post";
 
 // Transform API post to frontend format
-const transformPost = (apiPost, userInfo = null) => ({
+const transformPost = (apiPost, userInfo = null, communityInfo = null) => ({
   id: apiPost.post_id,
   author: userInfo || {
     id: apiPost.user_id,
@@ -23,7 +23,8 @@ const transformPost = (apiPost, userInfo = null) => ({
     avatar: null,
     avatar_url: null,
   },
-  community: apiPost.group_id || null,
+  // Only set community if we have proper info (not just UUID)
+  community: communityInfo ? { id: communityInfo.id, name: communityInfo.name, slug: communityInfo.slug } : null,
   title: apiPost.content?.split('\n')[0]?.substring(0, 100) || "",
   content: apiPost.content,
   images: apiPost.media_urls || [],
@@ -44,7 +45,7 @@ export default function Profile() {
   const { user: currentUser } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
-  
+
   // Get chat toggle from layout context
   const outletContext = useOutletContext();
   const onOpenChat = outletContext?.onOpenChat;
@@ -54,11 +55,11 @@ export default function Profile() {
   const [posts, setPosts] = useState([]);
   const [comments, setComments] = useState([]);
   const [likedPosts, setLikedPosts] = useState([]);
-  
+
   // Create/Edit Post Modal
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingPost, setEditingPost] = useState(null);
-  
+
   // Delete confirmation
   const [deletePostId, setDeletePostId] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -102,16 +103,16 @@ export default function Profile() {
   // Fetch posts for the profile user
   const fetchPosts = useCallback(async () => {
     if (!profileUser?.id) return;
-    
+
     setLoading(true);
     try {
-      const response = await postApi.getPosts({ 
+      const response = await postApi.getPosts({
         user_id: profileUser.id,
         limit: 20,
-        offset: 0 
+        offset: 0
       });
       const rawPosts = response.data?.data || [];
-      
+
       // Transform posts with user info
       const transformedPosts = rawPosts.map((post) => {
         const userInfo = {
@@ -123,7 +124,7 @@ export default function Profile() {
         };
         return transformPost(post, userInfo);
       });
-      
+
       // Check reactions for current user's posts
       if (currentUser?.id) {
         for (const post of transformedPosts) {
@@ -137,7 +138,7 @@ export default function Profile() {
           }
         }
       }
-      
+
       setPosts(transformedPosts);
     } catch (error) {
       console.error("Failed to load posts:", error);
@@ -151,24 +152,24 @@ export default function Profile() {
   // Lấy tất cả comments từ các posts của user
   const fetchComments = useCallback(async () => {
     if (!profileUser?.id) return;
-    
+
     setLoading(true);
     try {
       // Fetch all posts of the user first
-      const postsResponse = await postApi.getPosts({ 
+      const postsResponse = await postApi.getPosts({
         user_id: profileUser.id,
         limit: 100,
-        offset: 0 
+        offset: 0
       });
       const userPosts = postsResponse.data?.data || [];
-      
+
       // Fetch comments for each post and filter by user_id
       const allComments = [];
       for (const post of userPosts) {
         try {
           const commentsRes = await postApi.getComments(post.post_id, { limit: 100 });
           const postComments = commentsRes.data?.data || [];
-          
+
           // Filter comments by user and add post reference
           const userComments = postComments
             .filter(c => c.user_id === profileUser.id)
@@ -188,7 +189,7 @@ export default function Profile() {
           console.error(`Failed to fetch comments for post ${post.post_id}:`, err);
         }
       }
-      
+
       // Sort by created_at descending
       allComments.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
       setComments(allComments);
@@ -203,16 +204,16 @@ export default function Profile() {
   // Lấy các posts mà user đã like
   const fetchLikedPosts = useCallback(async () => {
     if (!profileUser?.id) return;
-    
+
     setLoading(true);
     try {
       // Fetch all public posts
-      const postsResponse = await postApi.getPosts({ 
+      const postsResponse = await postApi.getPosts({
         limit: 100,
-        offset: 0 
+        offset: 0
       });
       const allPosts = postsResponse.data?.data || [];
-      
+
       // Check reactions for each post to find liked ones
       const likedPostsList = [];
       for (const post of allPosts) {
@@ -220,7 +221,7 @@ export default function Profile() {
           const reactionsRes = await postApi.getPostReactions(post.post_id);
           const reactions = reactionsRes.data?.data || [];
           const userReaction = reactions.find(r => r.user_id === profileUser.id);
-          
+
           if (userReaction) {
             likedPostsList.push(transformPost(post, null));
           }
@@ -228,7 +229,7 @@ export default function Profile() {
           // Skip if error
         }
       }
-      
+
       setLikedPosts(likedPostsList);
     } catch (error) {
       console.error("Failed to load liked posts:", error);
@@ -262,7 +263,7 @@ export default function Profile() {
   const handleCreatePost = async (postData) => {
     try {
       const formData = new FormData();
-      
+
       if (postData.content) {
         formData.append("content", postData.content);
       }
@@ -278,7 +279,7 @@ export default function Profile() {
 
       const response = await postApi.createPost(formData);
       const newPostData = response.data?.data;
-      
+
       if (newPostData) {
         const userInfo = {
           id: currentUser.id,
@@ -307,10 +308,10 @@ export default function Profile() {
   // Handle update post
   const handleUpdatePost = async (postData) => {
     if (!editingPost) return;
-    
+
     try {
       const formData = new FormData();
-      
+
       if (postData.content) {
         formData.append("content", postData.content);
       }
@@ -325,7 +326,7 @@ export default function Profile() {
       }
 
       await postApi.updatePost(editingPost.id, formData);
-      
+
       // Refresh posts
       await fetchPosts();
       setEditingPost(null);
@@ -345,7 +346,7 @@ export default function Profile() {
   // Confirm delete post
   const confirmDeletePost = async () => {
     if (!deletePostId) return;
-    
+
     setIsDeleting(true);
     try {
       await postApi.deletePost(deletePostId);
@@ -448,8 +449,14 @@ export default function Profile() {
     onOpenChat?.();
   }, [onOpenChat]);
 
-  const handleCommunityClick = (community) => {
-    toast.info(`Navigating to s/${community}`);
+  const handleCommunityClick = (communityIdOrSlug) => {
+    // communityIdOrSlug can be an ID, slug, or object
+    const slug = typeof communityIdOrSlug === 'object'
+      ? (communityIdOrSlug.slug || communityIdOrSlug.id)
+      : communityIdOrSlug;
+    if (slug) {
+      navigate(`/c/${slug}`);
+    }
   };
 
   // Open create post modal
@@ -510,9 +517,9 @@ export default function Profile() {
         <div className="border-b border-border/50">
           <div className="max-w-5xl mx-auto px-6">
             <div className="py-8">
-              <ProfileHeader 
-                user={userDisplay} 
-                isOwnProfile={isOwnProfile} 
+              <ProfileHeader
+                user={userDisplay}
+                isOwnProfile={isOwnProfile}
                 onFollowChange={handleFollowChange}
                 onStartChat={handleStartChat}
               />
@@ -559,9 +566,9 @@ export default function Profile() {
         {/* Profile Sidebar - Thống kê user, achievements, settings */}
         <div className="hidden xl:block w-80 flex-shrink-0 py-6">
           <div className="sticky top-28">
-            <ProfileSidebar 
-              key={statsKey} 
-              user={userDisplay} 
+            <ProfileSidebar
+              key={statsKey}
+              user={userDisplay}
               isOwnProfile={isOwnProfile}
               postsCount={posts.length}
               commentsCount={comments.length}

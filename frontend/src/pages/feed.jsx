@@ -11,6 +11,7 @@ import { useToast } from "src/components/ui";
 import { useNotifications } from "../hooks/useNotifications";
 import * as postApi from "src/api/post";
 import { getUserById } from "src/api/user";
+import { getCommunityById } from "src/api/community";
 
 const cookies = new Cookies();
 
@@ -22,7 +23,7 @@ function getCookie(name) {
 }
 
 // Transform API post to frontend format
-const transformPost = (apiPost, userInfo = null) => ({
+const transformPost = (apiPost, userInfo = null, communityInfo = null) => ({
   id: apiPost.post_id,
   author: userInfo || {
     id: apiPost.user_id,
@@ -31,14 +32,15 @@ const transformPost = (apiPost, userInfo = null) => ({
     avatar: null,
     avatar_url: null,
   },
-  community: apiPost.group_id || null,  // null nếu không thuộc community
-  title: apiPost.content, // content = title
+  // Community: use object with id/name/slug for proper display
+  community: communityInfo ? { id: communityInfo.id, name: communityInfo.name, slug: communityInfo.slug } : null,
+  title: apiPost.content,
   content: apiPost.content,
   images: apiPost.media_urls || [],
   upvotes: apiPost.reacts_count || 0,
   downvotes: 0,
   comments: apiPost.comments_count || 0,
-  hasUpvoted: false, // Will be enriched later
+  hasUpvoted: false,
   hasDownvoted: false,
   saved: false,
   isFollowing: false,
@@ -77,10 +79,11 @@ export default function Feed() {
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("forYou");
   const [usersCache, setUsersCache] = useState({});
+  const [communitiesCache, setCommunitiesCache] = useState({});
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
-  const { addRecentPost } = useOutletContext() || { addRecentPost: () => {} };
+  const { addRecentPost } = useOutletContext() || { addRecentPost: () => { } };
 
   const token = getCookie("accessToken");
   const currentUserId = cookies.get("x-user-id");
@@ -92,7 +95,7 @@ export default function Feed() {
 
   const fetchUserInfo = useCallback(async (userId) => {
     if (usersCacheRef.current[userId]) return usersCacheRef.current[userId];
-    
+
     try {
       const response = await getUserById(userId);
       const user = response.data;
@@ -111,29 +114,52 @@ export default function Feed() {
     }
   }, []);
 
+  // Fetch community info and cache it
+  const communitiesCacheRef = React.useRef(communitiesCache);
+  communitiesCacheRef.current = communitiesCache;
+
+  const fetchCommunityInfo = useCallback(async (communityId) => {
+    if (!communityId) return null;
+    if (communitiesCacheRef.current[communityId]) return communitiesCacheRef.current[communityId];
+
+    try {
+      const community = await getCommunityById(communityId);
+      if (community) {
+        setCommunitiesCache((prev) => ({ ...prev, [communityId]: community }));
+        return community;
+      }
+      return null;
+    } catch (error) {
+      console.warn("[Feed] Failed to fetch community:", communityId);
+      return null;
+    }
+  }, []);
+
   // Load posts only once on mount
   const hasLoadedRef = React.useRef(false);
   const isLoadingRef = React.useRef(false);
-  
+
   useEffect(() => {
     console.log("[Feed] useEffect triggered, hasLoaded:", hasLoadedRef.current, "isLoading:", isLoadingRef.current);
     if (!hasLoadedRef.current && !isLoadingRef.current) {
       hasLoadedRef.current = true;
       isLoadingRef.current = true;
-      
+
       const fetchPosts = async () => {
         setLoading(true);
         try {
           const response = await postApi.getPosts({ limit: 20, offset: 0 });
           const rawPosts = response.data?.data || [];
           console.log("[Feed] Raw posts from API:", rawPosts.length);
-          
-          // Enrich posts with user info
+
+          // Enrich posts with user and community info
           const enrichedPosts = await Promise.all(
             rawPosts.map(async (post) => {
               const userInfo = await fetchUserInfo(post.user_id);
-              const transformedPost = transformPost(post, userInfo);
-              
+              // Fetch community info if post belongs to a community
+              const communityInfo = post.group_id ? await fetchCommunityInfo(post.group_id) : null;
+              const transformedPost = transformPost(post, userInfo, communityInfo);
+
               // Check if current user has reacted
               if (currentUserId) {
                 try {
@@ -142,14 +168,14 @@ export default function Feed() {
                   const userReaction = reactions.find((r) => r.user_id === currentUserId);
                   transformedPost.hasUpvoted = !!userReaction;
                 } catch (error) {
-                  console.error("Failed to fetch reactions:", error);
+                  // Ignore reaction errors
                 }
               }
-              
+
               return transformedPost;
             })
           );
-          
+
           console.log("[Feed] Setting posts:", enrichedPosts.length);
           setPosts(enrichedPosts);
         } catch (error) {
@@ -160,7 +186,7 @@ export default function Feed() {
           isLoadingRef.current = false;
         }
       };
-      
+
       fetchPosts();
     }
   }, []); // Empty dependency - only run once
@@ -187,7 +213,7 @@ export default function Feed() {
     try {
       const response = await postApi.getComments(postId, { limit: 50 });
       const rawComments = response.data?.data || [];
-      
+
       // Enrich comments with user info
       const enrichedComments = await Promise.all(
         rawComments.map(async (comment) => {
@@ -195,15 +221,15 @@ export default function Feed() {
           return transformComment(comment, userInfo);
         })
       );
-      
+
       // Build nested structure (parent/child)
       const commentMap = new Map();
       const rootComments = [];
-      
+
       enrichedComments.forEach((c) => {
         commentMap.set(c.id, { ...c, replies: [] });
       });
-      
+
       enrichedComments.forEach((c) => {
         if (c.parentId && commentMap.has(c.parentId)) {
           commentMap.get(c.parentId).replies.push(commentMap.get(c.id));
@@ -211,7 +237,7 @@ export default function Feed() {
           rootComments.push(commentMap.get(c.id));
         }
       });
-      
+
       setComments(rootComments);
     } catch (error) {
       console.error("Failed to load comments:", error);
@@ -230,12 +256,12 @@ export default function Feed() {
       })
 
       const formData = new FormData();
-      
+
       // Gửi content trực tiếp (không còn title riêng)
       if (postData.content) {
         formData.append("content", postData.content);
       }
-      
+
       // Gửi visibility
       if (postData.visibility) {
         formData.append("visibility", postData.visibility);
@@ -243,7 +269,7 @@ export default function Feed() {
       if (postData.tags && postData.tags.length > 0) {
         postData.tags.forEach((tag) => formData.append("tags", tag));
       }
-      
+
       // Gửi files (ảnh/video)
       if (postData.files && postData.files.length > 0) {
         postData.files.forEach((file) => formData.append("files", file));
@@ -254,7 +280,7 @@ export default function Feed() {
       const response = await postApi.createPost(formData);
       console.log('✅ [Feed] Post created successfully:', response.data)
       const newPostData = response.data?.data;
-      
+
       if (newPostData) {
         const userInfo = await fetchUserInfo(newPostData.user_id);
         const newPost = transformPost(newPostData, userInfo);
@@ -404,9 +430,14 @@ export default function Feed() {
     navigate(`/app/profile/${authorId}`);
   };
 
-  const handleCommunityClick = (community) => {
-    toast.info(`Navigating to c/${community}`);
-    // navigate(`/community/${community}`);
+  const handleCommunityClick = (communityIdOrSlug) => {
+    // communityIdOrSlug can be an ID, slug, or object
+    const slug = typeof communityIdOrSlug === 'object'
+      ? (communityIdOrSlug.slug || communityIdOrSlug.id)
+      : communityIdOrSlug;
+    if (slug) {
+      navigate(`/c/${slug}`);
+    }
   };
 
   const handleEditPost = (post) => {
@@ -415,10 +446,10 @@ export default function Feed() {
 
   const handleUpdatePost = async (postData) => {
     if (!editingPost) return;
-    
+
     try {
       const formData = new FormData();
-      
+
       if (postData.content) {
         formData.append("content", postData.content);
       }
@@ -434,7 +465,7 @@ export default function Feed() {
 
       const response = await postApi.updatePost(editingPost.id, formData);
       const updatedPostData = response.data?.data;
-      
+
       if (updatedPostData) {
         const userInfo = await fetchUserInfo(updatedPostData.user_id);
         const updatedPost = transformPost(updatedPostData, userInfo);
@@ -455,7 +486,7 @@ export default function Feed() {
 
   const confirmDeletePost = async () => {
     if (!deletePostId) return;
-    
+
     setIsDeleting(true);
     try {
       await postApi.deletePost(deletePostId);
@@ -489,8 +520,8 @@ export default function Feed() {
   };
 
   // Filter posts based on active tab
-  const filteredPosts = activeTab === "following" 
-    ? posts.filter(post => post.isFollowing) 
+  const filteredPosts = activeTab === "following"
+    ? posts.filter(post => post.isFollowing)
     : posts;
 
   return (
@@ -565,7 +596,7 @@ export default function Feed() {
         ) : filteredPosts.length === 0 ? (
           <div className="rounded-lg border border-border bg-card p-12 text-center">
             <p className="text-muted-foreground mb-2">
-              {activeTab === "following" 
+              {activeTab === "following"
                 ? "Chưa có bài viết từ người bạn follow."
                 : "Chưa có bài viết nào. Hãy tạo bài viết đầu tiên!"}
             </p>

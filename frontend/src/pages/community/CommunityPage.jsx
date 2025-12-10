@@ -12,6 +12,45 @@ import {
 import { CheckIcon } from '@heroicons/react/24/solid'
 import * as communityApi from 'src/api/community'
 
+// Category icons mapping
+const CATEGORY_ICONS = {
+    Technology: '💻',
+    Gaming: '🎮',
+    Art: '🎨',
+    Music: '🎵',
+    Sports: '⚽',
+    Education: '📚',
+    Business: '💼',
+    Entertainment: '🎬',
+    Lifestyle: '🌟',
+    Science: '🔬',
+    News: '📰',
+    Food: '🍕',
+    Travel: '✈️',
+    Health: '💪',
+    Finance: '💰',
+    Photography: '📷',
+    Movies: '🎥',
+    Books: '📖',
+    Anime: '🎌',
+    Memes: '😂',
+    Other: '🌐',
+}
+
+// Get icon for a community
+const getCommunityIcon = (community) => {
+    if (community.avatar_url) return null
+    if (community.category && CATEGORY_ICONS[community.category]) {
+        return CATEGORY_ICONS[community.category]
+    }
+    const name = community.name?.toLowerCase() || ''
+    if (name.includes('tech') || name.includes('dev') || name.includes('code')) return '💻'
+    if (name.includes('game') || name.includes('gaming')) return '🎮'
+    if (name.includes('art') || name.includes('design')) return '🎨'
+    if (name.includes('music')) return '🎵'
+    return '🌐'
+}
+
 // Community Header Component
 const CommunityHeader = ({
     community,
@@ -24,6 +63,7 @@ const CommunityHeader = ({
     const isOwner = membership?.role === 'owner'
     const isAdmin = membership?.role === 'admin' || isOwner
     const isMember = membership?.status === 'approved'
+    const icon = getCommunityIcon(community)
 
     const handleJoinClick = async () => {
         if (isMember) return
@@ -60,6 +100,8 @@ const CommunityHeader = ({
                                 alt={community.name}
                                 className="w-full h-full object-cover"
                             />
+                        ) : icon ? (
+                            <span className="text-5xl md:text-6xl">{icon}</span>
                         ) : (
                             <UsersIcon className="h-12 w-12 text-primary" />
                         )}
@@ -73,12 +115,12 @@ const CommunityHeader = ({
                             {community.name}
                         </h1>
                         <p className="text-muted-foreground mt-1">
-                            {community.description || 'Chưa có mô tả'}
+                            {community.description || 'No description'}
                         </p>
                         <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
                             <span className="flex items-center gap-1">
                                 <UsersIcon className="h-4 w-4" />
-                                {community.member_count?.toLocaleString() || 0} thành viên
+                                {community.member_count?.toLocaleString() || 0} members
                             </span>
                             {community.category && (
                                 <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs">
@@ -95,7 +137,7 @@ const CommunityHeader = ({
                             <div className="relative group">
                                 <button className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary/10 text-primary font-medium">
                                     <CheckIcon className="h-5 w-5" />
-                                    Đã tham gia
+                                    Joined
                                 </button>
                                 {!isOwner && (
                                     <div className="absolute right-0 top-full mt-1 hidden group-hover:block">
@@ -103,7 +145,7 @@ const CommunityHeader = ({
                                             onClick={onLeave}
                                             className="px-4 py-2 rounded-xl bg-destructive text-destructive-foreground text-sm whitespace-nowrap"
                                         >
-                                            Rời cộng đồng
+                                            Leave Community
                                         </button>
                                     </div>
                                 )}
@@ -115,7 +157,7 @@ const CommunityHeader = ({
                                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground font-medium hover:opacity-90 disabled:opacity-50"
                             >
                                 <PlusIcon className="h-5 w-5" />
-                                {isJoining ? 'Đang xử lý...' : 'Tham gia'}
+                                {isJoining ? 'Processing...' : 'Join'}
                             </button>
                         )}
 
@@ -138,15 +180,15 @@ const CommunityHeader = ({
                 <nav className="flex gap-1 border-t border-border mt-2 pt-2">
                     <NavTab to={`/c/${community.slug}`} end>
                         <ChatBubbleLeftIcon className="h-4 w-4" />
-                        Bài viết
+                        Posts
                     </NavTab>
                     <NavTab to={`/c/${community.slug}/about`}>
                         <InformationCircleIcon className="h-4 w-4" />
-                        Giới thiệu
+                        About
                     </NavTab>
                     <NavTab to={`/c/${community.slug}/members`}>
                         <UserGroupIcon className="h-4 w-4" />
-                        Thành viên
+                        Members
                     </NavTab>
                 </nav>
             </div>
@@ -165,8 +207,8 @@ const NavTab = ({ to, children, end }) => {
         <Link
             to={to}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${isActive
-                    ? 'bg-primary/10 text-primary'
-                    : 'text-muted-foreground hover:bg-muted'
+                ? 'bg-primary/10 text-primary'
+                : 'text-muted-foreground hover:bg-muted'
                 }`}
         >
             {children}
@@ -182,14 +224,14 @@ const CommunitySidebar = ({ community }) => {
         <div className="space-y-4">
             {/* About Card */}
             <div className="rounded-2xl border border-border bg-card p-4">
-                <h3 className="font-semibold text-foreground mb-2">Giới thiệu</h3>
+                <h3 className="font-semibold text-foreground mb-2">About</h3>
                 <p className="text-sm text-muted-foreground">
-                    {community.description || 'Chưa có mô tả'}
+                    {community.description || 'No description'}
                 </p>
                 <div className="mt-3 pt-3 border-t border-border text-sm text-muted-foreground">
                     <div className="flex items-center gap-2">
                         <UsersIcon className="h-4 w-4" />
-                        <span>{community.member_count || 0} thành viên</span>
+                        <span>{community.member_count || 0} members</span>
                     </div>
                 </div>
             </div>
@@ -197,7 +239,7 @@ const CommunitySidebar = ({ community }) => {
             {/* Rules Card */}
             {rules.length > 0 && (
                 <div className="rounded-2xl border border-border bg-card p-4">
-                    <h3 className="font-semibold text-foreground mb-3">Quy định</h3>
+                    <h3 className="font-semibold text-foreground mb-3">Rules</h3>
                     <ol className="space-y-2">
                         {rules.map((rule, index) => (
                             <li key={index} className="text-sm">
@@ -298,12 +340,12 @@ export default function CommunityPage() {
         return (
             <div className="min-h-screen bg-background flex flex-col items-center justify-center">
                 <UsersIcon className="h-16 w-16 text-muted-foreground/50" />
-                <p className="mt-4 text-destructive">{error || 'Không tìm thấy cộng đồng'}</p>
+                <p className="mt-4 text-destructive">{error || 'Community not found'}</p>
                 <Link
                     to="/app/communities"
                     className="mt-4 px-4 py-2 rounded-xl bg-primary text-primary-foreground"
                 >
-                    Quay lại
+                    Go Back
                 </Link>
             </div>
         )

@@ -100,7 +100,12 @@ const PostCard = ({
 
   const likes = post.likes || post.upvotes || 0;
   const hasLiked = post.hasLiked || post.hasUpvoted || false;
-  const community = post.community || post.group_id;
+
+  // Handle community - can be object {id, name, slug} or string
+  const communityData = post.community || post.group_id;
+  const communitySlug = typeof communityData === 'object' ? (communityData?.slug || communityData?.name) : communityData;
+  const communityId = typeof communityData === 'object' ? communityData?.id : communityData;
+
   const authorName = post.author?.name || post.author?.full_name || post.author;
   const authorUsername = post.author?.username || authorName;
   const authorAvatar = post.author?.avatar_url || post.author?.avatar;
@@ -172,19 +177,19 @@ const PostCard = ({
           >
             u/{authorUsername}
           </button>
-          {/* Nếu có community thì hiển thị c/community */}
-          {community && (
+          {/* If has community, show c/community */}
+          {communitySlug && (
             <>
               <span className="text-xs text-muted-foreground">•</span>
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onCommunityClick?.(community);
+                  onCommunityClick?.(communityId || communitySlug);
                 }}
                 className="text-xs font-semibold text-foreground hover:text-primary transition-colors"
               >
-                c/{community}
+                c/{communitySlug}
               </button>
             </>
           )}

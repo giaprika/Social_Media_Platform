@@ -9,8 +9,49 @@ import {
 } from '@heroicons/react/24/outline'
 import * as communityApi from 'src/api/community'
 
+// Category icons mapping
+const CATEGORY_ICONS = {
+    Technology: '💻',
+    Gaming: '🎮',
+    Art: '🎨',
+    Music: '🎵',
+    Sports: '⚽',
+    Education: '📚',
+    Business: '💼',
+    Entertainment: '🎬',
+    Lifestyle: '🌟',
+    Science: '🔬',
+    News: '📰',
+    Food: '🍕',
+    Travel: '✈️',
+    Health: '💪',
+    Finance: '💰',
+    Photography: '📷',
+    Movies: '🎥',
+    Books: '📖',
+    Anime: '🎌',
+    Memes: '😂',
+    Other: '🌐',
+}
+
+// Get icon for a community
+const getCommunityIcon = (community) => {
+    if (community.avatar_url) return null
+    if (community.category && CATEGORY_ICONS[community.category]) {
+        return CATEGORY_ICONS[community.category]
+    }
+    const name = community.name?.toLowerCase() || ''
+    if (name.includes('tech') || name.includes('dev') || name.includes('code')) return '💻'
+    if (name.includes('game') || name.includes('gaming')) return '🎮'
+    if (name.includes('art') || name.includes('design')) return '🎨'
+    if (name.includes('music')) return '🎵'
+    return '🌐'
+}
+
 // CommunityCard Component
 const CommunityCard = ({ community, onJoin, isJoined }) => {
+    const icon = getCommunityIcon(community)
+
     return (
         <div className="group relative overflow-hidden rounded-2xl border border-border bg-card transition-all duration-300 hover:shadow-lg hover:border-primary/30">
             {/* Banner */}
@@ -34,6 +75,8 @@ const CommunityCard = ({ community, onJoin, isJoined }) => {
                             alt={community.name}
                             className="w-full h-full object-cover"
                         />
+                    ) : icon ? (
+                        <span className="text-3xl">{icon}</span>
                     ) : (
                         <UsersIcon className="h-8 w-8 text-primary" />
                     )}
@@ -51,14 +94,14 @@ const CommunityCard = ({ community, onJoin, isJoined }) => {
                     </h3>
                 </Link>
                 <p className="text-sm text-muted-foreground mt-1 line-clamp-2 min-h-[40px]">
-                    {community.description || 'Chưa có mô tả'}
+                    {community.description || 'No description'}
                 </p>
 
                 {/* Stats */}
                 <div className="flex items-center gap-4 mt-3 text-sm text-muted-foreground">
                     <span className="flex items-center gap-1">
                         <UsersIcon className="h-4 w-4" />
-                        {community.member_count?.toLocaleString() || 0} thành viên
+                        {community.member_count?.toLocaleString() || 0} members
                     </span>
                     {community.category && (
                         <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs">
@@ -71,14 +114,14 @@ const CommunityCard = ({ community, onJoin, isJoined }) => {
                 <div className="mt-4">
                     {isJoined ? (
                         <button className="w-full py-2 px-4 rounded-xl border border-primary text-primary font-medium hover:bg-primary/10 transition-colors">
-                            Đã tham gia
+                            Joined
                         </button>
                     ) : (
                         <button
                             onClick={() => onJoin?.(community)}
                             className="w-full py-2 px-4 rounded-xl bg-primary text-primary-foreground font-medium hover:opacity-90 transition-opacity"
                         >
-                            Tham gia
+                            Join
                         </button>
                     )}
                 </div>
@@ -193,14 +236,14 @@ export default function CommunitiesExplore() {
                 <div className="max-w-7xl mx-auto px-4 py-4">
                     <div className="flex items-center justify-between gap-4">
                         <h1 className="text-2xl font-bold text-foreground">
-                            Khám phá Cộng đồng
+                            Explore Communities
                         </h1>
                         <button
                             onClick={() => navigate('/app/communities/create')}
                             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground font-medium hover:opacity-90 transition-opacity"
                         >
                             <PlusIcon className="h-5 w-5" />
-                            Tạo cộng đồng
+                            Create Community
                         </button>
                     </div>
 
@@ -213,7 +256,7 @@ export default function CommunitiesExplore() {
                                 type="text"
                                 value={searchQuery}
                                 onChange={handleSearch}
-                                placeholder="Tìm kiếm cộng đồng..."
+                                placeholder="Search communities..."
                                 className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-muted/50 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                             />
                         </div>
@@ -224,8 +267,8 @@ export default function CommunitiesExplore() {
                             onChange={(e) => setSortBy(e.target.value)}
                             className="px-4 py-2.5 rounded-xl border border-border bg-muted/50 text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                         >
-                            <option value="popular">Phổ biến nhất</option>
-                            <option value="newest">Mới nhất</option>
+                            <option value="popular">Most Popular</option>
+                            <option value="newest">Newest</option>
                             <option value="alphabetical">A-Z</option>
                         </select>
 
@@ -261,7 +304,7 @@ export default function CommunitiesExplore() {
                                 : 'bg-muted text-muted-foreground hover:bg-muted/80'
                                 }`}
                         >
-                            Tất cả
+                            All
                         </button>
                         {categories.map((cat) => (
                             <button
@@ -285,7 +328,7 @@ export default function CommunitiesExplore() {
                 {myCommunities.length > 0 && !searchQuery && !selectedCategory && (
                     <div className="mb-8">
                         <h2 className="text-lg font-semibold text-foreground mb-4">
-                            Cộng đồng của tôi
+                            My Communities
                         </h2>
                         <div className="flex gap-3 overflow-x-auto pb-2">
                             {myCommunities.slice(0, 5).map((community) => (
@@ -302,7 +345,7 @@ export default function CommunitiesExplore() {
                             ))}
                             {myCommunities.length > 5 && (
                                 <span className="px-4 py-2 text-muted-foreground">
-                                    +{myCommunities.length - 5} khác
+                                    +{myCommunities.length - 5} more
                                 </span>
                             )}
                         </div>
@@ -324,7 +367,7 @@ export default function CommunitiesExplore() {
                             onClick={loadCommunities}
                             className="mt-4 px-4 py-2 rounded-xl bg-primary text-primary-foreground"
                         >
-                            Thử lại
+                            Retry
                         </button>
                     </div>
                 )}
@@ -337,14 +380,14 @@ export default function CommunitiesExplore() {
                                 <UsersIcon className="h-16 w-16 mx-auto text-muted-foreground/50" />
                                 <p className="mt-4 text-muted-foreground">
                                     {searchQuery
-                                        ? 'Không tìm thấy cộng đồng nào'
-                                        : 'Chưa có cộng đồng nào'}
+                                        ? 'No communities found'
+                                        : 'No communities yet'}
                                 </p>
                                 <button
                                     onClick={() => navigate('/app/communities/create')}
                                     className="mt-4 px-4 py-2 rounded-xl bg-primary text-primary-foreground"
                                 >
-                                    Tạo cộng đồng đầu tiên
+                                    Create First Community
                                 </button>
                             </div>
                         ) : (
@@ -374,10 +417,10 @@ export default function CommunitiesExplore() {
                                     disabled={page === 1}
                                     className="px-4 py-2 rounded-xl border border-border text-foreground disabled:opacity-50"
                                 >
-                                    Trước
+                                    Previous
                                 </button>
                                 <span className="px-4 py-2 text-muted-foreground">
-                                    Trang {page} / {pagination.totalPages}
+                                    Page {page} / {pagination.totalPages}
                                 </span>
                                 <button
                                     onClick={() =>
@@ -386,7 +429,7 @@ export default function CommunitiesExplore() {
                                     disabled={page === pagination.totalPages}
                                     className="px-4 py-2 rounded-xl border border-border text-foreground disabled:opacity-50"
                                 >
-                                    Sau
+                                    Next
                                 </button>
                             </div>
                         )}
