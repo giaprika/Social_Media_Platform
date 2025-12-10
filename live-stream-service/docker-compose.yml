@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  # ===========================================
+  # SRS Media Server (Simple Realtime Server)
+  # ===========================================
+  srs:
+    image: ossrs/srs:5
+    container_name: live-service-srs
+    restart: unless-stopped
+    ports:
+      # RTMP - for OBS Studio streaming
+      - "1935:1935"
+      # HTTP API & HLS delivery
+      - "8080:8080"
+      # WebRTC signaling
+      - "1985:1985"
+      # WebRTC media (UDP)
+      - "8000:8000/udp"
+    volumes:
+      # SRS configuration file
+      - ./configs/srs.conf:/usr/local/srs/conf/srs.conf
+      # HLS output directory (mount to GCS in production)
+      - ./data/hls:/usr/local/srs/objs/nginx/html
+    environment:
+      # Public IP for WebRTC (set your server's public IP in production)
+      - CANDIDATE=${SRS_PUBLIC_IP:-127.0.0.1}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:1985/api/v1/versions"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - live-network
+
+  # ===========================================
+  # Live Service API (Go Application)
+  # ===========================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: live-service-api
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-8081}:8080"
+    environment:
+      - ENV=${ENV:-development}
+      - SERVER_PORT=8080
+      - DB_HOST=${DB_HOST:-localhost}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_NAME=${DB_NAME:-live_service}
+      - DB_SSLMODE=${DB_SSLMODE:-disable}
+      - SRS_SERVER_URL=http://srs:8080
+      - SRS_SERVER_IP=srs
+      - SRS_RTMP_PORT=1935
+      - SRS_CALLBACK_URL=http://api:8080/api/v1/callbacks
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-key}
+    depends_on:
+      srs:
+        condition: service_healthy
+    networks:
+      - live-network
+
+# ===========================================
+# Networks
+# ===========================================
+networks:
+  live-network:
+    driver: bridge
