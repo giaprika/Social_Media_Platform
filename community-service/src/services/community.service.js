@@ -49,6 +49,38 @@ export class CommunityService {
   }
 
   /**
+   * Get all communities with filters, sorting, and pagination
+   * @param {Object} options - { category, visibility, sort, page, limit }
+   */
+  static async getCommunities(options = {}) {
+    const result = await CommunityRepository.findAll(options);
+    return {
+      communities: result.communities.map((c) => new Community(c)),
+      pagination: result.pagination,
+    };
+  }
+
+  /**
+   * Search communities
+   * @param {string} query - Search query
+   * @param {Object} options - { category, page, limit }
+   */
+  static async searchCommunities(query, options = {}) {
+    const result = await CommunityRepository.search(query, options);
+    return {
+      communities: result.communities.map((c) => new Community(c)),
+      pagination: result.pagination,
+    };
+  }
+
+  /**
+   * Get all categories
+   */
+  static async getCategories() {
+    return await CommunityRepository.getCategories();
+  }
+
+  /**
    * Update community
    */
   static async updateCommunity(communityId, updateData) {

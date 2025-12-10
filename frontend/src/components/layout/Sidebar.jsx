@@ -56,8 +56,8 @@ const navSections = [
     title: "Communities",
     collapsible: true,
     items: [
-      { id: "profile", label: "My Profile", to: PATHS.PROFILE, icon: UserGroupIcon },
-      { id: "recent", label: "Recent", to: PATHS.FEED, icon: Bars3BottomLeftIcon },
+      { id: "communities", label: "Explore Communities", to: PATHS.COMMUNITIES, icon: UserGroupIcon },
+      { id: "profile", label: "My Profile", to: PATHS.PROFILE, icon: Bars3BottomLeftIcon },
     ],
   },
   {

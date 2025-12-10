@@ -19,6 +19,60 @@ export class CommunityController {
   }
 
   /**
+   * Get all communities with pagination and filters
+   * Query params: category, sort (popular|newest|alphabetical), page, limit
+   */
+  static async getCommunities(req, res) {
+    try {
+      const { category, sort, page, limit } = req.query;
+      const options = {
+        category,
+        sort: sort || 'popular',
+        page: parseInt(page, 10) || 1,
+        limit: parseInt(limit, 10) || 20,
+      };
+      const result = await CommunityService.getCommunities(options);
+      res.status(200).json(result);
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  /**
+   * Search communities
+   * Query params: q (search query), category, page, limit
+   */
+  static async searchCommunities(req, res) {
+    try {
+      const { q, category, page, limit } = req.query;
+      if (!q) {
+        return res.status(400).json({ error: "Thiếu từ khóa tìm kiếm (q)" });
+      }
+      const options = {
+        category,
+        page: parseInt(page, 10) || 1,
+        limit: parseInt(limit, 10) || 20,
+      };
+      const result = await CommunityService.searchCommunities(q, options);
+      res.status(200).json(result);
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  /**
+   * Get all categories
+   */
+  static async getCategories(req, res) {
+    try {
+      const categories = await CommunityService.getCategories();
+      res.status(200).json({ categories });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  /**
    * Get community by ID
    */
   static async getCommunityById(req, res) {

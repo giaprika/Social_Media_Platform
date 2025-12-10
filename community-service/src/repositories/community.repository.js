@@ -137,6 +137,155 @@ export class CommunityRepository {
   }
 
 
+  // ============= DISCOVERY METHODS =============
+
+  /**
+   * Find all communities with filters, sorting, and pagination
+   * @param {Object} options - { category, visibility, sort, page, limit }
+   */
+  static async findAll(options = {}) {
+    const {
+      category,
+      visibility = 'public',
+      sort = 'popular', // popular, newest, alphabetical
+      page = 1,
+      limit = 20,
+    } = options;
+
+    const offset = (page - 1) * limit;
+    const conditions = ['deleted_at IS NULL'];
+    const params = [];
+    let paramIndex = 1;
+
+    // Filter by visibility
+    if (visibility) {
+      conditions.push(`visibility = $${paramIndex}`);
+      params.push(visibility);
+      paramIndex++;
+    }
+
+    // Filter by category
+    if (category) {
+      conditions.push(`category = $${paramIndex}`);
+      params.push(category);
+      paramIndex++;
+    }
+
+    // Determine sort order
+    let orderBy;
+    switch (sort) {
+      case 'newest':
+        orderBy = 'created_at DESC';
+        break;
+      case 'alphabetical':
+        orderBy = 'name ASC';
+        break;
+      case 'popular':
+      default:
+        orderBy = 'member_count DESC, created_at DESC';
+        break;
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    // Get total count
+    const countResult = await db.query(
+      `SELECT COUNT(*) as total FROM communities ${whereClause}`,
+      params
+    );
+    const total = parseInt(countResult.rows[0].total, 10);
+
+    // Get communities
+    params.push(limit);
+    params.push(offset);
+    const result = await db.query(
+      `SELECT * FROM communities 
+       ${whereClause}
+       ORDER BY ${orderBy}
+       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      params
+    );
+
+    return {
+      communities: result.rows,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * Search communities by name or description
+   * @param {string} query - Search query
+   * @param {Object} options - { category, page, limit }
+   */
+  static async search(query, options = {}) {
+    const { category, page = 1, limit = 20 } = options;
+    const offset = (page - 1) * limit;
+    const searchPattern = `%${query}%`;
+
+    const conditions = [
+      'deleted_at IS NULL',
+      'visibility = $1',
+      '(name ILIKE $2 OR description ILIKE $2 OR slug ILIKE $2)',
+    ];
+    const params = ['public', searchPattern];
+    let paramIndex = 3;
+
+    if (category) {
+      conditions.push(`category = $${paramIndex}`);
+      params.push(category);
+      paramIndex++;
+    }
+
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+
+    // Get total count
+    const countResult = await db.query(
+      `SELECT COUNT(*) as total FROM communities ${whereClause}`,
+      params
+    );
+    const total = parseInt(countResult.rows[0].total, 10);
+
+    // Get communities
+    params.push(limit);
+    params.push(offset);
+    const result = await db.query(
+      `SELECT * FROM communities 
+       ${whereClause}
+       ORDER BY member_count DESC, created_at DESC
+       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      params
+    );
+
+    return {
+      communities: result.rows,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * Get all distinct categories
+   */
+  static async getCategories() {
+    const result = await db.query(
+      `SELECT DISTINCT category, COUNT(*) as count
+       FROM communities 
+       WHERE deleted_at IS NULL AND category IS NOT NULL
+       GROUP BY category
+       ORDER BY count DESC`
+    );
+    return result.rows;
+  }
+
   // ============= PINNED POST METHODS =============
   /**
    * Find pinned posts by community

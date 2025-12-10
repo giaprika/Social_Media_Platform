@@ -50,6 +50,53 @@ export const deleteCommunity = async (id) => {
 	return response.data
 }
 
+// ============= DISCOVERY ENDPOINTS =============
+
+/**
+ * Lấy danh sách communities với filters và pagination
+ * @param {Object} options - { category, sort, page, limit }
+ * @param {string} [options.category] - Filter theo category
+ * @param {string} [options.sort] - Sort: popular, newest, alphabetical
+ * @param {number} [options.page] - Page number (default: 1)
+ * @param {number} [options.limit] - Items per page (default: 20)
+ */
+export const getCommunities = async (options = {}) => {
+	const params = new URLSearchParams()
+	if (options.category) params.append('category', options.category)
+	if (options.sort) params.append('sort', options.sort)
+	if (options.page) params.append('page', options.page.toString())
+	if (options.limit) params.append('limit', options.limit.toString())
+
+	const queryString = params.toString()
+	const url = `${BASE_URL}/communities${queryString ? '?' + queryString : ''}`
+	const response = await axios.get(url)
+	return response.data
+}
+
+/**
+ * Tìm kiếm communities
+ * @param {string} query - Từ khóa tìm kiếm
+ * @param {Object} options - { category, page, limit }
+ */
+export const searchCommunities = async (query, options = {}) => {
+	const params = new URLSearchParams()
+	params.append('q', query)
+	if (options.category) params.append('category', options.category)
+	if (options.page) params.append('page', options.page.toString())
+	if (options.limit) params.append('limit', options.limit.toString())
+
+	const response = await axios.get(`${BASE_URL}/communities/search?${params.toString()}`)
+	return response.data
+}
+
+/**
+ * Lấy danh sách categories
+ */
+export const getCategories = async () => {
+	const response = await axios.get(`${BASE_URL}/communities/categories`)
+	return response.data
+}
+
 // ============= PINNED POSTS ENDPOINTS =============
 
 /**

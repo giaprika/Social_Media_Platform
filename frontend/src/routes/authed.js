@@ -7,6 +7,15 @@ import Profile from '../pages/profile'
 import Settings from '../pages/setting'
 import Search from '../pages/search'
 import PostDetail from '../pages/PostDetail'
+import {
+	CommunitiesExplore,
+	CommunityPage,
+	CommunityFeed,
+	CommunityAbout,
+	CommunityMembers,
+	CommunityCreate,
+	CommunitySettings,
+} from '../pages/community'
 
 const routes = {
 	element: <DefaultLayout />,
@@ -51,9 +60,43 @@ const routes = {
 					path: PATHS.SEARCH,
 					element: <Search />,
 				},
+				// Community routes
+				{
+					path: PATHS.COMMUNITIES,
+					element: <CommunitiesExplore />,
+				},
+				{
+					path: PATHS.COMMUNITY_CREATE,
+					element: <CommunityCreate />,
+				},
 			],
+		},
+		// Community detail page (accessible without full auth for viewing)
+		{
+			path: '/c/:slug',
+			element: <CommunityPage />,
+			children: [
+				{
+					index: true,
+					element: <CommunityFeed />,
+				},
+				{
+					path: 'about',
+					element: <CommunityAbout />,
+				},
+				{
+					path: 'members',
+					element: <CommunityMembers />,
+				},
+			],
+		},
+		// Community settings (requires auth)
+		{
+			path: '/c/:slug/settings',
+			element: <CommunitySettings />,
 		},
 	],
 }
 
 export default routes
+

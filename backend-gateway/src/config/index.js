@@ -73,7 +73,11 @@ const config = {
 			pathRewrite: {
 				'^/api/service/community': '', // /api/service/community/communities → /communities
 			},
-			excludeList: [],
+			excludeList: [
+				'/communities', // GET list communities (public browse)
+				'/communities/search', // GET search communities
+				'/communities/categories', // GET categories
+			],
 			timeout: 5000,
 		},
 	},
