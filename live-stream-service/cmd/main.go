@@ -2,12 +2,14 @@ package main
 
 import (
 	"log"
+	"net/http"
 
 	"live-service/internal/config"
 	"live-service/internal/handler"
 	"live-service/internal/middleware"
 	"live-service/internal/repository"
 	"live-service/internal/service"
+	"live-service/pkg/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -63,9 +65,30 @@ func main() {
 		}
 	}
 
-	// Health check
+	// Initialize SRS health checker
+	srsHealthChecker := utils.NewSRSHealthChecker(cfg.SRS.ServerIP, cfg.SRS.APIPort)
+
+	// Health check - API service only
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	// Health check - includes SRS server status
+	router.GET("/health/srs", func(c *gin.Context) {
+		version, err := srsHealthChecker.GetVersion(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"status":  "unhealthy",
+				"service": "srs",
+				"error":   err.Error(),
+			})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "healthy",
+			"service": "srs",
+			"version": version.Data.Version,
+		})
 	})
 
 	// Start server
