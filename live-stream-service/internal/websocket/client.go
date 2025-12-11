@@ -21,6 +21,11 @@ const (
 
 	// Maximum message size allowed from peer
 	maxMessageSize = 512
+
+	// Rate limiting constants
+	rateLimitWindow   = 1 * time.Second // Time window for rate limiting
+	rateLimitMaxMsgs  = 5               // Max messages per window
+	maxMessageContent = 200             // Max chat message length in characters
 )
 
 // Client represents a single WebSocket connection
@@ -33,18 +38,48 @@ type Client struct {
 	username string
 	mu       sync.Mutex
 	closed   bool
+
+	// Rate limiting
+	msgTimestamps []time.Time
+	rateMu        sync.Mutex
 }
 
 // NewClient creates a new WebSocket client
 func NewClient(hub *Hub, conn *websocket.Conn, streamID, userID int64, username string) *Client {
 	return &Client{
-		hub:      hub,
-		conn:     conn,
-		send:     make(chan []byte, 256),
-		streamID: streamID,
-		userID:   userID,
-		username: username,
+		hub:           hub,
+		conn:          conn,
+		send:          make(chan []byte, 256),
+		streamID:      streamID,
+		userID:        userID,
+		username:      username,
+		msgTimestamps: make([]time.Time, 0, rateLimitMaxMsgs+1),
 	}
+}
+
+// checkRateLimit checks if the client is sending messages too fast
+// Returns true if rate limit exceeded (should close connection)
+func (c *Client) checkRateLimit() bool {
+	c.rateMu.Lock()
+	defer c.rateMu.Unlock()
+
+	now := time.Now()
+	windowStart := now.Add(-rateLimitWindow)
+
+	// Remove timestamps outside the window
+	validTimestamps := make([]time.Time, 0, len(c.msgTimestamps))
+	for _, ts := range c.msgTimestamps {
+		if ts.After(windowStart) {
+			validTimestamps = append(validTimestamps, ts)
+		}
+	}
+
+	// Add current timestamp
+	validTimestamps = append(validTimestamps, now)
+	c.msgTimestamps = validTimestamps
+
+	// Check if exceeded limit
+	return len(c.msgTimestamps) > rateLimitMaxMsgs
 }
 
 // ReadPump pumps messages from the WebSocket connection to the hub
@@ -75,6 +110,35 @@ func (c *Client) ReadPump() {
 		if err := json.Unmarshal(message, &msg); err != nil {
 			log.Printf("Invalid message format: %v", err)
 			continue
+		}
+
+		// Only rate limit chat messages
+		if msg.Type == MessageTypeChat {
+			// Check rate limit
+			if c.checkRateLimit() {
+				log.Printf("Rate limit exceeded for user %d, closing connection", c.userID)
+				// Send error message before closing
+				errMsg := NewErrorMessage("Rate limit exceeded. Connection closed.")
+				if data, err := json.Marshal(errMsg); err == nil {
+					c.Send(data)
+				}
+				return // This will trigger defer and close connection
+			}
+
+			// Validate message length
+			if len(msg.Content) > maxMessageContent {
+				log.Printf("Message too long from user %d: %d chars", c.userID, len(msg.Content))
+				errMsg := NewErrorMessage("Message too long. Maximum 200 characters allowed.")
+				if data, err := json.Marshal(errMsg); err == nil {
+					c.Send(data)
+				}
+				continue // Skip this message but don't close connection
+			}
+
+			// Check for empty message
+			if len(msg.Content) == 0 {
+				continue // Silently ignore empty messages
+			}
 		}
 
 		// Set sender info
