@@ -79,6 +79,27 @@ services:
     networks:
       - live-network
 
+  coturn:
+    image: coturn/coturn
+    container_name: live-service-coturn
+    restart: unless-stopped
+    # Dùng host networking để hiệu năng mạng tốt nhất và tránh lỗi NAT trong Docker
+    network_mode: host
+    command:
+      - -n                                        # Chạy foreground (cho Docker quản lý log)
+      - --log-file=stdout                         # Log ra màn hình console
+      - --min-port=49152                          # Port relay thấp nhất
+      - --max-port=65535                          # Port relay cao nhất
+      - --realm=${TURN_REALM:-extase.dev}         # Tên miền
+      - --listening-port=3478                     # Cổng lắng nghe TURN/STUN
+      - --tls-listening-port=5349                 # Cổng TURNS (TLS) - cho corporate firewall
+      - --fingerprint                             # Dùng fingerprint trong gói tin
+      - --use-auth-secret                         # Dynamic credentials (RFC 5766)
+      - --static-auth-secret=${TURN_SECRET}       # Shared secret (chỉ Backend + Coturn biết)
+      - --external-ip=${TURN_EXTERNAL_IP:-127.0.0.1}
+      - --no-cli                                  # Disable CLI (không cần)
+      - --no-software-attribute                   # Ẩn version trong response
+
 # ===========================================
 # Networks
 # ===========================================

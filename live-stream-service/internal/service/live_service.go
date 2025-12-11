@@ -184,6 +184,7 @@ func (s *liveService) ListStreams(ctx context.Context, params entity.PaginationP
 }
 
 // GetWebRTCInfo returns WebRTC connection info for a stream
+// Includes ICE servers with time-limited TURN credentials (RFC 5766)
 func (s *liveService) GetWebRTCInfo(ctx context.Context, id int64, userID int64) (*entity.WebRTCInfoResponse, error) {
 	session, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -203,14 +204,17 @@ func (s *liveService) GetWebRTCInfo(ctx context.Context, id int64, userID int64)
 	apiBase := fmt.Sprintf("http://%s:%d", serverIP, s.config.SRS.APIPort)
 	whepEndpoint := fmt.Sprintf("%s/rtc/v1/whep/?app=live&stream=%d", apiBase, streamID)
 
-	// Default ICE servers (Google STUN)
-	iceServers := []entity.ICEServer{
-		{
-			URLs: []string{
-				"stun:stun.l.google.com:19302",
-				"stun:stun1.l.google.com:19302",
-			},
-		},
+	// Get ICE servers from config (includes STUN + TURN with dynamic credentials)
+	configICEServers := s.config.GetICEServers()
+
+	// Convert to entity.ICEServer format
+	iceServers := make([]entity.ICEServer, len(configICEServers))
+	for i, server := range configICEServers {
+		iceServers[i] = entity.ICEServer{
+			URLs:       server.URLs,
+			Username:   server.Username,
+			Credential: server.Credential,
+		}
 	}
 
 	resp := &entity.WebRTCInfoResponse{

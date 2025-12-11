@@ -1,6 +1,9 @@
 package config
 
 import (
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"time"
@@ -19,6 +22,7 @@ type Config struct {
 	CDN      CDNConfig      `mapstructure:"cdn"`
 	Auth     AuthConfig     `mapstructure:"auth"`
 	Budget   BudgetConfig   `mapstructure:"budget"`
+	TURN     TURNConfig     `mapstructure:"turn"`
 	Env      string         `mapstructure:"env"`
 }
 
@@ -74,6 +78,13 @@ type BudgetConfig struct {
 	MonthlyLimit   float64 `mapstructure:"monthly_limit"`
 	AlertThreshold float64 `mapstructure:"alert_threshold"`
 	AlertEmail     string  `mapstructure:"alert_email"`
+}
+
+type TURNConfig struct {
+	Realm         string        `mapstructure:"realm"`
+	Secret        string        `mapstructure:"secret"`
+	ExternalIP    string        `mapstructure:"external_ip"`
+	CredentialTTL time.Duration `mapstructure:"credential_ttl"`
 }
 
 func Load() (*Config, error) {
@@ -145,6 +156,65 @@ func (c *Config) GetHLSURL(streamID int64) string {
 	return fmt.Sprintf("%s/live/%d.m3u8", c.CDN.BaseURL, streamID)
 }
 
+// TURNCredentials holds time-limited TURN credentials (RFC 5766)
+type TURNCredentials struct {
+	Username   string `json:"username"`
+	Credential string `json:"credential"`
+}
+
+// GenerateTURNCredentials creates time-limited credentials for TURN server
+// Uses HMAC-SHA1 as per RFC 5766 (TURN REST API)
+// Username = timestamp (expiry time as Unix epoch)
+// Password = Base64(HMAC-SHA1(username, secret))
+func (c *Config) GenerateTURNCredentials() TURNCredentials {
+	// Username is the expiry timestamp
+	expiry := time.Now().Add(c.TURN.CredentialTTL).Unix()
+	username := fmt.Sprintf("%d", expiry)
+
+	// Password = Base64(HMAC-SHA1(username, secret))
+	h := hmac.New(sha1.New, []byte(c.TURN.Secret))
+	h.Write([]byte(username))
+	credential := base64.StdEncoding.EncodeToString(h.Sum(nil))
+
+	return TURNCredentials{
+		Username:   username,
+		Credential: credential,
+	}
+}
+
+// ICEServer represents a STUN/TURN server for WebRTC
+type ICEServer struct {
+	URLs       []string `json:"urls"`
+	Username   string   `json:"username,omitempty"`
+	Credential string   `json:"credential,omitempty"`
+}
+
+// GetICEServers returns ICE servers config for WebRTC clients
+// Includes Google STUN (free) and our TURN server (with time-limited credentials)
+func (c *Config) GetICEServers() []ICEServer {
+	servers := []ICEServer{
+		// Google STUN servers (free, public)
+		{URLs: []string{"stun:stun.l.google.com:19302"}},
+		{URLs: []string{"stun:stun1.l.google.com:19302"}},
+	}
+
+	// Add TURN server if configured
+	if c.TURN.Secret != "" && c.TURN.ExternalIP != "" {
+		creds := c.GenerateTURNCredentials()
+		servers = append(servers, ICEServer{
+			URLs: []string{
+				fmt.Sprintf("turn:%s:3478", c.TURN.ExternalIP),
+				fmt.Sprintf("turn:%s:3478?transport=tcp", c.TURN.ExternalIP),
+				fmt.Sprintf("turns:%s:5349", c.TURN.ExternalIP),
+			},
+			Username:   creds.Username,
+			Credential: creds.Credential,
+		})
+	}
+
+	return servers
+}
+
 // GetDSN returns the PostgreSQL connection string
 func (c *Config) GetDSN() string {
 	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
@@ -208,6 +278,12 @@ func setDefaults() {
 	_ = viper.BindEnv("budget.alert_threshold", "BUDGET_ALERT_THRESHOLD")
 	_ = viper.BindEnv("budget.alert_email", "BUDGET_ALERT_EMAIL")
 
+	// TURN bindings
+	_ = viper.BindEnv("turn.realm", "TURN_REALM")
+	_ = viper.BindEnv("turn.secret", "TURN_SECRET")
+	_ = viper.BindEnv("turn.external_ip", "TURN_EXTERNAL_IP")
+	_ = viper.BindEnv("turn.credential_ttl", "TURN_CREDENTIAL_TTL")
+
 	// Environment defaults
 	viper.SetDefault("env", "development")
 
@@ -257,6 +333,12 @@ func setDefaults() {
 	viper.SetDefault("budget.monthly_limit", 100.0)
 	viper.SetDefault("budget.alert_threshold", 0.8)
 	viper.SetDefault("budget.alert_email", "")
+
+	// TURN defaults
+	viper.SetDefault("turn.realm", "extase.dev")
+	viper.SetDefault("turn.secret", "")
+	viper.SetDefault("turn.external_ip", "")
+	viper.SetDefault("turn.credential_ttl", 24*time.Hour)
 }
 
 func InitDB(cfg *Config) (*sqlx.DB, error) {
