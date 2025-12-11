@@ -22,6 +22,71 @@ class SRSWebRTCClient {
     }
 
     /**
+     * Cached ICE servers from API (includes time-limited TURN credentials)
+     */
+    cachedIceServers = null;
+
+    /**
+     * Fetch ICE servers from API (includes TURN with time-limited credentials)
+     * Falls back to Google STUN if API fails
+     */
+    async fetchIceServers(streamId) {
+        const config = this.getConfig();
+        
+        // Default STUN servers (fallback)
+        const defaultServers = [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+        ];
+
+        if (!streamId) {
+            return defaultServers;
+        }
+
+        try {
+            // Fetch WebRTC info from API (includes ICE servers with TURN credentials)
+            const apiUrl = `/api/v1/live/${streamId}/webrtc`;
+            const response = await fetch(apiUrl);
+            
+            if (!response.ok) {
+                log('warn', `Failed to fetch ICE servers: ${response.status}`);
+                return defaultServers;
+            }
+
+            const data = await response.json();
+            
+            if (data.ice_servers && data.ice_servers.length > 0) {
+                this.cachedIceServers = data.ice_servers;
+                const hasTurn = data.ice_servers.some(s => 
+                    s.urls && s.urls.some(u => u.startsWith('turn'))
+                );
+                if (hasTurn) {
+                    log('info', '✅ TURN server configured (time-limited credentials)');
+                }
+                return data.ice_servers;
+            }
+        } catch (e) {
+            log('warn', `ICE servers fetch error: ${e.message}`);
+        }
+
+        return defaultServers;
+    }
+
+    /**
+     * Get ICE servers (use cached or default)
+     */
+    getIceServers() {
+        if (this.cachedIceServers) {
+            return this.cachedIceServers;
+        }
+        // Default STUN servers
+        return [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+        ];
+    }
+
+    /**
      * Validate configuration for publishing (needs stream ID + token)
      */
     validatePublishConfig() {
@@ -59,9 +124,14 @@ class SRSWebRTCClient {
     async startPublish() {
         const config = this.validatePublishConfig();
         log('info', `Starting publish to ${config.serverIP}...`);
-        updateStatus('publish', 'connecting', 'Requesting camera access...');
+        updateStatus('publish', 'connecting', 'Fetching ICE servers...');
 
         try {
+            // Fetch ICE servers from API (includes TURN with time-limited credentials)
+            const iceServers = await this.fetchIceServers(config.streamId);
+
+            updateStatus('publish', 'connecting', 'Requesting camera access...');
+
             // Get user media
             this.localStream = await navigator.mediaDevices.getUserMedia({
                 video: {
@@ -77,13 +147,8 @@ class SRSWebRTCClient {
             localVideo.srcObject = this.localStream;
             log('info', 'Camera/Mic access granted');
 
-            // Create peer connection
-            this.publishPC = new RTCPeerConnection({
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' }
-                ]
-            });
+            // Create peer connection with STUN/TURN servers
+            this.publishPC = new RTCPeerConnection({ iceServers });
 
             // Add tracks
             this.localStream.getTracks().forEach(track => {
@@ -171,16 +236,16 @@ class SRSWebRTCClient {
     async startPlay() {
         const config = this.validatePlayConfig();
         log('info', `Starting playback from ${config.serverIP}...`);
-        updateStatus('play', 'connecting', 'Connecting to stream...');
+        updateStatus('play', 'connecting', 'Fetching ICE servers...');
 
         try {
-            // Create peer connection
-            this.playPC = new RTCPeerConnection({
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' }
-                ]
-            });
+            // Fetch ICE servers from API (includes TURN with time-limited credentials)
+            const iceServers = await this.fetchIceServers(config.streamId);
+
+            updateStatus('play', 'connecting', 'Connecting to stream...');
+
+            // Create peer connection with STUN/TURN servers
+            this.playPC = new RTCPeerConnection({ iceServers });
 
             // Handle incoming tracks
             this.playPC.ontrack = (event) => {
