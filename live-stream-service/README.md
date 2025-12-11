@@ -8,7 +8,7 @@ A microservice-based live streaming platform that enables users to broadcast liv
 - **Real-time Playback**: HLS delivery via CDN with 10-15s latency
 - **Real-time Chat**: WebSocket-based chat with viewer count updates
 - **Stream Management**: Create, manage, and monitor live sessions
-- **Authentication**: Secure stream keys and JWT validation
+- **Authentication**: Secure stream keys (auth via API Gateway)
 - **Rate Limiting**: Chat spam protection (5 msg/sec limit)
 - **Scalability**: Support for 50+ concurrent streams
 
@@ -57,16 +57,17 @@ make run
 
 ## API Reference
 
-Base URL: `http://localhost:8080`
+Base URL: 
+- Development: `http://localhost:8080`
+- Production: `https://api.extase.dev`
 
 ### Authentication
 
-Most endpoints require JWT token in header:
-```
-Authorization: Bearer <token>
-```
+Authentication is handled by API Gateway/upstream service. This service expects `X-User-ID` header:
 
-For development, use `X-User-ID` header to simulate authenticated user.
+```
+X-User-ID: 123
+```
 
 ---
 
@@ -75,7 +76,7 @@ For development, use `X-User-ID` header to simulate authenticated user.
 #### Create Stream
 ```http
 POST /api/v1/live/create
-Authorization: Bearer <token>
+X-User-ID: 123
 Content-Type: application/json
 
 {
@@ -125,7 +126,7 @@ GET /api/v1/live/feed?page=1&limit=20
 #### Get Stream Details
 ```http
 GET /api/v1/live/:id
-Authorization: Bearer <token>  (optional - shows stream_key if owner)
+X-User-ID: 123  (optional - shows stream_key if owner)
 ```
 
 **Response (200):**
@@ -149,7 +150,7 @@ Authorization: Bearer <token>  (optional - shows stream_key if owner)
 #### Get WebRTC Info
 ```http
 GET /api/v1/live/:id/webrtc
-Authorization: Bearer <token>  (optional)
+X-User-ID: 123  (optional - shows publish_url if owner)
 ```
 
 **Response (200):**
@@ -289,10 +290,10 @@ GET /health/srs  # SRS media server health
 
 ```javascript
 class LiveChat {
-  constructor(streamId, userId, username) {
+  constructor(streamId, userId, username, baseUrl = 'wss://api.extase.dev') {
     this.streamId = streamId;
     this.ws = new WebSocket(
-      `ws://localhost:8080/ws/live/${streamId}?user_id=${userId}&username=${encodeURIComponent(username)}`
+      `${baseUrl}/ws/live/${streamId}?user_id=${userId}&username=${encodeURIComponent(username)}`
     );
     
     this.ws.onopen = () => console.log('Connected to chat');
@@ -435,7 +436,6 @@ See `.env.example` for full list. Key variables:
 | `SRS_SERVER_IP` | SRS server IP | localhost |
 | `SRS_PUBLIC_IP` | Public IP for WebRTC | 127.0.0.1 |
 | `TURN_SECRET` | TURN server shared secret | - |
-| `JWT_SECRET` | JWT signing key | - |
 
 ---
 
