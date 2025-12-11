@@ -1,5 +1,3 @@
-# Hihi
-
 services:
   # ===========================================
   # SRS Media Server (Simple Realtime Server)
@@ -9,22 +7,13 @@ services:
     container_name: live-service-srs
     restart: unless-stopped
     ports:
-      # RTMP - for OBS Studio streaming
-      - "1935:1935"
-      # HTTP API & HLS delivery  
-      - "8080:8080"
-      # WebRTC signaling
-      - "1985:1985"
-      # WebRTC media (UDP)
-      - "8000:8000/udp"
+      - "1935:1935"      # RTMP (OBS Studio)
+      - "8080:8080"      # HTTP API & HLS
+      - "1985:1985"      # WebRTC signaling
+      - "8000:8000/udp"  # WebRTC media
     volumes:
-      # SRS configuration file
-      # Use srs.production.conf for low-latency (2s fragments)
-      - ${SRS_CONFIG_PATH:-./configs/srs.conf}:/usr/local/srs/conf/srs.conf:ro
-      # HLS output directory
-      # Development: ./data/hls (local folder)
-      # Production: /mnt/live_data (gcsfuse mounted GCS bucket)
-      # ⚠️ IMPORTANT: gcsfuse must be mounted with --allow-other flag
+      - ./configs/srs.conf:/usr/local/srs/conf/srs.conf:ro
+      # HLS output: gcsfuse mount (/mnt/live_data) → container (/data)
       - ${HLS_DATA_PATH:-./data/hls}:/data
     environment:
       # Public IP for WebRTC (set your server's public IP in production)
