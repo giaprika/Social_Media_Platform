@@ -11,7 +11,7 @@ services:
     ports:
       # RTMP - for OBS Studio streaming
       - "1935:1935"
-      # HTTP API & HLS delivery
+      # HTTP API & HLS delivery  
       - "8080:8080"
       # WebRTC signaling
       - "1985:1985"
@@ -19,10 +19,12 @@ services:
       - "8000:8000/udp"
     volumes:
       # SRS configuration file
-      - ./configs/srs.conf:/usr/local/srs/conf/srs.conf
+      # Use srs.production.conf for low-latency (2s fragments)
+      - ${SRS_CONFIG_PATH:-./configs/srs.conf}:/usr/local/srs/conf/srs.conf:ro
       # HLS output directory
-      # Development: mount local folder
-      # Production: mount /mnt/live_data (gcsfuse mounted GCS bucket) to /data in container
+      # Development: ./data/hls (local folder)
+      # Production: /mnt/live_data (gcsfuse mounted GCS bucket)
+      # ⚠️ IMPORTANT: gcsfuse must be mounted with --allow-other flag
       - ${HLS_DATA_PATH:-./data/hls}:/data
     environment:
       # Public IP for WebRTC (set your server's public IP in production)
@@ -33,6 +35,10 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    # Required for gcsfuse mount access
+    privileged: false
+    security_opt:
+      - no-new-privileges:true
     networks:
       - live-network
 

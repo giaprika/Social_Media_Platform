@@ -67,6 +67,34 @@ func (b *SRSURLBuilder) BuildAPIURL(endpoint string) string {
 	return fmt.Sprintf("http://%s:%d%s", b.ServerIP, b.APIPort, endpoint)
 }
 
+// CDNURLBuilder helps construct CDN playback URLs
+type CDNURLBuilder struct {
+	BaseURL string // e.g., "https://cdn.extase.dev"
+}
+
+// NewCDNURLBuilder creates a new CDN URL builder
+func NewCDNURLBuilder(baseURL string) *CDNURLBuilder {
+	return &CDNURLBuilder{BaseURL: baseURL}
+}
+
+// BuildHLSPlaybackURL constructs CDN HLS playback URL
+// Format: https://{cdn_domain}/live/{stream_key}.m3u8
+func (c *CDNURLBuilder) BuildHLSPlaybackURL(streamKey string) string {
+	return fmt.Sprintf("%s/live/%s.m3u8", c.BaseURL, streamKey)
+}
+
+// BuildSegmentURL constructs CDN URL for HLS segment
+// Format: https://{cdn_domain}/live/{stream_key}-{seq}.ts
+func (c *CDNURLBuilder) BuildSegmentURL(streamKey string, seq int) string {
+	return fmt.Sprintf("%s/live/%s-%d.ts", c.BaseURL, streamKey, seq)
+}
+
+// BuildThumbnailURL constructs CDN URL for stream thumbnail (if available)
+// Format: https://{cdn_domain}/live/{stream_key}.jpg
+func (c *CDNURLBuilder) BuildThumbnailURL(streamKey string) string {
+	return fmt.Sprintf("%s/live/%s.jpg", c.BaseURL, streamKey)
+}
+
 // SRSHealthChecker provides health check functionality for SRS server
 type SRSHealthChecker struct {
 	apiURL     string
