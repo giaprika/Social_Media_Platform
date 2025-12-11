@@ -3,6 +3,7 @@ Reactions Service - RESTful API for Reactions on Posts and Comments
 Tuân thủ OpenAPI specification
 """
 import os
+import json
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Query, Path, Header
 from dotenv import load_dotenv
@@ -175,6 +176,11 @@ async def upsert_post_reaction(
                 import aio_pika
                 import asyncio
                 post_owner = post_result.data[0]["user_id"]
+                # Get current counts
+                post_info = supabase.table(POSTS_TABLE).select("reacts_count, comments_count").eq("post_id", post_id).execute()
+                likes_count = post_info.data[0].get("reacts_count", 0) if post_info.data else 0
+                comments_count = post_info.data[0].get("comments_count", 0) if post_info.data else 0
+                
                 async def publish_post_liked():
                     connection = await aio_pika.connect_robust(os.getenv("RABBITMQ_URL", "amqp://rabbitmq"))
                     channel = await connection.channel()
@@ -186,7 +192,10 @@ async def upsert_post_reaction(
                                 "liker_username": None,
                                 "title_template": "Bài viết của bạn được thích!",
                                 "body_template": "Ai đó đã thích bài viết của bạn!",
-                                "link_url": f"/posts/{post_id}"
+                                "link_url": f"/posts/{post_id}",
+                                "post_id": post_id,
+                                "likes": likes_count,
+                                "comments": comments_count
                             }), encoding="utf-8"),
                             delivery_mode=aio_pika.DeliveryMode.PERSISTENT
                         ),
@@ -242,6 +251,35 @@ async def delete_post_reaction(
         supabase.table(POSTS_TABLE).update({
             "reacts_count": new_count
         }).eq("post_id", post_id).execute()
+        
+        # Publish post.unliked event for feed-service
+        try:
+            import aio_pika
+            import asyncio
+            import json
+            # Get current counts
+            post_info = supabase.table(POSTS_TABLE).select("reacts_count, comments_count").eq("post_id", post_id).execute()
+            likes_count = post_info.data[0].get("reacts_count", 0) if post_info.data else 0
+            comments_count = post_info.data[0].get("comments_count", 0) if post_info.data else 0
+            
+            async def publish_post_unliked():
+                connection = await aio_pika.connect_robust(os.getenv("RABBITMQ_URL", "amqp://rabbitmq"))
+                channel = await connection.channel()
+                await channel.default_exchange.publish(
+                    aio_pika.Message(
+                        body=bytes(json.dumps({
+                            "post_id": post_id,
+                            "likes": likes_count,
+                            "comments": comments_count
+                        }), encoding="utf-8"),
+                        delivery_mode=aio_pika.DeliveryMode.PERSISTENT
+                    ),
+                    routing_key="post.unliked"
+                )
+                await connection.close()
+            await publish_post_unliked()
+        except Exception as e:
+            print(f"[Feed] Failed to publish post.unliked event: {str(e)}")
         
         return None
         

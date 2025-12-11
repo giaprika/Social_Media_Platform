@@ -3,6 +3,7 @@ Comments Service - RESTful API for Comments Management
 """
 import os
 import uuid
+import json
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Query, Path, Header, UploadFile, File, Form
 from dotenv import load_dotenv
@@ -249,6 +250,11 @@ async def create_comment(
         try:
             import aio_pika
             import asyncio
+            # Get current counts
+            post_info = supabase.table(POSTS_TABLE).select("reacts_count, comments_count").eq("post_id", post_id).execute()
+            likes_count = post_info.data[0].get("reacts_count", 0) if post_info.data else 0
+            comments_count = post_info.data[0].get("comments_count", 0) if post_info.data else 0
+            
             async def publish_post_commented():
                 connection = await aio_pika.connect_robust(os.getenv("RABBITMQ_URL", "amqp://rabbitmq"))
                 channel = await connection.channel()
@@ -261,7 +267,10 @@ async def create_comment(
                             "comment_content": content,
                             "title_template": "Bài viết của bạn có bình luận mới!",
                             "body_template": f"Ai đó đã bình luận: {content}",
-                            "link_url": f"/posts/{post_id}#comment-{created_comment.get('comment_id')}"
+                            "link_url": f"/posts/{post_id}#comment-{created_comment.get('comment_id')}",
+                            "post_id": post_id,
+                            "likes": likes_count,
+                            "comments": comments_count
                         }), encoding="utf-8"),
                         delivery_mode=aio_pika.DeliveryMode.PERSISTENT
                     ),
@@ -422,6 +431,35 @@ async def delete_comment(
         supabase.table(POSTS_TABLE).update({
             "comments_count": count_result.count if hasattr(count_result, 'count') else 0
         }).eq("post_id", post_id).execute()
+        
+        # Publish post.uncommented event for feed-service
+        try:
+            import aio_pika
+            import asyncio
+            import json
+            # Get current counts
+            post_info = supabase.table(POSTS_TABLE).select("reacts_count, comments_count").eq("post_id", post_id).execute()
+            likes_count = post_info.data[0].get("reacts_count", 0) if post_info.data else 0
+            comments_count = post_info.data[0].get("comments_count", 0) if post_info.data else 0
+            
+            async def publish_post_uncommented():
+                connection = await aio_pika.connect_robust(os.getenv("RABBITMQ_URL", "amqp://rabbitmq"))
+                channel = await connection.channel()
+                await channel.default_exchange.publish(
+                    aio_pika.Message(
+                        body=bytes(json.dumps({
+                            "post_id": post_id,
+                            "likes": likes_count,
+                            "comments": comments_count
+                        }), encoding="utf-8"),
+                        delivery_mode=aio_pika.DeliveryMode.PERSISTENT
+                    ),
+                    routing_key="post.uncommented"
+                )
+                await connection.close()
+            await publish_post_uncommented()
+        except Exception as e:
+            print(f"[Feed] Failed to publish post.uncommented event: {str(e)}")
         
         return None
         

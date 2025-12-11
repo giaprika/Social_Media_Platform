@@ -378,6 +378,80 @@ services:
       retries: 5
       start_period: 20s
 
+  # ============================================
+  # Feed Service
+  # ============================================
+  postgres-feed:
+    image: postgres:15-alpine
+    container_name: postgres-feed
+    environment:
+      POSTGRES_DB: feed_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-feed-data:/var/lib/postgresql/data
+      - ./feed-service/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: >
+      sh -c "
+        docker-entrypoint.sh postgres &
+        sleep 5 &&
+        until pg_isready -U postgres; do sleep 1; done &&
+        psql -U postgres -d feed_db -tAc \"SELECT 1 FROM information_schema.tables WHERE table_name='feed_items'\" | grep -q 1 ||
+        (echo 'Initializing database...' && psql -U postgres -d feed_db -f /docker-entrypoint-initdb.d/init.sql && echo 'Database initialized!') &&
+        wait
+      "
+    ports:
+      - "5438:5432"
+    networks:
+      - social-network
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'pg_isready -U postgres && psql -U postgres -d feed_db -tAc "SELECT 1 FROM information_schema.tables WHERE table_name=''feed_items''" | grep -q 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  feed-service:
+    build:
+      context: ./feed-service
+      dockerfile: Dockerfile
+    container_name: feed-service
+    environment:
+      NODE_ENV: production
+      PORT: 3006
+      DB_HOST: postgres-feed
+      DB_PORT: 5432
+      DB_NAME: feed_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      RABBITMQ_URL: amqp://rabbitmq:5672
+      CLEANUP_CRON_SCHEDULE: "0 */12 * * *"
+      CLEANUP_DAYS_THRESHOLD: 10
+    ports:
+      - "3006:3006"
+    depends_on:
+      postgres-feed:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - social-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "require(''http'').get(''http://localhost:3006/api/feed/health'', (r) => {process.exit(r.statusCode ? 0 : 1)})"',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
 networks:
   social-network:
     driver: bridge
@@ -390,3 +464,4 @@ volumes:
   rabbitmq-data:
   redis-data:
   postgres-user-data:
+  postgres-feed-data:
