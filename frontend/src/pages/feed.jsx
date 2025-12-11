@@ -69,6 +69,9 @@ const transformComment = (apiComment, userInfo = null) => ({
 export default function Feed() {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [offset, setOffset] = useState(0);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingPost, setEditingPost] = useState(null);
   const [deletePostId, setDeletePostId] = useState(null);
@@ -88,6 +91,9 @@ export default function Feed() {
   const token = getCookie("accessToken");
   const currentUserId = cookies.get("x-user-id");
   const { notifications } = useNotifications(token);
+
+  // Intersection Observer ref for infinite scroll
+  const observerTarget = React.useRef(null);
 
   // Fetch user info and cache it - use ref to avoid dependency issues
   const usersCacheRef = React.useRef(usersCache);
@@ -135,61 +141,82 @@ export default function Feed() {
     }
   }, []);
 
-  // Load posts only once on mount
-  const hasLoadedRef = React.useRef(false);
-  const isLoadingRef = React.useRef(false);
-
-  useEffect(() => {
-    console.log("[Feed] useEffect triggered, hasLoaded:", hasLoadedRef.current, "isLoading:", isLoadingRef.current);
-    if (!hasLoadedRef.current && !isLoadingRef.current) {
-      hasLoadedRef.current = true;
-      isLoadingRef.current = true;
-
-      const fetchPosts = async () => {
-        setLoading(true);
-        try {
-          const response = await postApi.getPosts({ limit: 20, offset: 0 });
-          const rawPosts = response.data?.data || [];
-          console.log("[Feed] Raw posts from API:", rawPosts.length);
-
-          // Enrich posts with user and community info
-          const enrichedPosts = await Promise.all(
-            rawPosts.map(async (post) => {
-              const userInfo = await fetchUserInfo(post.user_id);
-              // Fetch community info if post belongs to a community
-              const communityInfo = post.group_id ? await fetchCommunityInfo(post.group_id) : null;
-              const transformedPost = transformPost(post, userInfo, communityInfo);
-
-              // Check if current user has reacted
-              if (currentUserId) {
-                try {
-                  const reactionsRes = await postApi.getPostReactions(post.post_id);
-                  const reactions = reactionsRes.data?.data || [];
-                  const userReaction = reactions.find((r) => r.user_id === currentUserId);
-                  transformedPost.hasUpvoted = !!userReaction;
-                } catch (error) {
-                  // Ignore reaction errors
-                }
-              }
-
-              return transformedPost;
-            })
-          );
-
-          console.log("[Feed] Setting posts:", enrichedPosts.length);
-          setPosts(enrichedPosts);
-        } catch (error) {
-          console.error("Failed to load posts:", error);
-          toast.error("Không thể tải bài viết");
-        } finally {
-          setLoading(false);
-          isLoadingRef.current = false;
-        }
-      };
-
-      fetchPosts();
+  // Load posts function - optimized version
+  const loadPosts = useCallback(async (currentOffset = 0, append = false) => {
+    const POSTS_PER_PAGE = 4; // Giảm từ 20 xuống 10 để load nhanh hơn
+    
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
     }
-  }, []); // Empty dependency - only run once
+
+    try {
+      const response = await postApi.getPosts({ 
+        limit: POSTS_PER_PAGE, 
+        offset: currentOffset 
+      });
+      const rawPosts = response.data?.data || [];
+      console.log(`[Feed] Loaded ${rawPosts.length} posts at offset ${currentOffset}`);
+
+      // Check if there are more posts
+      if (rawPosts.length < POSTS_PER_PAGE) {
+        setHasMore(false);
+      }
+
+      // Transform posts WITHOUT fetching reactions immediately (lazy load)
+      const enrichedPosts = await Promise.all(
+        rawPosts.map(async (post) => {
+          const userInfo = await fetchUserInfo(post.user_id);
+          const communityInfo = post.group_id ? await fetchCommunityInfo(post.group_id) : null;
+          return transformPost(post, userInfo, communityInfo);
+        })
+      );
+
+      if (append) {
+        setPosts(prev => [...prev, ...enrichedPosts]);
+      } else {
+        setPosts(enrichedPosts);
+      }
+
+      setOffset(currentOffset + rawPosts.length);
+    } catch (error) {
+      console.error("Failed to load posts:", error);
+      toast.error("Không thể tải bài viết");
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, [fetchUserInfo, fetchCommunityInfo, toast]);
+
+  // Initial load
+  useEffect(() => {
+    loadPosts(0, false);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Infinite scroll observer
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
+          console.log("[Feed] Loading more posts, offset:", offset);
+          loadPosts(offset, true);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const currentTarget = observerTarget.current;
+    if (currentTarget) {
+      observer.observe(currentTarget);
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget);
+      }
+    };
+  }, [hasMore, loadingMore, loading, offset, loadPosts]);
 
   // Open create modal if state indicates
   useEffect(() => {
@@ -199,8 +226,6 @@ export default function Feed() {
       navigate(location.pathname, { replace: true, state: {} });
     }
   }, [location.state, navigate, location.pathname]);
-
-
 
   // Load comments for a post
   const loadComments = useCallback(async (postId) => {
@@ -605,28 +630,46 @@ export default function Feed() {
             )}
           </div>
         ) : (
-          filteredPosts.map((post) => (
-            <PostCard
-              key={post.id}
-              post={post}
-              currentUserId={currentUserId}
-              onUpvote={handleUpvote}
-              onDownvote={handleDownvote}
-              onComment={handleComment}
-              onShare={(id) => {
-                navigator.clipboard.writeText(window.location.href);
-                toast.success("Đã sao chép link!");
-              }}
-              onSave={handleSave}
-              onAuthorClick={handleAuthorClick}
-              onFollow={handleFollow}
-              onCommunityClick={handleCommunityClick}
-              onEdit={handleEditPost}
-              onDelete={handleDeletePost}
-              onHide={handleHidePost}
-              onReport={handleReportPost}
-            />
-          ))
+          <>
+            {filteredPosts.map((post) => (
+              <PostCard
+                key={post.id}
+                post={post}
+                currentUserId={currentUserId}
+                onUpvote={handleUpvote}
+                onDownvote={handleDownvote}
+                onComment={handleComment}
+                onShare={(id) => {
+                  navigator.clipboard.writeText(window.location.href);
+                  toast.success("Đã sao chép link!");
+                }}
+                onSave={handleSave}
+                onAuthorClick={handleAuthorClick}
+                onFollow={handleFollow}
+                onCommunityClick={handleCommunityClick}
+                onEdit={handleEditPost}
+                onDelete={handleDeletePost}
+                onHide={handleHidePost}
+                onReport={handleReportPost}
+              />
+            ))}
+            
+            {/* Intersection Observer Target for Infinite Scroll */}
+            <div ref={observerTarget} className="py-4">
+              {loadingMore && (
+                <div className="space-y-4">
+                  {[1, 2].map((i) => (
+                    <PostCard key={`loading-${i}`} loading />
+                  ))}
+                </div>
+              )}
+              {!hasMore && filteredPosts.length > 0 && (
+                <div className="text-center text-muted-foreground py-8">
+                  <p>Bạn đã xem hết tất cả bài viết!</p>
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
     </div>
