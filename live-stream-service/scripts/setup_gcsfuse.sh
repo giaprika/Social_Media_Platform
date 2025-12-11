@@ -103,7 +103,7 @@ mount_bucket() {
     # --allow-other: Allow Docker containers to access (CRITICAL for SRS in Docker)
     # --file-mode/--dir-mode: Permissions for files/dirs
     # --stat-cache-ttl/--type-cache-ttl: Cache metadata to reduce GCS API calls (CRITICAL for performance)
-    MOUNT_OPTIONS="--implicit-dirs --allow-other --file-mode=644 --dir-mode=755 --stat-cache-ttl 1m --type-cache-ttl 1m"
+    MOUNT_OPTIONS="--implicit-dirs -o allow_other --file-mode=644 --dir-mode=755 --stat-cache-ttl 1m --type-cache-ttl 1m"
 
     # Add key file if specified
     if [ -n "$SERVICE_ACCOUNT_KEY" ] && [ -f "$SERVICE_ACCOUNT_KEY" ]; then
