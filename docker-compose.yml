@@ -234,6 +234,7 @@ services:
       POST_REACT_TABLE_NAME: post_reaction
       COMMENT_REACT_TABLE_NAME: comment_reaction
       STORAGE_BUCKET_NAME: posts_service
+      RABBITMQ_URL: amqp://rabbitmq
     ports:
       - "8003:8003"
     networks:
