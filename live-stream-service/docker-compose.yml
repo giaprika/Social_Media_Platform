@@ -1,5 +1,28 @@
 services:
   # ===========================================
+  # Caddy - Reverse Proxy with Auto SSL
+  # ===========================================
+  caddy:
+    image: caddy:2-alpine
+    container_name: live-service-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"          # HTTP (redirect to HTTPS)
+      - "443:443"        # HTTPS
+      - "443:443/udp"    # HTTP/3 (QUIC)
+    volumes:
+      - ./configs/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data       # SSL certificates
+      - caddy_config:/config   # Caddy config
+    environment:
+      - API_DOMAIN=${API_DOMAIN:-localhost}
+      - ACME_EMAIL=${ACME_EMAIL:-admin@example.com}
+    networks:
+      - live-network
+    depends_on:
+      - api
+
+  # ===========================================
   # SRS Media Server (Simple Realtime Server)
   # ===========================================
   srs:
@@ -61,3 +84,10 @@ services:
 networks:
   live-network:
     driver: bridge
+
+# ===========================================
+# Volumes (Caddy SSL certificates persistence)
+# ===========================================
+volumes:
+  caddy_data:
+  caddy_config:
