@@ -161,6 +161,25 @@ func (s LiveSessionStatus) CanTransitionTo(target LiveSessionStatus) bool {
 	}
 }
 
+// WebRTCInfoResponse represents WebRTC connection info for a stream
+type WebRTCInfoResponse struct {
+	ID            int64             `json:"id"`
+	Status        LiveSessionStatus `json:"status"`
+	PublishURL    string            `json:"publish_url"`              // webrtc://ip/live/stream_key (owner only)
+	PlayURL       string            `json:"play_url"`                 // webrtc://ip/live/stream_key
+	WHIPEndpoint  string            `json:"whip_endpoint,omitempty"`  // WHIP publish endpoint
+	WHEPEndpoint  string            `json:"whep_endpoint,omitempty"`  // WHEP play endpoint
+	ICEServers    []ICEServer       `json:"ice_servers"`              // STUN/TURN servers
+	IsOwner       bool              `json:"is_owner"`
+}
+
+// ICEServer represents a STUN/TURN server for WebRTC
+type ICEServer struct {
+	URLs       []string `json:"urls"`
+	Username   string   `json:"username,omitempty"`
+	Credential string   `json:"credential,omitempty"`
+}
+
 // SRSCallbackRequest represents the webhook request from SRS server
 // Documentation: https://ossrs.io/lts/en-us/docs/v5/doc/http-callback
 type SRSCallbackRequest struct {

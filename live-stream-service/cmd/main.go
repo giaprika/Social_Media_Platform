@@ -53,6 +53,7 @@ func main() {
 			live.POST("/create", middleware.Auth(), liveHandler.CreateStream)
 			live.GET("/feed", liveHandler.ListStreams)
 			live.GET("/:id", liveHandler.GetStreamDetail)
+			live.GET("/:id/webrtc", liveHandler.GetWebRTCInfo)
 		}
 
 		// Webhook routes for SRS callbacks

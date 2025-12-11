@@ -27,6 +27,7 @@ type LiveService interface {
 	CreateStream(ctx context.Context, userID int64, req *entity.CreateStreamRequest) (*entity.CreateStreamResponse, error)
 	GetStreamDetail(ctx context.Context, id int64, userID int64) (*entity.StreamDetailResponse, error)
 	ListStreams(ctx context.Context, params entity.PaginationParams) (*entity.ListStreamsResponse, error)
+	GetWebRTCInfo(ctx context.Context, id int64, userID int64) (*entity.WebRTCInfoResponse, error)
 	// Webhook handlers
 	HandleOnPublish(ctx context.Context, streamKey string) error
 	HandleOnUnpublish(ctx context.Context, streamKey string) error
@@ -168,6 +169,58 @@ func (s *liveService) ListStreams(ctx context.Context, params entity.PaginationP
 		Limit:      params.Limit,
 		TotalPages: totalPages,
 	}, nil
+}
+
+// GetWebRTCInfo returns WebRTC connection info for a stream
+func (s *liveService) GetWebRTCInfo(ctx context.Context, id int64, userID int64) (*entity.WebRTCInfoResponse, error) {
+	session, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	isOwner := session.UserID == userID
+
+	// Construct WebRTC URLs
+	// Format: webrtc://server_ip/app/stream_key
+	serverIP := s.config.SRS.ServerIP
+	streamKey := session.StreamKey
+
+	// SRS WebRTC play URL (for viewers)
+	playURL := fmt.Sprintf("webrtc://%s/live/%s", serverIP, streamKey)
+
+	// WHIP/WHEP endpoints (SRS 5.0+ HTTP-based WebRTC)
+	// WHIP: WebRTC-HTTP Ingestion Protocol (publish)
+	// WHEP: WebRTC-HTTP Egress Protocol (play)
+	apiBase := fmt.Sprintf("http://%s:%d", serverIP, s.config.SRS.APIPort)
+	whipEndpoint := fmt.Sprintf("%s/rtc/v1/whip/?app=live&stream=%s", apiBase, streamKey)
+	whepEndpoint := fmt.Sprintf("%s/rtc/v1/whep/?app=live&stream=%s", apiBase, streamKey)
+
+	// Default ICE servers (Google STUN)
+	iceServers := []entity.ICEServer{
+		{
+			URLs: []string{
+				"stun:stun.l.google.com:19302",
+				"stun:stun1.l.google.com:19302",
+			},
+		},
+	}
+
+	resp := &entity.WebRTCInfoResponse{
+		ID:           session.ID,
+		Status:       session.Status,
+		PlayURL:      playURL,
+		WHEPEndpoint: whepEndpoint,
+		ICEServers:   iceServers,
+		IsOwner:      isOwner,
+	}
+
+	// Only show publish URLs to owner
+	if isOwner {
+		resp.PublishURL = playURL // Same URL format for publish
+		resp.WHIPEndpoint = whipEndpoint
+	}
+
+	return resp, nil
 }
 
 // HandleOnPublish validates stream key and updates session status to LIVE
