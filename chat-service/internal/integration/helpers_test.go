@@ -14,6 +14,7 @@ import (
 	"time"
 
 	chatv1 "chat-service/api/chat/v1"
+	"chat-service/internal/auth"
 	"chat-service/internal/middleware"
 	"chat-service/internal/service"
 	"chat-service/pkg/idempotency"
@@ -56,7 +57,7 @@ func NewTestServer(infra *TestInfrastructure) (*TestServer, error) {
 		grpc.ChainUnaryInterceptor(
 			middleware.GrpcLogger(logger),
 			middleware.GrpcRecovery(logger),
-			middleware.GrpcAuthExtractor(logger),
+			auth.GrpcAuthInterceptor(logger),
 		),
 	)
 

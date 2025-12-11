@@ -1,0 +1,14 @@
+// HƯỚNG DẪN: Thay thế file này bằng file âm thanh MP3 thật
+// 
+// Các cách để có file âm thanh notification:
+// 
+// 1. Tải âm thanh miễn phí từ:
+//    - https://notificationsounds.com/
+//    - https://freesound.org/
+//    - https://mixkit.co/free-sound-effects/notification/
+// 
+// 2. Hoặc sử dụng âm thanh mặc định của trình duyệt bằng Web Audio API
+// 
+// 3. Đặt tên file là "notification.mp3" và thay thế file này
+//
+// TẠM THỜI: Sử dụng beep sound từ data URL trong code thay vì file MP3

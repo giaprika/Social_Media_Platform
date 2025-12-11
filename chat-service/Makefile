@@ -36,3 +36,51 @@ audit:
 	@echo "--- 3. Running Tests ---"
 	go test ./... -v
 	@echo "✅ Ngon lanh! Ban co the Push."
+
+build:
+	@echo "Building binaries..."
+	go build -o bin/ ./cmd/...
+
+#
+ ============ Load Testing ============
+
+# Start infrastructure for load testing
+.PHONY: infra-up infra-down
+
+infra-up:
+	docker-compose up -d postgres redis
+	@echo "Waiting for services to be ready..."
+	@sleep 3
+	@echo "Infrastructure is ready"
+
+infra-down:
+	docker-compose down
+
+# Run WebSocket gateway
+.PHONY: ws-gateway
+
+ws-gateway:
+	go run ./cmd/ws-gateway/
+
+# Load testing with k6
+.PHONY: load-test-ws load-test-broadcast
+
+# Test 1000 concurrent WebSocket connections
+load-test-ws:
+	@echo "Running WebSocket load test (1000 concurrent connections)..."
+	k6 run scripts/k6-ws-load-test.js
+
+# Test broadcast latency (run this, then run redis-broadcast in another terminal)
+load-test-broadcast:
+	@echo "Running broadcast latency test..."
+	@echo "In another terminal, run: go run scripts/redis-broadcast-publisher.go"
+	k6 run scripts/k6-ws-broadcast-test.js
+
+# Publish test messages to Redis for broadcast testing
+redis-broadcast:
+	go run scripts/redis-broadcast-publisher.go -n 100 -interval 100ms -recipients 100
+
+# Quick load test (fewer connections, shorter duration)
+load-test-quick:
+	@echo "Running quick WebSocket load test..."
+	k6 run --vus 50 --duration 30s scripts/k6-ws-load-test.js

@@ -8,7 +8,7 @@ import FeedTabs from "src/components/feed/FeedTabs";
 import Modal from "src/components/ui/Modal";
 import ConfirmDialog from "src/components/ui/ConfirmDialog";
 import { useToast } from "src/components/ui";
-import { useNotifications } from "../hooks/useNotifications";
+import { useNotifications } from "src/contexts/NotificationsContext";
 import * as postApi from "src/api/post";
 import { getUserById } from "src/api/user";
 import { getCommunityById } from "src/api/community";
@@ -33,7 +33,13 @@ const transformPost = (apiPost, userInfo = null, communityInfo = null) => ({
     avatar_url: null,
   },
   // Community: use object with id/name/slug for proper display
-  community: communityInfo ? { id: communityInfo.id, name: communityInfo.name, slug: communityInfo.slug } : null,
+  community: communityInfo
+    ? {
+        id: communityInfo.id,
+        name: communityInfo.name,
+        slug: communityInfo.slug,
+      }
+    : null,
   title: apiPost.content,
   content: apiPost.content,
   images: apiPost.media_urls || [],
@@ -86,7 +92,7 @@ export default function Feed() {
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
-  const { addRecentPost } = useOutletContext() || { addRecentPost: () => { } };
+  const { addRecentPost } = useOutletContext() || { addRecentPost: () => {} };
 
   const token = getCookie("accessToken");
   const currentUserId = cookies.get("x-user-id");
@@ -116,7 +122,13 @@ export default function Feed() {
       return userInfo;
     } catch (error) {
       console.error("Failed to fetch user:", userId, error);
-      return { id: userId, name: "User", username: null, avatar: null, avatar_url: null };
+      return {
+        id: userId,
+        name: "User",
+        username: null,
+        avatar: null,
+        avatar_url: null,
+      };
     }
   }, []);
 
@@ -126,7 +138,8 @@ export default function Feed() {
 
   const fetchCommunityInfo = useCallback(async (communityId) => {
     if (!communityId) return null;
-    if (communitiesCacheRef.current[communityId]) return communitiesCacheRef.current[communityId];
+    if (communitiesCacheRef.current[communityId])
+      return communitiesCacheRef.current[communityId];
 
     try {
       const community = await getCommunityById(communityId);
@@ -142,52 +155,59 @@ export default function Feed() {
   }, []);
 
   // Load posts function - optimized version
-  const loadPosts = useCallback(async (currentOffset = 0, append = false) => {
-    const POSTS_PER_PAGE = 4; // Giảm từ 20 xuống 10 để load nhanh hơn
-    
-    if (append) {
-      setLoadingMore(true);
-    } else {
-      setLoading(true);
-    }
-
-    try {
-      const response = await postApi.getPosts({ 
-        limit: POSTS_PER_PAGE, 
-        offset: currentOffset 
-      });
-      const rawPosts = response.data?.data || [];
-      console.log(`[Feed] Loaded ${rawPosts.length} posts at offset ${currentOffset}`);
-
-      // Check if there are more posts
-      if (rawPosts.length < POSTS_PER_PAGE) {
-        setHasMore(false);
-      }
-
-      // Transform posts WITHOUT fetching reactions immediately (lazy load)
-      const enrichedPosts = await Promise.all(
-        rawPosts.map(async (post) => {
-          const userInfo = await fetchUserInfo(post.user_id);
-          const communityInfo = post.group_id ? await fetchCommunityInfo(post.group_id) : null;
-          return transformPost(post, userInfo, communityInfo);
-        })
-      );
+  const loadPosts = useCallback(
+    async (currentOffset = 0, append = false) => {
+      const POSTS_PER_PAGE = 4; // Giảm từ 20 xuống 10 để load nhanh hơn
 
       if (append) {
-        setPosts(prev => [...prev, ...enrichedPosts]);
+        setLoadingMore(true);
       } else {
-        setPosts(enrichedPosts);
+        setLoading(true);
       }
 
-      setOffset(currentOffset + rawPosts.length);
-    } catch (error) {
-      console.error("Failed to load posts:", error);
-      toast.error("Không thể tải bài viết");
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-    }
-  }, [fetchUserInfo, fetchCommunityInfo, toast]);
+      try {
+        const response = await postApi.getPosts({
+          limit: POSTS_PER_PAGE,
+          offset: currentOffset,
+        });
+        const rawPosts = response.data?.data || [];
+        console.log(
+          `[Feed] Loaded ${rawPosts.length} posts at offset ${currentOffset}`
+        );
+
+        // Check if there are more posts
+        if (rawPosts.length < POSTS_PER_PAGE) {
+          setHasMore(false);
+        }
+
+        // Transform posts WITHOUT fetching reactions immediately (lazy load)
+        const enrichedPosts = await Promise.all(
+          rawPosts.map(async (post) => {
+            const userInfo = await fetchUserInfo(post.user_id);
+            const communityInfo = post.group_id
+              ? await fetchCommunityInfo(post.group_id)
+              : null;
+            return transformPost(post, userInfo, communityInfo);
+          })
+        );
+
+        if (append) {
+          setPosts((prev) => [...prev, ...enrichedPosts]);
+        } else {
+          setPosts(enrichedPosts);
+        }
+
+        setOffset(currentOffset + rawPosts.length);
+      } catch (error) {
+        console.error("Failed to load posts:", error);
+        toast.error("Không thể tải bài viết");
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    [fetchUserInfo, fetchCommunityInfo, toast]
+  );
 
   // Initial load
   useEffect(() => {
@@ -228,52 +248,55 @@ export default function Feed() {
   }, [location.state, navigate, location.pathname]);
 
   // Load comments for a post
-  const loadComments = useCallback(async (postId) => {
-    setCommentsLoading(true);
-    try {
-      const response = await postApi.getComments(postId, { limit: 50 });
-      const rawComments = response.data?.data || [];
+  const loadComments = useCallback(
+    async (postId) => {
+      setCommentsLoading(true);
+      try {
+        const response = await postApi.getComments(postId, { limit: 50 });
+        const rawComments = response.data?.data || [];
 
-      // Enrich comments with user info
-      const enrichedComments = await Promise.all(
-        rawComments.map(async (comment) => {
-          const userInfo = await fetchUserInfo(comment.user_id);
-          return transformComment(comment, userInfo);
-        })
-      );
+        // Enrich comments with user info
+        const enrichedComments = await Promise.all(
+          rawComments.map(async (comment) => {
+            const userInfo = await fetchUserInfo(comment.user_id);
+            return transformComment(comment, userInfo);
+          })
+        );
 
-      // Build nested structure (parent/child)
-      const commentMap = new Map();
-      const rootComments = [];
+        // Build nested structure (parent/child)
+        const commentMap = new Map();
+        const rootComments = [];
 
-      enrichedComments.forEach((c) => {
-        commentMap.set(c.id, { ...c, replies: [] });
-      });
+        enrichedComments.forEach((c) => {
+          commentMap.set(c.id, { ...c, replies: [] });
+        });
 
-      enrichedComments.forEach((c) => {
-        if (c.parentId && commentMap.has(c.parentId)) {
-          commentMap.get(c.parentId).replies.push(commentMap.get(c.id));
-        } else {
-          rootComments.push(commentMap.get(c.id));
-        }
-      });
+        enrichedComments.forEach((c) => {
+          if (c.parentId && commentMap.has(c.parentId)) {
+            commentMap.get(c.parentId).replies.push(commentMap.get(c.id));
+          } else {
+            rootComments.push(commentMap.get(c.id));
+          }
+        });
 
-      setComments(rootComments);
-    } catch (error) {
-      console.error("Failed to load comments:", error);
-      toast.error("Không thể tải bình luận");
-    } finally {
-      setCommentsLoading(false);
-    }
-  }, [fetchUserInfo, toast]);
+        setComments(rootComments);
+      } catch (error) {
+        console.error("Failed to load comments:", error);
+        toast.error("Không thể tải bình luận");
+      } finally {
+        setCommentsLoading(false);
+      }
+    },
+    [fetchUserInfo, toast]
+  );
 
   const handleCreatePost = async (postData) => {
     try {
-      console.log('🎨 [Feed] handleCreatePost called with:', {
+      console.log("🎨 [Feed] handleCreatePost called with:", {
         title: postData.title,
         content: postData.content,
-        imagesCount: postData.images?.length || 0
-      })
+        imagesCount: postData.images?.length || 0,
+      });
 
       const formData = new FormData();
 
@@ -295,10 +318,9 @@ export default function Feed() {
         postData.files.forEach((file) => formData.append("files", file));
       }
 
-
-      console.log('📤 [Feed] Sending FormData to API...')
+      console.log("📤 [Feed] Sending FormData to API...");
       const response = await postApi.createPost(formData);
-      console.log('✅ [Feed] Post created successfully:', response.data)
+      console.log("✅ [Feed] Post created successfully:", response.data);
       const newPostData = response.data?.data;
 
       if (newPostData) {
@@ -421,7 +443,11 @@ export default function Feed() {
       setComments((prevComments) =>
         prevComments.map((c) =>
           c.id === commentId
-            ? { ...c, liked: !c.liked, likes: c.liked ? c.likes - 1 : c.likes + 1 }
+            ? {
+                ...c,
+                liked: !c.liked,
+                likes: c.liked ? c.likes - 1 : c.likes + 1,
+              }
             : c
         )
       );
@@ -452,9 +478,10 @@ export default function Feed() {
 
   const handleCommunityClick = (communityIdOrSlug) => {
     // communityIdOrSlug can be an ID, slug, or object
-    const slug = typeof communityIdOrSlug === 'object'
-      ? (communityIdOrSlug.slug || communityIdOrSlug.id)
-      : communityIdOrSlug;
+    const slug =
+      typeof communityIdOrSlug === "object"
+        ? communityIdOrSlug.slug || communityIdOrSlug.id
+        : communityIdOrSlug;
     if (slug) {
       navigate(`/c/${slug}`);
     }
@@ -489,7 +516,9 @@ export default function Feed() {
       if (updatedPostData) {
         const userInfo = await fetchUserInfo(updatedPostData.user_id);
         const updatedPost = transformPost(updatedPostData, userInfo);
-        setPosts((prev) => prev.map((p) => p.id === editingPost.id ? updatedPost : p));
+        setPosts((prev) =>
+          prev.map((p) => (p.id === editingPost.id ? updatedPost : p))
+        );
         toast.success("Đã cập nhật bài viết!");
       }
       setEditingPost(null);
@@ -540,9 +569,10 @@ export default function Feed() {
   };
 
   // Filter posts based on active tab
-  const filteredPosts = activeTab === "following"
-    ? posts.filter(post => post.isFollowing)
-    : posts;
+  const filteredPosts =
+    activeTab === "following"
+      ? posts.filter((post) => post.isFollowing)
+      : posts;
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -562,12 +592,16 @@ export default function Feed() {
         isOpen={!!editingPost}
         onClose={() => setEditingPost(null)}
         onSubmit={handleUpdatePost}
-        initialData={editingPost ? {
-          content: editingPost.content,
-          visibility: editingPost.visibility || "public",
-          tags: editingPost.tags || [],
-          images: editingPost.images || [],
-        } : null}
+        initialData={
+          editingPost
+            ? {
+                content: editingPost.content,
+                visibility: editingPost.visibility || "public",
+                tags: editingPost.tags || [],
+                images: editingPost.images || [],
+              }
+            : null
+        }
         isEditing
       />
 
@@ -653,7 +687,7 @@ export default function Feed() {
                 onReport={handleReportPost}
               />
             ))}
-            
+
             {/* Intersection Observer Target for Infinite Scroll */}
             <div ref={observerTarget} className="py-4">
               {loadingMore && (

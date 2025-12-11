@@ -12,6 +12,7 @@ import (
 	"time"
 
 	chatv1 "chat-service/api/chat/v1"
+	"chat-service/internal/auth"
 	"chat-service/internal/config"
 	"chat-service/internal/middleware"
 	"chat-service/internal/service"
@@ -40,8 +41,23 @@ func main() {
 
 	logger.Info("starting chat service", zap.String("env", cfg.Environment))
 
-	// 3. Connect to Database
-	dbPool, err := pgxpool.New(context.Background(), cfg.DBSource)
+	// 3. Connect to Database with pool configuration
+	poolConfig, err := pgxpool.ParseConfig(cfg.GetDBSource())
+	if err != nil {
+		logger.Fatal("cannot parse db config", zap.Error(err))
+	}
+	poolConfig.MaxConns = cfg.GetDBMaxConns()
+	poolConfig.MinConns = cfg.GetDBMinConns()
+	poolConfig.MaxConnLifetime = cfg.GetDBMaxConnLifetime()
+	poolConfig.MaxConnIdleTime = cfg.GetDBMaxConnIdleTime()
+
+	logger.Info("database pool config",
+		zap.Int32("max_conns", poolConfig.MaxConns),
+		zap.Int32("min_conns", poolConfig.MinConns),
+		zap.Duration("max_conn_lifetime", poolConfig.MaxConnLifetime),
+		zap.Duration("max_conn_idle_time", poolConfig.MaxConnIdleTime))
+
+	dbPool, err := pgxpool.NewWithConfig(context.Background(), poolConfig)
 	if err != nil {
 		logger.Fatal("cannot connect to db", zap.Error(err))
 	}
@@ -65,7 +81,7 @@ func main() {
 		grpc.ChainUnaryInterceptor(
 			middleware.GrpcLogger(logger),
 			middleware.GrpcRecovery(logger),
-			middleware.GrpcAuthExtractor(logger),
+			auth.GrpcAuthInterceptor(logger),
 		),
 	)
 

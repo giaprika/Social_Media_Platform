@@ -60,7 +60,8 @@ const NotificationDropdown = ({
   };
 
   // Use prop unreadCount if provided, otherwise calculate
-  const unreadCount = propUnreadCount ?? notifications.filter((n) => !n.read).length;
+  const unreadCount =
+    propUnreadCount ?? notifications.filter((n) => !n.read).length;
 
   const handleNotificationClick = (notification) => {
     // Mark as read if not already
@@ -110,7 +111,9 @@ const NotificationDropdown = ({
         >
           <div className="border-b border-border px-4 py-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-foreground">Notifications</h3>
+              <h3 className="text-lg font-bold text-foreground">
+                Notifications
+              </h3>
               {unreadCount > 0 && (
                 <button
                   onClick={handleMarkAllRead}
@@ -145,7 +148,11 @@ const NotificationDropdown = ({
                     <div className="flex gap-3">
                       <Avatar
                         src={notification.avatar}
-                        name={notification.sender || notification.last_actor_name || "System"}
+                        name={
+                          notification.sender ||
+                          notification.last_actor_name ||
+                          "System"
+                        }
                         size="sm"
                       />
                       <div className="flex-1 min-w-0">
@@ -163,7 +170,9 @@ const NotificationDropdown = ({
                           {notification.content || notification.message}
                         </p>
                         <p className="mt-1 text-xs text-muted-foreground/70">
-                          {formatTime(notification.createdAt || notification.timestamp)}
+                          {formatTime(
+                            notification.createdAt || notification.timestamp
+                          )}
                         </p>
                       </div>
                       {!notification.read && (

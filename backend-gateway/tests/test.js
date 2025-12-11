@@ -2,6 +2,7 @@ import moderateContent from "../src/services/ai/aiService.js";
 import fs from "fs/promises";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
+import PostServiceController from "../src/servicesposts/controller.js";
 
 const image_url = "D:\\ADMIN\\3-que-la-gi-1-1675678242.jpg";
 let base64_string = "";
@@ -38,10 +39,30 @@ async function testModerateContent() {
     };
     try {
     const result = await moderateContent(payload);
-    console.log("Moderation Result:", result[result.length - 1].content);
+    if (result.ok) {
+        console.log("Raw Response:", result.data);
+        
+        // Parse the response
+        const parts = result.data.parts;
+        if (parts && parts.length > 0) {
+            let textContent = parts[0].text;
+            
+            // Remove markdown code block wrapper (```json ... ```)
+            textContent = textContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+            
+            // Parse JSON
+            const moderationResult = JSON.parse(textContent);
+            console.log("\nParsed Result:");
+            console.log("Result:", moderationResult.result);
+            console.log("Message:", moderationResult.message);
+        }
+    } else {
+        console.error("Moderation Failed:", result.error);
+    }
 } catch (error) {
     console.error("Error during moderation:", error);
 }
 }
+
 
 testModerateContent();

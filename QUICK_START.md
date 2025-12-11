@@ -117,10 +117,15 @@ cd post-service
 venv\Scripts\activate
 # Linux/Mac:
 source venv/bin/activate
-uvicorn app:app --reload --port 8003 --host 0.0.0.0
+uvicorn app:app --reload --port 8000 --host 0.0.0.0
+
+**Terminal 5 - AI Service:**
+.\.venv\Scripts\Activate.ps1
+cd ai-service
+adk api_server --host 0.0.0.0 --port 9000
 ```
 
-**Terminal 5 - Frontend:**
+**Terminal 6 - Frontend:**
 ```bash
 cd frontend
 npm start
@@ -128,9 +133,9 @@ npm start
 
 ### 5. Truy cập
 
-- Frontend: http://localhost:3000
-- Gateway: http://localhost:8000
-- Post Service API Docs: http://localhost:8003/docs
+- Frontend: http://localhost:300x
+- Gateway: http://localhost:3000
+- Post Service API Docs: http://localhost:8000/docs
 
 ## 🐳 Hoặc dùng PM2 (Production-like)
 

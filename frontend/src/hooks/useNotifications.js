@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback } from "react";
 import { io } from "socket.io-client";
 import * as notificationApi from "../api/notification";
 
-const GATEWAY_URL = process.env.REACT_APP_GATEWAY_URL || "http://localhost:8000";
+const GATEWAY_URL =
+  process.env.REACT_APP_GATEWAY_URL || "http://localhost:8000";
 
 export const useNotifications = (token) => {
   const [notifications, setNotifications] = useState([]);
@@ -23,7 +24,7 @@ export const useNotifications = (token) => {
       const data = await notificationApi.getNotifications();
 
       // Transform API data to match component format
-      const rawNotifications = Array.isArray(data) ? data : (data?.data || []);
+      const rawNotifications = Array.isArray(data) ? data : data?.data || [];
 
       const extractSender = (body) => {
         if (!body) return null;
@@ -39,11 +40,9 @@ export const useNotifications = (token) => {
         read: n.is_readed,
         link: n.link_url,
         createdAt: n.updated_at || n.created_at,
-        type: n.notification_type || n.type,
         actors_count: n.actors_count || 1,
         last_actor_name: n.last_actor_name,
         sender: n.last_actor_name || extractSender(n.body_template),
-        isAggregated: !!n.notification_type,
       }));
 
       setNotifications(transformed);
@@ -120,11 +119,13 @@ export const useNotifications = (token) => {
         read: false,
         link: data.link,
         createdAt: data.createdAt || new Date().toISOString(),
-        type: data.notification_type || data.type,
         actors_count: data.actors_count || 1,
         last_actor_name: data.last_actor_name,
-        sender: data.last_actor_name || (data.body && data.body.match(/^u\/([^\s]+)/) ? data.body.match(/^u\/([^\s]+)/)[1] : null),
-        isAggregated: !!data.notification_type,
+        sender:
+          data.last_actor_name ||
+          (data.body && data.body.match(/^u\/([^\s]+)/)
+            ? data.body.match(/^u\/([^\s]+)/)[1]
+            : null),
       };
 
       setNotifications((prev) => {
@@ -140,7 +141,7 @@ export const useNotifications = (token) => {
         }
 
         // Check if this is an update to an existing aggregated notification (by type + reference)
-        if (data.isNew === false && data.notification_type) {
+        if (data.isNew === false) {
           // Find and remove old notification of same type, this one replaces it
           const filtered = prev.filter((n) => n.id !== data.id);
           return [newNotification, ...filtered];

@@ -12,5 +12,4 @@ __pycache__/
 **/.env
 !**/.env.example
 /ai-service/eval_agent/.adk
-# Ignore tsconfig and other specific json files if needed, but not package files
-# *.json - DO NOT ignore all json files!
+*.exe

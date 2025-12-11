@@ -38,17 +38,18 @@ type ChatService struct {
 	logger           *zap.Logger
 
 	// Injectable functions for testing
-	getMessagesFn               func(ctx context.Context, arg repository.GetMessagesParams) ([]repository.Message, error)
-	getConversationsForUserFn   func(ctx context.Context, arg repository.GetConversationsForUserParams) ([]repository.GetConversationsForUserRow, error)
-	markAsReadFn                func(ctx context.Context, arg repository.MarkAsReadParams) error
-	beginTxFn                   func(ctx context.Context) (repository.DBTX, error)
-	upsertConversationFn   func(ctx context.Context, qtx *repository.Queries, id pgtype.UUID) (repository.Conversation, error)
-	addParticipantFn       func(ctx context.Context, qtx *repository.Queries, params repository.AddParticipantParams) error
-	insertMessageFn        func(ctx context.Context, qtx *repository.Queries, params repository.InsertMessageParams) (repository.Message, error)
-	updateLastMessageFn    func(ctx context.Context, qtx *repository.Queries, params repository.UpdateConversationLastMessageParams) error
-	insertOutboxFn         func(ctx context.Context, qtx *repository.Queries, params repository.InsertOutboxParams) error
-	commitTxFn             func(ctx context.Context, tx repository.DBTX) error
-	rollbackTxFn           func(ctx context.Context, tx repository.DBTX) error
+	getMessagesFn                  func(ctx context.Context, arg repository.GetMessagesParams) ([]repository.Message, error)
+	getConversationsForUserFn      func(ctx context.Context, arg repository.GetConversationsForUserParams) ([]repository.GetConversationsForUserRow, error)
+	markAsReadFn                   func(ctx context.Context, arg repository.MarkAsReadParams) error
+	beginTxFn                      func(ctx context.Context) (repository.DBTX, error)
+	upsertConversationFn           func(ctx context.Context, qtx *repository.Queries, id pgtype.UUID) (repository.Conversation, error)
+	addConversationParticipantsFn  func(ctx context.Context, qtx *repository.Queries, params repository.AddConversationParticipantsParams) error
+	insertMessageFn                func(ctx context.Context, qtx *repository.Queries, params repository.InsertMessageParams) (repository.Message, error)
+	updateLastMessageFn            func(ctx context.Context, qtx *repository.Queries, params repository.UpdateConversationLastMessageParams) error
+	insertOutboxFn                 func(ctx context.Context, qtx *repository.Queries, params repository.InsertOutboxParams) error
+	commitTxFn                     func(ctx context.Context, tx repository.DBTX) error
+	rollbackTxFn                   func(ctx context.Context, tx repository.DBTX) error
+	getConversationParticipantsFn  func(ctx context.Context, qtx *repository.Queries, conversationID pgtype.UUID) ([]pgtype.UUID, error)
 }
 
 // NewChatService creates a new ChatService instance
@@ -161,6 +162,12 @@ func (s *ChatService) sendMessageTx(ctx context.Context, req *chatv1.SendMessage
 		return "", fmt.Errorf("invalid user_id: %w", err)
 	}
 
+	// Parse receiver_ids if provided
+	receiverUUIDs, err := parseReceiverIDs(req.ReceiverIds)
+	if err != nil {
+		return "", err
+	}
+
 	// Begin transaction
 	tx, err := s.beginTx(ctx)
 	if err != nil {
@@ -185,13 +192,19 @@ func (s *ChatService) sendMessageTx(ctx context.Context, req *chatv1.SendMessage
 		return "", fmt.Errorf("failed to upsert conversation: %w", err)
 	}
 
-	// 2. Add sender as participant (idempotent with ON CONFLICT DO NOTHING)
-	err = s.addParticipant(ctx, qtx, repository.AddParticipantParams{
+	// 2. Add sender + receivers as participants using bulk insert
+	// Merge sender and receivers into allParticipants array
+	allParticipants := make([]pgtype.UUID, 0, len(receiverUUIDs)+1)
+	allParticipants = append(allParticipants, senderUUID)
+	allParticipants = append(allParticipants, receiverUUIDs...)
+
+	// Bulk insert all participants - ON CONFLICT DO NOTHING handles duplicates
+	err = s.addConversationParticipants(ctx, qtx, repository.AddConversationParticipantsParams{
 		ConversationID: conversationUUID,
-		UserID:         senderUUID,
+		Column2:        allParticipants,
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to add participant: %w", err)
+		return "", fmt.Errorf("failed to add participants: %w", err)
 	}
 
 	// 3. Insert message
@@ -217,13 +230,27 @@ func (s *ChatService) sendMessageTx(ctx context.Context, req *chatv1.SendMessage
 		return "", fmt.Errorf("failed to update conversation last message: %w", err)
 	}
 
-	// 5. Create outbox event payload
-	payload, err := s.createMessageEventPayload(message)
+	// 5. Get all participants to determine receivers
+	participants, err := s.getConversationParticipants(ctx, qtx, conversationUUID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get conversation participants: %w", err)
+	}
+
+	// Filter out sender to get receiver_ids
+	receiverIDs := make([]string, 0, len(participants))
+	for _, p := range participants {
+		if p != senderUUID {
+			receiverIDs = append(receiverIDs, uuidToString(p))
+		}
+	}
+
+	// 6. Create outbox event payload with receiver_ids
+	payload, err := s.createMessageEventPayload(message, receiverIDs)
 	if err != nil {
 		return "", fmt.Errorf("failed to create event payload: %w", err)
 	}
 
-	// 6. Insert outbox event
+	// 7. Insert outbox event
 	err = s.insertOutbox(ctx, qtx, repository.InsertOutboxParams{
 		AggregateType: "message",
 		AggregateID:   message.ID,
@@ -242,12 +269,13 @@ func (s *ChatService) sendMessageTx(ctx context.Context, req *chatv1.SendMessage
 }
 
 // createMessageEventPayload creates the JSON payload for the outbox event
-func (s *ChatService) createMessageEventPayload(message repository.Message) ([]byte, error) {
+func (s *ChatService) createMessageEventPayload(message repository.Message, receiverIDs []string) ([]byte, error) {
 	event := map[string]interface{}{
 		"event_type":      "message.sent",
 		"message_id":      uuidToString(message.ID),
 		"conversation_id": uuidToString(message.ConversationID),
 		"sender_id":       uuidToString(message.SenderID),
+		"receiver_ids":    receiverIDs,
 		"content":         message.Content,
 		"created_at":      message.CreatedAt.Time.Format(time.RFC3339),
 	}
@@ -268,6 +296,24 @@ func parseUUID(uuidStr string) (pgtype.UUID, error) {
 		return pgtype.UUID{}, err
 	}
 	return uuid, nil
+}
+
+// parseReceiverIDs parses an array of UUID strings to []pgtype.UUID
+// Returns an error with invalid UUID details on failure
+func parseReceiverIDs(receiverIDs []string) ([]pgtype.UUID, error) {
+	if len(receiverIDs) == 0 {
+		return nil, nil
+	}
+
+	result := make([]pgtype.UUID, 0, len(receiverIDs))
+	for _, rid := range receiverIDs {
+		uuid, err := parseUUID(rid)
+		if err != nil {
+			return nil, fmt.Errorf("invalid receiver_id: %s", rid)
+		}
+		result = append(result, uuid)
+	}
+	return result, nil
 }
 
 // uuidToString converts pgtype.UUID to string
@@ -499,12 +545,12 @@ func (s *ChatService) upsertConversation(ctx context.Context, qtx *repository.Qu
 	return qtx.UpsertConversation(ctx, id)
 }
 
-// addParticipant adds a participant to a conversation, using injectable function if available
-func (s *ChatService) addParticipant(ctx context.Context, qtx *repository.Queries, params repository.AddParticipantParams) error {
-	if s.addParticipantFn != nil {
-		return s.addParticipantFn(ctx, qtx, params)
+// addConversationParticipants adds multiple participants to a conversation using bulk insert
+func (s *ChatService) addConversationParticipants(ctx context.Context, qtx *repository.Queries, params repository.AddConversationParticipantsParams) error {
+	if s.addConversationParticipantsFn != nil {
+		return s.addConversationParticipantsFn(ctx, qtx, params)
 	}
-	return qtx.AddParticipant(ctx, params)
+	return qtx.AddConversationParticipants(ctx, params)
 }
 
 // insertMessage inserts a message, using injectable function if available
@@ -553,6 +599,14 @@ func (s *ChatService) rollbackTx(ctx context.Context, tx repository.DBTX) error 
 		return pgxTx.Rollback(ctx)
 	}
 	return fmt.Errorf("transaction does not support Rollback")
+}
+
+// getConversationParticipants retrieves all participants of a conversation
+func (s *ChatService) getConversationParticipants(ctx context.Context, qtx *repository.Queries, conversationID pgtype.UUID) ([]pgtype.UUID, error) {
+	if s.getConversationParticipantsFn != nil {
+		return s.getConversationParticipantsFn(ctx, qtx, conversationID)
+	}
+	return qtx.GetConversationParticipants(ctx, conversationID)
 }
 
 func sanitizeLimit(limit int32) int32 {
