@@ -102,6 +102,7 @@ services:
       POST_SERVICE_URL: http://post-service:8003
       COMMUNITY_SERVICE_URL: http://community-service:8004
       CORS_ORIGIN: http://localhost:3000
+      INTERNAL_SECRET: your-super-secret-key-for-internal-services
     ports:
       - "8000:8000"
     depends_on:

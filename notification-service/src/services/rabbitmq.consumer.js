@@ -2,6 +2,7 @@ import amqp from 'amqplib'
 import Redis from 'ioredis'
 import crypto from 'crypto'
 import { NotificationService } from '../services/notification.service.js'
+import { NotificationRepository } from '../repositories/notification.repository.js'
 
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://localhost'
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
@@ -203,9 +204,7 @@ export class NotificationConsumer {
 		const likerName = data.liker_username || 'Ai đó';
 
 		// Đếm số lượng like hiện tại để tạo body phù hợp
-		const existing = await NotificationService.findAggregatedNotification
-			? await require('../repositories/notification.repository.js').NotificationRepository.findAggregatedNotification(data.user_id, 'post_liked', postId)
-			: null;
+		const existing = await NotificationRepository.findAggregatedNotification(data.user_id, 'post_liked', postId);
 
 		const currentCount = existing?.actors_count || 0;
 		let bodyTemplate;
@@ -235,7 +234,7 @@ export class NotificationConsumer {
 		const commenterName = data.commenter_username || 'Ai đó';
 
 		// Đếm số lượng comment hiện tại để tạo body phù hợp
-		const existing = await require('../repositories/notification.repository.js').NotificationRepository.findAggregatedNotification(data.user_id, 'post_commented', postId);
+		const existing = await NotificationRepository.findAggregatedNotification(data.user_id, 'post_commented', postId);
 
 		const currentCount = existing?.actors_count || 0;
 		let bodyTemplate;
