@@ -17,8 +17,7 @@ class SRSWebRTCClient {
         return {
             serverIP: document.getElementById('serverIP').value.trim(),
             streamId: document.getElementById('streamId')?.value.trim() || '',
-            streamKey: document.getElementById('streamKey').value.trim(),
-            apiPort: parseInt(document.getElementById('apiPort').value) || 1985
+            streamKey: document.getElementById('streamKey').value.trim()
         };
     }
 
@@ -113,8 +112,9 @@ class SRSWebRTCClient {
 
             // Send offer via WHIP with token authentication
             // Format: stream={id}&token={stream_key}
-            const whipUrl = `http://${config.serverIP}:${config.apiPort}/rtc/v1/whip/?app=live&stream=${config.streamId}&token=${config.streamKey}`;
-            log('info', `WHIP endpoint: ${whipUrl.replace(config.streamKey, '***')}`);
+            // Use relative URL to go through Caddy proxy (handles HTTPS)
+            const whipUrl = `/rtc/v1/whip/?app=live&stream=${config.streamId}&token=${config.streamKey}`;
+            log('info', `WHIP endpoint: /rtc/v1/whip/?app=live&stream=${config.streamId}&token=***`);
 
             const response = await fetch(whipUrl, {
                 method: 'POST',
@@ -215,8 +215,9 @@ class SRSWebRTCClient {
             await this.waitForICEGathering(this.playPC);
 
             // Send offer via WHEP (uses stream ID only, no token)
-            const whepUrl = `http://${config.serverIP}:${config.apiPort}/rtc/v1/whep/?app=live&stream=${config.streamId}`;
-            log('info', `WHEP endpoint: ${whepUrl}`);
+            // Use relative URL to go through Caddy proxy (handles HTTPS)
+            const whepUrl = `/rtc/v1/whep/?app=live&stream=${config.streamId}`;
+            log('info', `WHEP endpoint: /rtc/v1/whep/?app=live&stream=${config.streamId}`);
 
             const response = await fetch(whepUrl, {
                 method: 'POST',
