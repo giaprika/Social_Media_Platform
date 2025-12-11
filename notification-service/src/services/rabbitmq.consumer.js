@@ -163,37 +163,41 @@ export class NotificationConsumer {
 		console.log(`Warning sent to user ${data.user_id}`)
 	}
 
-	// Post được tạo
 	// Post được tạo -> báo cho followers
 	static async handlePostCreated(data) {
-		// data: { user_id (author), post_id, post_title, ... }
+		// data: { user_id (author), post_id, post_title, author_username, link_url }
 		const followers = await NotificationService.getFollowersOfUser(data.user_id);
-		const followerIds = followers.map(f => f.user_id); // Assuming structure from user-service returns objects with user_id
+		const followerIds = followers.map(f => f.user_id);
 
 		if (followerIds.length === 0) {
 			console.log(`No followers to notify for post by ${data.user_id}`);
 			return;
 		}
 
+		const authorName = data.author_username || 'Người bạn theo dõi';
+		const postPreview = data.post_title ? data.post_title.substring(0, 50) + (data.post_title.length > 50 ? '...' : '') : '';
+
 		await NotificationService.createNotificationToMultipleUsers({
 			user_ids: followerIds,
-			title_template: data.title_template || 'Bài viết mới!',
-			body_template: data.body_template || `Có bài viết mới từ người bạn theo dõi`,
-			link_url: data.link_url,
+			title_template: 'Bài viết mới!',
+			body_template: `${authorName} đã đăng bài viết mới${postPreview ? ': "' + postPreview + '"' : ''}`,
+			link_url: `/app/posts/${data.post_id}`,
 		});
 		console.log(`Post created notification sent to ${followerIds.length} followers of ${data.user_id}`);
 	}
 
 	// Có người follow
 	static async handleUserFollowed(data) {
+		// data: { user_id (được follow), follower_id, follower_username, follower_avatar, link_url }
+		const followerName = data.follower_username || 'Ai đó';
+
 		await NotificationService.createNotificationToMultipleUsers({
 			user_ids: [data.user_id],
-			title_template: data.title_template || 'Bạn có người theo dõi mới!',
-			body_template:
-				data.body_template || `${data.follower_username} đã theo dõi bạn!`,
-			link_url: data.link_url,
-		})
-		console.log(`Follow notification sent to user ${data.user_id}`)
+			title_template: 'Người theo dõi mới!',
+			body_template: `${followerName} đã bắt đầu theo dõi bạn`,
+			link_url: `/app/u/${data.follower_username || data.follower_id}`,
+		});
+		console.log(`Follow notification sent to user ${data.user_id}`);
 	}
 
 	// Ai đó like bài viết
@@ -220,7 +224,7 @@ export class NotificationConsumer {
 			reference_id: postId,
 			title_template: 'Bài viết của bạn được thích!',
 			body_template: bodyTemplate,
-			link_url: data.link_url,
+			link_url: `/app/posts/${postId}`,
 			last_actor_id: data.liker_id,
 			last_actor_name: likerName
 		});
@@ -232,6 +236,7 @@ export class NotificationConsumer {
 		// data: { user_id (post owner), commenter_id, commenter_username, post_id, comment_content, link_url }
 		const postId = data.post_id || data.link_url?.split('/posts/')[1]?.split('#')[0];
 		const commenterName = data.commenter_username || 'Ai đó';
+		const commentPreview = data.comment_content ? data.comment_content.substring(0, 30) + (data.comment_content.length > 30 ? '...' : '') : '';
 
 		// Đếm số lượng comment hiện tại để tạo body phù hợp
 		const existing = await NotificationRepository.findAggregatedNotification(data.user_id, 'post_commented', postId);
@@ -239,7 +244,7 @@ export class NotificationConsumer {
 		const currentCount = existing?.actors_count || 0;
 		let bodyTemplate;
 		if (currentCount === 0) {
-			bodyTemplate = `${commenterName} đã bình luận bài viết của bạn`;
+			bodyTemplate = `${commenterName} đã bình luận: "${commentPreview}"`;
 		} else {
 			bodyTemplate = `${commenterName} và ${currentCount} người khác đã bình luận bài viết của bạn`;
 		}
@@ -248,9 +253,9 @@ export class NotificationConsumer {
 			user_id: data.user_id,
 			notification_type: 'post_commented',
 			reference_id: postId,
-			title_template: 'Bài viết của bạn có bình luận mới!',
+			title_template: 'Bình luận mới!',
 			body_template: bodyTemplate,
-			link_url: data.link_url,
+			link_url: `/app/posts/${postId}`,
 			last_actor_id: data.commenter_id,
 			last_actor_name: commenterName
 		});
