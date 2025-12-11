@@ -9,6 +9,7 @@ import (
 	"live-service/internal/middleware"
 	"live-service/internal/repository"
 	"live-service/internal/service"
+	"live-service/internal/websocket"
 	"live-service/pkg/utils"
 
 	"github.com/gin-gonic/gin"
@@ -34,8 +35,13 @@ func main() {
 	// Initialize services
 	liveService := service.NewLiveService(liveRepo, cfg)
 
+	// Initialize WebSocket hub
+	wsHub := websocket.NewHub()
+	go wsHub.Run()
+
 	// Initialize handlers
 	liveHandler := handler.NewLiveHandler(liveService)
+	wsHandler := handler.NewWebSocketHandler(wsHub)
 
 	// Setup router
 	router := gin.Default()
@@ -65,7 +71,13 @@ func main() {
 			callbacks.POST("/on_publish", liveHandler.OnPublish)
 			callbacks.POST("/on_unpublish", liveHandler.OnUnpublish)
 		}
+
+		// Real-time viewer count endpoint
+		live.GET("/:id/viewers", wsHandler.GetViewerCount)
 	}
+
+	// WebSocket routes (outside /api/v1 for cleaner URLs)
+	router.GET("/ws/live/:id", wsHandler.HandleWebSocket)
 
 	// Initialize SRS health checker
 	srsHealthChecker := utils.NewSRSHealthChecker(cfg.SRS.ServerIP, cfg.SRS.APIPort)
