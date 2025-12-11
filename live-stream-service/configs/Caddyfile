@@ -1,0 +1,64 @@
+# ===========================================
+# Caddy Configuration for Live Streaming Service
+# ===========================================
+# Caddy tự động quản lý Let's Encrypt SSL certificates
+# Docs: https://caddyserver.com/docs/caddyfile
+
+# Global options
+{
+	# Email cho Let's Encrypt notifications
+	email {$ACME_EMAIL:admin@example.com}
+	
+	# Staging mode cho testing (uncomment để test, tránh rate limit)
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+# ===========================================
+# API Domain - HTTPS reverse proxy
+# ===========================================
+{$API_DOMAIN:localhost} {
+	# Reverse proxy tới Go API service
+	reverse_proxy api:8080 {
+		# Health check
+		health_uri /health
+		health_interval 30s
+		health_timeout 10s
+	}
+	
+	# WebSocket support cho /ws/* endpoints
+	@websocket {
+		header Connection *Upgrade*
+		header Upgrade websocket
+	}
+	handle @websocket {
+		reverse_proxy api:8080
+	}
+	
+	# Security headers
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		X-XSS-Protection "1; mode=block"
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+	
+	# Logging
+	log {
+		output stdout
+		format console
+		level INFO
+	}
+}
+
+# ===========================================
+# SRS HTTP/HLS Domain (optional - nếu cần expose SRS qua HTTPS)
+# ===========================================
+# Uncomment nếu muốn serve HLS qua Caddy thay vì CDN
+# {$SRS_DOMAIN:srs.localhost} {
+# 	reverse_proxy srs:8080
+# 	
+# 	# CORS cho HLS playback
+# 	header Access-Control-Allow-Origin *
+# 	header Access-Control-Allow-Methods "GET, OPTIONS"
+# }
