@@ -125,19 +125,24 @@ func (c *Config) IsProduction() bool {
 	return c.Env == "production"
 }
 
-// GetRTMPURL constructs the RTMP ingest URL for a stream key
-func (c *Config) GetRTMPURL(streamKey string) string {
-	return fmt.Sprintf("rtmp://%s:%d/live/%s", c.SRS.ServerIP, c.SRS.RTMPPort, streamKey)
+// GetRTMPURL constructs the RTMP ingest URL with token authentication
+// Format: rtmp://server/live/stream_id?token=stream_key
+// This keeps stream_key secret - only visible in OBS, not in playback URLs
+func (c *Config) GetRTMPURL(streamID int64, streamKey string) string {
+	return fmt.Sprintf("rtmp://%s:%d/live/%d?token=%s", c.SRS.ServerIP, c.SRS.RTMPPort, streamID, streamKey)
 }
 
-// GetWebRTCURL constructs the WebRTC publish URL for a stream key
-func (c *Config) GetWebRTCURL(streamKey string) string {
-	return fmt.Sprintf("webrtc://%s:%d/live/%s", c.SRS.ServerIP, c.SRS.WebRTCPort, streamKey)
+// GetWebRTCURL constructs the WebRTC publish URL with token authentication
+// Format: webrtc://server/live/stream_id?token=stream_key
+func (c *Config) GetWebRTCURL(streamID int64, streamKey string) string {
+	return fmt.Sprintf("webrtc://%s/live/%d?token=%s", c.SRS.ServerIP, streamID, streamKey)
 }
 
-// GetHLSURL constructs the HLS playback URL for a stream key
-func (c *Config) GetHLSURL(streamKey string) string {
-	return fmt.Sprintf("%s/live/%s.m3u8", c.CDN.BaseURL, streamKey)
+// GetHLSURL constructs the HLS playback URL using stream ID (public, no token)
+// Format: https://cdn/live/stream_id.m3u8
+// Viewers only see the stream ID, never the secret stream_key
+func (c *Config) GetHLSURL(streamID int64) string {
+	return fmt.Sprintf("%s/live/%d.m3u8", c.CDN.BaseURL, streamID)
 }
 
 // GetDSN returns the PostgreSQL connection string

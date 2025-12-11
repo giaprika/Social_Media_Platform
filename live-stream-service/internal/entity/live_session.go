@@ -201,8 +201,60 @@ type SRSCallbackResponse struct {
 	Code int `json:"code"`
 }
 
-// GetStreamKey extracts the stream key from the SRS callback
-// Stream key is the "stream" field in the callback
+// GetStreamID extracts the stream ID from the SRS callback
+// With token auth: OBS sends "123?token=xxx", SRS strips params
+// So Stream field contains just "123" (the stream ID)
+func (r *SRSCallbackRequest) GetStreamID() string {
+	return r.Stream
+}
+
+// GetToken extracts the authentication token from URL params
+// Param field contains "?token=xxx" or empty string
+func (r *SRSCallbackRequest) GetToken() string {
+	if r.Param == "" {
+		return ""
+	}
+	// Parse ?token=xxx format
+	// Param can be "?token=abc123" or "token=abc123"
+	param := r.Param
+	if len(param) > 0 && param[0] == '?' {
+		param = param[1:]
+	}
+	// Simple parsing for token=value
+	const prefix = "token="
+	for _, part := range splitParams(param) {
+		if len(part) > len(prefix) && part[:len(prefix)] == prefix {
+			return part[len(prefix):]
+		}
+	}
+	return ""
+}
+
+// splitParams splits URL params by &
+func splitParams(s string) []string {
+	var result []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '&' {
+			if i > start {
+				result = append(result, s[start:i])
+			}
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		result = append(result, s[start:])
+	}
+	return result
+}
+
+// GetStreamKey is deprecated, use GetStreamID and GetToken instead
+// Kept for backward compatibility
 func (r *SRSCallbackRequest) GetStreamKey() string {
+	// If token exists, return it as stream key for validation
+	if token := r.GetToken(); token != "" {
+		return token
+	}
+	// Fallback to stream field (old behavior)
 	return r.Stream
 }

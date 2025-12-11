@@ -243,9 +243,13 @@ func (h *LiveHandler) OnPublish(c *gin.Context) {
 		return
 	}
 
-	// Extract stream key from request
-	streamKey := req.GetStreamKey()
-	if streamKey == "" {
+	// Extract stream ID and token from request
+	// New format: stream="123", param="?token=secret_key"
+	// Old format: stream="secret_key", param=""
+	streamID := req.GetStreamID()
+	token := req.GetToken()
+
+	if streamID == "" {
 		c.JSON(http.StatusForbidden, entity.SRSCallbackResponse{Code: 1})
 		return
 	}
@@ -257,10 +261,10 @@ func (h *LiveHandler) OnPublish(c *gin.Context) {
 		return
 	}
 
-	// Validate stream key and update status
-	if err := h.service.HandleOnPublish(ctx, streamKey); err != nil {
-		// Determine appropriate error response
-		// All errors result in rejection (code=1) for SRS
+	// Validate stream and update status
+	// If token exists, use new auth flow (stream_id + token)
+	// Otherwise fallback to old flow (stream_key only)
+	if err := h.service.HandleOnPublish(ctx, streamID, token); err != nil {
 		c.JSON(http.StatusForbidden, entity.SRSCallbackResponse{Code: 1})
 		return
 	}
@@ -289,9 +293,9 @@ func (h *LiveHandler) OnUnpublish(c *gin.Context) {
 		return
 	}
 
-	// Extract stream key from request
-	streamKey := req.GetStreamKey()
-	if streamKey == "" {
+	// Extract stream ID from request
+	streamID := req.GetStreamID()
+	if streamID == "" {
 		c.JSON(http.StatusOK, entity.SRSCallbackResponse{Code: 0})
 		return
 	}
@@ -299,16 +303,13 @@ func (h *LiveHandler) OnUnpublish(c *gin.Context) {
 	// Handle context timeout gracefully
 	ctx := c.Request.Context()
 	if ctx.Err() != nil {
-		// Context cancelled but still return success
-		// Stream is already stopped regardless
 		c.JSON(http.StatusOK, entity.SRSCallbackResponse{Code: 0})
 		return
 	}
 
 	// Update status to ENDED
 	// Errors are logged in service layer but we always return success
-	// because the stream has already stopped on SRS side
-	_ = h.service.HandleOnUnpublish(ctx, streamKey)
+	_ = h.service.HandleOnUnpublish(ctx, streamID)
 
 	// Always return 200 for unpublish - idempotent operation
 	c.JSON(http.StatusOK, entity.SRSCallbackResponse{Code: 0})

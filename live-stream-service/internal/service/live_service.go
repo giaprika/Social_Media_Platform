@@ -29,8 +29,10 @@ type LiveService interface {
 	ListStreams(ctx context.Context, params entity.PaginationParams) (*entity.ListStreamsResponse, error)
 	GetWebRTCInfo(ctx context.Context, id int64, userID int64) (*entity.WebRTCInfoResponse, error)
 	// Webhook handlers
-	HandleOnPublish(ctx context.Context, streamKey string) error
-	HandleOnUnpublish(ctx context.Context, streamKey string) error
+	// streamID: the stream ID (e.g., "123")
+	// token: the secret stream key from ?token= param (e.g., "sk_abc123")
+	HandleOnPublish(ctx context.Context, streamID string, token string) error
+	HandleOnUnpublish(ctx context.Context, streamID string) error
 }
 
 type liveService struct {
@@ -46,16 +48,11 @@ func NewLiveService(repo repository.LiveRepository, config *config.Config) LiveS
 }
 
 func (s *liveService) CreateStream(ctx context.Context, userID int64, req *entity.CreateStreamRequest) (*entity.CreateStreamResponse, error) {
-	// Generate secure stream key
+	// Generate secure stream key (secret token)
 	streamKey, err := utils.GenerateStreamKey(userID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrStreamKeyGeneration, err)
 	}
-
-	// Construct streaming URLs
-	rtmpURL := s.config.GetRTMPURL(streamKey)
-	webrtcURL := s.config.GetWebRTCURL(streamKey)
-	hlsURL := s.config.GetHLSURL(streamKey)
 
 	// Prepare description pointer
 	var description *string
@@ -63,22 +60,37 @@ func (s *liveService) CreateStream(ctx context.Context, userID int64, req *entit
 		description = &req.Description
 	}
 
-	// Create live session entity
+	// Create live session entity (URLs will be set after we get the ID)
 	session := &entity.LiveSession{
 		UserID:      userID,
 		StreamKey:   streamKey,
 		Title:       req.Title,
 		Description: description,
 		Status:      entity.StatusIdle,
-		RTMPUrl:     &rtmpURL,
-		WebRTCUrl:   &webrtcURL,
-		HLSUrl:      &hlsURL,
 		ViewerCount: 0,
 	}
 
-	// Save to database
+	// Save to database to get the ID
 	if err := s.repo.Create(ctx, session); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrStreamCreation, err)
+	}
+
+	// Now construct URLs with stream ID + token
+	// Format: rtmp://server/live/{id}?token={stream_key}
+	// This keeps stream_key secret - viewers only see the ID in playback URLs
+	rtmpURL := s.config.GetRTMPURL(session.ID, streamKey)
+	webrtcURL := s.config.GetWebRTCURL(session.ID, streamKey)
+	hlsURL := s.config.GetHLSURL(session.ID)
+
+	// Update session with URLs
+	session.RTMPUrl = &rtmpURL
+	session.WebRTCUrl = &webrtcURL
+	session.HLSUrl = &hlsURL
+
+	// Update URLs in database
+	if err := s.repo.UpdateURLs(ctx, session.ID, rtmpURL, webrtcURL, hlsURL); err != nil {
+		// Log but don't fail - URLs are derived, not critical
+		log.Printf("[CreateStream] WARNING: failed to update URLs for stream %d: %v", session.ID, err)
 	}
 
 	return &entity.CreateStreamResponse{
@@ -179,21 +191,17 @@ func (s *liveService) GetWebRTCInfo(ctx context.Context, id int64, userID int64)
 	}
 
 	isOwner := session.UserID == userID
-
-	// Construct WebRTC URLs
-	// Format: webrtc://server_ip/app/stream_key
 	serverIP := s.config.SRS.ServerIP
+	streamID := session.ID
 	streamKey := session.StreamKey
 
-	// SRS WebRTC play URL (for viewers)
-	playURL := fmt.Sprintf("webrtc://%s/live/%s", serverIP, streamKey)
+	// Play URL uses stream ID (public, no token needed for viewing)
+	// Format: webrtc://server/live/stream_id
+	playURL := fmt.Sprintf("webrtc://%s/live/%d", serverIP, streamID)
 
-	// WHIP/WHEP endpoints (SRS 5.0+ HTTP-based WebRTC)
-	// WHIP: WebRTC-HTTP Ingestion Protocol (publish)
-	// WHEP: WebRTC-HTTP Egress Protocol (play)
+	// WHEP endpoint for viewers (uses stream ID)
 	apiBase := fmt.Sprintf("http://%s:%d", serverIP, s.config.SRS.APIPort)
-	whipEndpoint := fmt.Sprintf("%s/rtc/v1/whip/?app=live&stream=%s", apiBase, streamKey)
-	whepEndpoint := fmt.Sprintf("%s/rtc/v1/whep/?app=live&stream=%s", apiBase, streamKey)
+	whepEndpoint := fmt.Sprintf("%s/rtc/v1/whep/?app=live&stream=%d", apiBase, streamID)
 
 	// Default ICE servers (Google STUN)
 	iceServers := []entity.ICEServer{
@@ -214,113 +222,155 @@ func (s *liveService) GetWebRTCInfo(ctx context.Context, id int64, userID int64)
 		IsOwner:      isOwner,
 	}
 
-	// Only show publish URLs to owner
+	// Only show publish URLs to owner (includes secret token)
 	if isOwner {
-		resp.PublishURL = playURL // Same URL format for publish
-		resp.WHIPEndpoint = whipEndpoint
+		// Publish URL with token: webrtc://server/live/stream_id?token=stream_key
+		resp.PublishURL = fmt.Sprintf("webrtc://%s/live/%d?token=%s", serverIP, streamID, streamKey)
+		resp.WHIPEndpoint = fmt.Sprintf("%s/rtc/v1/whip/?app=live&stream=%d&token=%s", apiBase, streamID, streamKey)
 	}
 
 	return resp, nil
 }
 
-// HandleOnPublish validates stream key and updates session status to LIVE
-func (s *liveService) HandleOnPublish(ctx context.Context, streamKey string) error {
-	// Validate stream key format
-	if streamKey == "" {
-		log.Printf("[on_publish] ERROR: empty stream key")
+// HandleOnPublish validates stream credentials and updates session status to LIVE
+// New auth flow: streamID + token (from ?token= param)
+// Fallback: streamID only (treated as stream_key for backward compatibility)
+func (s *liveService) HandleOnPublish(ctx context.Context, streamID string, token string) error {
+	if streamID == "" {
+		log.Printf("[on_publish] ERROR: empty stream ID")
 		return ErrInvalidStreamKey
 	}
 
-	// Mask stream key for logging
-	maskedKey := utils.MaskStreamKey(streamKey)
+	var session *entity.LiveSession
+	var err error
 
-	// Find session by stream key
-	session, err := s.repo.GetByStreamKey(ctx, streamKey)
-	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			log.Printf("[on_publish] REJECTED: stream key not found: %s", maskedKey)
-			return fmt.Errorf("%w: %s", ErrInvalidStreamKey, maskedKey)
+	// New auth flow: streamID is numeric ID, token is the secret key
+	if token != "" {
+		// Parse stream ID as int64
+		var id int64
+		if _, parseErr := fmt.Sscanf(streamID, "%d", &id); parseErr != nil || id <= 0 {
+			log.Printf("[on_publish] REJECTED: invalid stream ID format: %s", streamID)
+			return fmt.Errorf("%w: invalid stream ID", ErrInvalidStreamKey)
 		}
-		log.Printf("[on_publish] ERROR: database error for %s: %v", maskedKey, err)
-		return fmt.Errorf("database error: %w", err)
+
+		// Get session by ID
+		session, err = s.repo.GetByID(ctx, id)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				log.Printf("[on_publish] REJECTED: stream ID not found: %s", streamID)
+				return fmt.Errorf("%w: stream not found", ErrStreamNotFound)
+			}
+			log.Printf("[on_publish] ERROR: database error for stream %s: %v", streamID, err)
+			return fmt.Errorf("database error: %w", err)
+		}
+
+		// Validate token matches stream_key
+		if session.StreamKey != token {
+			maskedToken := utils.MaskStreamKey(token)
+			log.Printf("[on_publish] REJECTED: invalid token for stream %d (token: %s)", id, maskedToken)
+			return fmt.Errorf("%w: invalid token", ErrInvalidStreamKey)
+		}
+
+		log.Printf("[on_publish] Token auth: stream %d validated", id)
+	} else {
+		// Fallback: streamID is actually the stream_key (old behavior)
+		maskedKey := utils.MaskStreamKey(streamID)
+		session, err = s.repo.GetByStreamKey(ctx, streamID)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				log.Printf("[on_publish] REJECTED: stream key not found: %s", maskedKey)
+				return fmt.Errorf("%w: %s", ErrInvalidStreamKey, maskedKey)
+			}
+			log.Printf("[on_publish] ERROR: database error for %s: %v", maskedKey, err)
+			return fmt.Errorf("database error: %w", err)
+		}
+		log.Printf("[on_publish] Legacy auth: stream %d (key: %s)", session.ID, maskedKey)
 	}
 
 	// Check current status
 	switch session.Status {
 	case entity.StatusLive:
-		log.Printf("[on_publish] REJECTED: duplicate publish attempt for stream %d (%s)", session.ID, maskedKey)
+		log.Printf("[on_publish] REJECTED: duplicate publish for stream %d", session.ID)
 		return fmt.Errorf("%w: stream %d is already live", ErrDuplicatePublish, session.ID)
 
 	case entity.StatusEnded:
-		log.Printf("[on_publish] REJECTED: stream %d already ended (%s)", session.ID, maskedKey)
-		return fmt.Errorf("%w: stream %d has ended, create a new stream", ErrStreamAlreadyEnded, session.ID)
+		log.Printf("[on_publish] REJECTED: stream %d already ended", session.ID)
+		return fmt.Errorf("%w: stream %d has ended", ErrStreamAlreadyEnded, session.ID)
 
 	case entity.StatusIdle:
-		// Valid transition, continue
+		// Valid transition
 	default:
 		log.Printf("[on_publish] REJECTED: unknown status %s for stream %d", session.Status, session.ID)
 		return fmt.Errorf("%w: unknown status %s", ErrInvalidTransition, session.Status)
 	}
 
-	// Update status to LIVE and set started_at
+	// Update status to LIVE
 	if err := s.repo.SetStarted(ctx, session.ID); err != nil {
 		if errors.Is(err, repository.ErrInvalidStatus) {
-			// Race condition: another request already started the stream
-			log.Printf("[on_publish] REJECTED: race condition for stream %d (%s)", session.ID, maskedKey)
+			log.Printf("[on_publish] REJECTED: race condition for stream %d", session.ID)
 			return fmt.Errorf("%w: stream state changed", ErrDuplicatePublish)
 		}
 		log.Printf("[on_publish] ERROR: failed to start stream %d: %v", session.ID, err)
 		return fmt.Errorf("failed to start stream: %w", err)
 	}
 
-	log.Printf("[on_publish] SUCCESS: stream %d started (user: %d, key: %s)", session.ID, session.UserID, maskedKey)
+	log.Printf("[on_publish] SUCCESS: stream %d started (user: %d)", session.ID, session.UserID)
 	return nil
 }
 
 // HandleOnUnpublish updates session status to ENDED when stream stops
-func (s *liveService) HandleOnUnpublish(ctx context.Context, streamKey string) error {
-	// Validate stream key
-	if streamKey == "" {
-		log.Printf("[on_unpublish] WARNING: empty stream key")
-		return nil // Don't fail for unpublish
+// streamID can be numeric ID (new flow) or stream_key (legacy)
+func (s *liveService) HandleOnUnpublish(ctx context.Context, streamID string) error {
+	if streamID == "" {
+		log.Printf("[on_unpublish] WARNING: empty stream ID")
+		return nil
 	}
 
-	maskedKey := utils.MaskStreamKey(streamKey)
+	var session *entity.LiveSession
+	var err error
 
-	// Find session by stream key
-	session, err := s.repo.GetByStreamKey(ctx, streamKey)
-	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			log.Printf("[on_unpublish] WARNING: stream key not found: %s (may be deleted)", maskedKey)
-			return nil // Stream might have been deleted
+	// Try to parse as numeric ID first (new flow)
+	var id int64
+	if _, parseErr := fmt.Sscanf(streamID, "%d", &id); parseErr == nil && id > 0 {
+		session, err = s.repo.GetByID(ctx, id)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				log.Printf("[on_unpublish] WARNING: stream ID %d not found", id)
+				return nil
+			}
+			log.Printf("[on_unpublish] ERROR: database error for stream %d: %v", id, err)
+			return fmt.Errorf("database error: %w", err)
 		}
-		log.Printf("[on_unpublish] ERROR: database error for %s: %v", maskedKey, err)
-		return fmt.Errorf("database error: %w", err)
+	} else {
+		// Fallback: treat as stream_key (legacy)
+		maskedKey := utils.MaskStreamKey(streamID)
+		session, err = s.repo.GetByStreamKey(ctx, streamID)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				log.Printf("[on_unpublish] WARNING: stream key not found: %s", maskedKey)
+				return nil
+			}
+			log.Printf("[on_unpublish] ERROR: database error for %s: %v", maskedKey, err)
+			return fmt.Errorf("database error: %w", err)
+		}
 	}
 
 	// Check if already ended
 	if session.Status == entity.StatusEnded {
-		log.Printf("[on_unpublish] INFO: stream %d already ended (%s)", session.ID, maskedKey)
-		return nil // Idempotent - already ended
-	}
-
-	// Check if never started (IDLE -> ENDED is allowed but unusual)
-	if session.Status == entity.StatusIdle {
-		log.Printf("[on_unpublish] WARNING: stream %d was never started (%s)", session.ID, maskedKey)
-		// Still end it to clean up
+		log.Printf("[on_unpublish] INFO: stream %d already ended", session.ID)
+		return nil
 	}
 
 	// Update status to ENDED
 	if err := s.repo.SetEnded(ctx, session.ID); err != nil {
 		if errors.Is(err, repository.ErrInvalidStatus) {
-			// Already ended by another request
-			log.Printf("[on_unpublish] INFO: stream %d already ended (race condition)", session.ID)
+			log.Printf("[on_unpublish] INFO: stream %d already ended (race)", session.ID)
 			return nil
 		}
 		log.Printf("[on_unpublish] ERROR: failed to end stream %d: %v", session.ID, err)
 		return fmt.Errorf("failed to end stream: %w", err)
 	}
 
-	log.Printf("[on_unpublish] SUCCESS: stream %d ended (user: %d, key: %s)", session.ID, session.UserID, maskedKey)
+	log.Printf("[on_unpublish] SUCCESS: stream %d ended (user: %d)", session.ID, session.UserID)
 	return nil
 }

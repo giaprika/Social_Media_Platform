@@ -16,30 +16,49 @@ class SRSWebRTCClient {
     getConfig() {
         return {
             serverIP: document.getElementById('serverIP').value.trim(),
+            streamId: document.getElementById('streamId')?.value.trim() || '',
             streamKey: document.getElementById('streamKey').value.trim(),
             apiPort: parseInt(document.getElementById('apiPort').value) || 1985
         };
     }
 
     /**
-     * Validate configuration
+     * Validate configuration for publishing (needs stream ID + token)
      */
-    validateConfig() {
+    validatePublishConfig() {
         const config = this.getConfig();
         if (!config.serverIP) {
             throw new Error('Server IP is required');
         }
+        if (!config.streamId) {
+            throw new Error('Stream ID is required');
+        }
         if (!config.streamKey) {
-            throw new Error('Stream Key is required');
+            throw new Error('Stream Key (token) is required');
+        }
+        return config;
+    }
+
+    /**
+     * Validate configuration for playing (only needs stream ID)
+     */
+    validatePlayConfig() {
+        const config = this.getConfig();
+        if (!config.serverIP) {
+            throw new Error('Server IP is required');
+        }
+        if (!config.streamId) {
+            throw new Error('Stream ID is required');
         }
         return config;
     }
 
     /**
      * Start publishing stream via WHIP
+     * Uses token authentication: stream={id}&token={stream_key}
      */
     async startPublish() {
-        const config = this.validateConfig();
+        const config = this.validatePublishConfig();
         log('info', `Starting publish to ${config.serverIP}...`);
         updateStatus('publish', 'connecting', 'Requesting camera access...');
 
@@ -92,9 +111,10 @@ class SRSWebRTCClient {
             // Wait for ICE gathering
             await this.waitForICEGathering(this.publishPC);
 
-            // Send offer via WHIP
-            const whipUrl = `http://${config.serverIP}:${config.apiPort}/rtc/v1/whip/?app=live&stream=${config.streamKey}`;
-            log('info', `WHIP endpoint: ${whipUrl}`);
+            // Send offer via WHIP with token authentication
+            // Format: stream={id}&token={stream_key}
+            const whipUrl = `http://${config.serverIP}:${config.apiPort}/rtc/v1/whip/?app=live&stream=${config.streamId}&token=${config.streamKey}`;
+            log('info', `WHIP endpoint: ${whipUrl.replace(config.streamKey, '***')}`);
 
             const response = await fetch(whipUrl, {
                 method: 'POST',
@@ -146,9 +166,10 @@ class SRSWebRTCClient {
 
     /**
      * Start playing stream via WHEP
+     * Uses stream ID only (no token needed for viewing)
      */
     async startPlay() {
-        const config = this.validateConfig();
+        const config = this.validatePlayConfig();
         log('info', `Starting playback from ${config.serverIP}...`);
         updateStatus('play', 'connecting', 'Connecting to stream...');
 
@@ -193,8 +214,8 @@ class SRSWebRTCClient {
             // Wait for ICE gathering
             await this.waitForICEGathering(this.playPC);
 
-            // Send offer via WHEP
-            const whepUrl = `http://${config.serverIP}:${config.apiPort}/rtc/v1/whep/?app=live&stream=${config.streamKey}`;
+            // Send offer via WHEP (uses stream ID only, no token)
+            const whepUrl = `http://${config.serverIP}:${config.apiPort}/rtc/v1/whep/?app=live&stream=${config.streamId}`;
             log('info', `WHEP endpoint: ${whepUrl}`);
 
             const response = await fetch(whepUrl, {
@@ -287,6 +308,76 @@ function log(level, message) {
     console.log(`[${level}] ${message}`);
 }
 
+/**
+ * Create a new stream via API
+ */
+async function createStream() {
+    const serverIP = document.getElementById('serverIP').value.trim();
+    const userId = document.getElementById('userId').value.trim();
+    const title = document.getElementById('streamTitle').value.trim() || 'Test Stream';
+    const resultEl = document.getElementById('createStreamResult');
+
+    if (!serverIP) {
+        resultEl.innerHTML = '<span style="color: #ff6b6b;">❌ Enter Server IP first</span>';
+        return;
+    }
+
+    resultEl.innerHTML = '⏳ Creating stream...';
+    log('info', `Creating stream for user ${userId}...`);
+
+    try {
+        // Try HTTPS first, fallback to HTTP
+        let apiUrl = `https://${serverIP}/api/v1/live/create`;
+        let response;
+        
+        try {
+            response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-User-ID': userId
+                },
+                body: JSON.stringify({ title })
+            });
+        } catch (e) {
+            // Fallback to HTTP (for local testing)
+            apiUrl = `http://${serverIP}:8081/api/v1/live/create`;
+            log('warn', 'HTTPS failed, trying HTTP...');
+            response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-User-ID': userId
+                },
+                body: JSON.stringify({ title })
+            });
+        }
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.message || `HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        // Auto-fill stream ID and key
+        document.getElementById('streamId').value = data.id;
+        document.getElementById('streamKey').value = data.stream_key;
+        
+        resultEl.innerHTML = `
+            <span style="color: #4ecdc4;">✅ Stream created!</span><br>
+            <small>ID: ${data.id} | Key: ${data.stream_key.substring(0, 8)}...</small>
+        `;
+        
+        log('info', `Stream created: ID=${data.id}`);
+        log('info', `RTMP URL: ${data.rtmp_url}`);
+
+    } catch (error) {
+        resultEl.innerHTML = `<span style="color: #ff6b6b;">❌ ${error.message}</span>`;
+        log('error', `Create stream failed: ${error.message}`);
+    }
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     const client = new SRSWebRTCClient();
@@ -305,11 +396,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Button handlers
+    document.getElementById('btnCreateStream').onclick = createStream;
     document.getElementById('btnStartPublish').onclick = () => client.startPublish();
     document.getElementById('btnStopPublish').onclick = () => client.stopPublish();
     document.getElementById('btnStartPlay').onclick = () => client.startPlay();
     document.getElementById('btnStopPlay').onclick = () => client.stopPlay();
 
     log('info', 'WebRTC Demo initialized');
-    log('info', 'Enter SRS server IP and stream key to begin');
+    log('info', 'Click "Create Stream" to get a stream key, then start streaming');
 });
