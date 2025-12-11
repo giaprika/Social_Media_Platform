@@ -1,4 +1,5 @@
 import chatApi from './chatAxios'
+import { filterOffensiveContent } from '../utils/contentFilter'
 
 // API paths - proxied through backend gateway to chat service
 const CHAT_PATH = '/api/chat'
@@ -61,9 +62,12 @@ export const sendMessage = async (
 	content,
 	receiverIds = null
 ) => {
+	// ✨ Filter offensive content before sending
+	const filteredContent = await filterOffensiveContent(content)
+	
 	const payload = {
 		conversation_id: conversationId,
-		content: content,
+		content: filteredContent, // Use filtered content
 		idempotency_key: generateUUID(),
 	}
 

@@ -200,7 +200,8 @@ async def create_comment(
     user_id = get_user_id(x_user_id)
     
     try:
-        post_result = supabase.table(POSTS_TABLE).select("post_id").eq("post_id", post_id).execute()
+        # Get post and owner info
+        post_result = supabase.table(POSTS_TABLE).select("post_id, user_id").eq("post_id", post_id).execute()
         if not post_result.data:
             raise HTTPException(status_code=404, detail=f"Post '{post_id}' not found")
         
@@ -247,37 +248,20 @@ async def create_comment(
         }).eq("post_id", post_id).execute()
         
         # Publish notification event qua RabbitMQ
+        # Publish notification event qua RabbitMQ
         try:
-            import aio_pika
-            import asyncio
-            # Get current counts
-            post_info = supabase.table(POSTS_TABLE).select("reacts_count, comments_count").eq("post_id", post_id).execute()
-            likes_count = post_info.data[0].get("reacts_count", 0) if post_info.data else 0
-            comments_count = post_info.data[0].get("comments_count", 0) if post_info.data else 0
-            
-            async def publish_post_commented():
-                connection = await aio_pika.connect_robust(os.getenv("RABBITMQ_URL", "amqp://rabbitmq"))
-                channel = await connection.channel()
-                await channel.default_exchange.publish(
-                    aio_pika.Message(
-                        body=bytes(json.dumps({
-                            "user_id": post_result.data[0]["user_id"],
-                            "commenter_id": user_id,
-                            "commenter_username": None,
-                            "comment_content": content,
-                            "title_template": "Bài viết của bạn có bình luận mới!",
-                            "body_template": f"Ai đó đã bình luận: {content}",
-                            "link_url": f"/posts/{post_id}#comment-{created_comment.get('comment_id')}",
-                            "post_id": post_id,
-                            "likes": likes_count,
-                            "comments": comments_count
-                        }), encoding="utf-8"),
-                        delivery_mode=aio_pika.DeliveryMode.PERSISTENT
-                    ),
-                    routing_key="post.commented"
-                )
-                await connection.close()
-            await publish_post_commented()
+            from rabbitmq_producer import publish_event
+            post_owner = post_result.data[0]["user_id"]
+            if post_owner != user_id:
+                await publish_event("post.commented", {
+                    "user_id": post_owner,
+                    "commenter_id": user_id,
+                    "commenter_username": None,
+                    "comment_content": content,
+                    "title_template": "Bài viết của bạn có bình luận mới!",
+                    "body_template": f"Ai đó đã bình luận: {content}",
+                    "link_url": f"/posts/{post_id}#comment-{created_comment.get('comment_id')}"
+                })
         except Exception as e:
             print(f"[Notification] Failed to publish post.commented event: {str(e)}")
 

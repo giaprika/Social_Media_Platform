@@ -102,6 +102,7 @@ services:
       POST_SERVICE_URL: http://post-service:8003
       COMMUNITY_SERVICE_URL: http://community-service:8004
       CORS_ORIGIN: http://localhost:3000
+      INTERNAL_SECRET: your-super-secret-key-for-internal-services
     ports:
       - "8000:8000"
     depends_on:
@@ -234,6 +235,7 @@ services:
       POST_REACT_TABLE_NAME: post_reaction
       COMMENT_REACT_TABLE_NAME: comment_reaction
       STORAGE_BUCKET_NAME: posts_service
+      RABBITMQ_URL: amqp://rabbitmq
     ports:
       - "8003:8003"
     networks:

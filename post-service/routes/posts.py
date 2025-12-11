@@ -201,28 +201,17 @@ async def create_post(
         created_post = result.data[0]
         
         # Publish notification event qua RabbitMQ
+        # Publish notification event qua RabbitMQ
         try:
-            import aio_pika
-            import asyncio
-            async def publish_post_created():
-                connection = await aio_pika.connect_robust(os.getenv("RABBITMQ_URL", "amqp://rabbitmq"))
-                channel = await connection.channel()
-                await channel.default_exchange.publish(
-                    aio_pika.Message(
-                        body=bytes(json.dumps({
-                            "user_id": user_id,
-                            "post_id": created_post.get("post_id"),
-                            "post_title": content,
-                            "title_template": "Bài viết mới đã được tạo!",
-                            "body_template": f"Bài viết: {content}",
-                            "link_url": f"/posts/{created_post.get('post_id')}"
-                        }), encoding="utf-8"),
-                        delivery_mode=aio_pika.DeliveryMode.PERSISTENT
-                    ),
-                    routing_key="post.created"
-                )
-                await connection.close()
-            await publish_post_created()
+            from rabbitmq_producer import publish_event
+            await publish_event("post.created", {
+                "user_id": user_id,
+                "post_id": created_post.get("post_id"),
+                "post_title": content,
+                "title_template": "Bài viết mới đã được tạo!",
+                "body_template": f"Bài viết: {content}",
+                "link_url": f"/posts/{created_post.get('post_id')}"
+            })
         except Exception as e:
             print(f"[Notification] Failed to publish post.created event: {str(e)}")
 

@@ -15,3 +15,6 @@ cryptography==46.0.3
 
 # Data validation
 pydantic==2.12.4
+
+# RabbitMQ
+aio-pika==9.4.0

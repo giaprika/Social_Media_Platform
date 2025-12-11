@@ -145,7 +145,7 @@ const NotificationDropdown = ({
                     <div className="flex gap-3">
                       <Avatar
                         src={notification.avatar}
-                        name={notification.sender || "System"}
+                        name={notification.sender || notification.last_actor_name || "System"}
                         size="sm"
                       />
                       <div className="flex-1 min-w-0">
@@ -157,14 +157,12 @@ const NotificationDropdown = ({
                               : "text-muted-foreground"
                           )}
                         >
-                          {notification.title || notification.message}
+                          {notification.title}
                         </p>
-                        {notification.content && notification.content !== notification.title && (
-                          <p className="mt-1 truncate text-xs text-muted-foreground">
-                            {notification.content}
-                          </p>
-                        )}
-                        <p className="mt-1 text-xs text-muted-foreground">
+                        <p className="mt-0.5 text-sm text-muted-foreground line-clamp-2">
+                          {notification.content || notification.message}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground/70">
                           {formatTime(notification.createdAt || notification.timestamp)}
                         </p>
                       </div>

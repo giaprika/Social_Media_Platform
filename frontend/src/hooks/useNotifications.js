@@ -38,9 +38,12 @@ export const useNotifications = (token) => {
         content: n.body_template,
         read: n.is_readed,
         link: n.link_url,
-        createdAt: n.created_at,
-        type: n.type,
-        sender: extractSender(n.body_template),
+        createdAt: n.updated_at || n.created_at,
+        type: n.notification_type || n.type,
+        actors_count: n.actors_count || 1,
+        last_actor_name: n.last_actor_name,
+        sender: n.last_actor_name || extractSender(n.body_template),
+        isAggregated: !!n.notification_type,
       }));
 
       setNotifications(transformed);
@@ -117,11 +120,35 @@ export const useNotifications = (token) => {
         read: false,
         link: data.link,
         createdAt: data.createdAt || new Date().toISOString(),
-        type: data.type,
-        sender: data.body && data.body.match(/^u\/([^\s]+)/) ? data.body.match(/^u\/([^\s]+)/)[1] : null,
+        type: data.notification_type || data.type,
+        actors_count: data.actors_count || 1,
+        last_actor_name: data.last_actor_name,
+        sender: data.last_actor_name || (data.body && data.body.match(/^u\/([^\s]+)/) ? data.body.match(/^u\/([^\s]+)/)[1] : null),
+        isAggregated: !!data.notification_type,
       };
 
-      setNotifications((prev) => [newNotification, ...prev]);
+      setNotifications((prev) => {
+        // For aggregated notifications, update existing instead of adding new
+        if (data.id) {
+          const existingIndex = prev.findIndex((n) => n.id === data.id);
+          if (existingIndex !== -1) {
+            // Update existing notification and move to top
+            const updated = [...prev];
+            updated.splice(existingIndex, 1);
+            return [{ ...newNotification, read: false }, ...updated];
+          }
+        }
+
+        // Check if this is an update to an existing aggregated notification (by type + reference)
+        if (data.isNew === false && data.notification_type) {
+          // Find and remove old notification of same type, this one replaces it
+          const filtered = prev.filter((n) => n.id !== data.id);
+          return [newNotification, ...filtered];
+        }
+
+        // Add new notification at the top
+        return [newNotification, ...prev];
+      });
     });
 
     newSocket.on("disconnect", () => {
