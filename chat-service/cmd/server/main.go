@@ -108,9 +108,10 @@ func main() {
 	}
 
 	httpMux := http.NewServeMux()
-	httpHandler := middleware.HTTPRecovery(logger)(
-		middleware.HTTPLogger(logger)(
-			middleware.HTTPAuthExtractor(logger)(gatewayMux)))
+	httpHandler := middleware.CORS(
+		middleware.HTTPRecovery(logger)(
+			middleware.HTTPLogger(logger)(
+				middleware.HTTPAuthExtractor(logger)(gatewayMux))))
 	httpMux.Handle("/", httpHandler)
 
 	httpServer := &http.Server{
