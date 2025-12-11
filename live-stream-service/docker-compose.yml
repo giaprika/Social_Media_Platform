@@ -12,6 +12,7 @@ services:
       - "443:443/udp"    # HTTP/3 (QUIC)
     volumes:
       - ./configs/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web:/srv:ro          # WebRTC demo pages
       - caddy_data:/data       # SSL certificates
       - caddy_config:/config   # Caddy config
     environment:

@@ -17,6 +17,12 @@
 # API Domain - HTTPS reverse proxy
 # ===========================================
 {$API_DOMAIN:localhost} {
+	# Serve WebRTC demo pages
+	handle /demo/* {
+		root * /srv
+		file_server
+	}
+	
 	# Reverse proxy tới Go API service
 	reverse_proxy api:8080 {
 		# Health check
