@@ -27,17 +27,23 @@ type Hub struct {
 
 	// Minimum interval between view count updates (throttling)
 	viewUpdateInterval time.Duration
+
+	// Pending view updates (for debouncing)
+	pendingUpdates map[int64]bool
+	pendingMu      sync.Mutex
 }
 
 // NewHub creates a new Hub instance
 func NewHub() *Hub {
-	return &Hub{
+	h := &Hub{
 		rooms:              make(map[int64]map[*Client]bool),
 		register:           make(chan *Client, 256),
 		unregister:         make(chan *Client, 256),
 		lastViewUpdate:     make(map[int64]time.Time),
 		viewUpdateInterval: 3 * time.Second, // Throttle view updates to max 1 per 3 seconds
+		pendingUpdates:     make(map[int64]bool),
 	}
+	return h
 }
 
 // Run starts the hub's main loop
@@ -151,38 +157,75 @@ func (h *Hub) BroadcastMessage(streamID int64, msg *Message) {
 }
 
 // BroadcastViewUpdate sends viewer count update with throttling
+// This is the public API that applies throttling
 func (h *Hub) BroadcastViewUpdate(streamID int64) {
+	h.scheduleViewUpdate(streamID)
+}
+
+// scheduleViewUpdate schedules a throttled view count update
+// Uses debounce pattern: if multiple changes happen within the interval,
+// only one update is sent after the interval passes
+func (h *Hub) scheduleViewUpdate(streamID int64) {
 	h.viewUpdateMu.Lock()
 	lastUpdate := h.lastViewUpdate[streamID]
 	now := time.Now()
+	timeSinceLastUpdate := now.Sub(lastUpdate)
 
-	// Check if we should throttle
-	if now.Sub(lastUpdate) < h.viewUpdateInterval {
+	// If enough time has passed, send immediately
+	if timeSinceLastUpdate >= h.viewUpdateInterval {
+		h.lastViewUpdate[streamID] = now
 		h.viewUpdateMu.Unlock()
+		h.sendViewUpdate(streamID)
 		return
 	}
 
-	h.lastViewUpdate[streamID] = now
+	// Check if update is already pending
+	h.pendingMu.Lock()
+	if h.pendingUpdates[streamID] {
+		h.pendingMu.Unlock()
+		h.viewUpdateMu.Unlock()
+		return // Already scheduled
+	}
+
+	// Schedule delayed update
+	h.pendingUpdates[streamID] = true
+	h.pendingMu.Unlock()
 	h.viewUpdateMu.Unlock()
 
+	// Calculate remaining time until next allowed update
+	delay := h.viewUpdateInterval - timeSinceLastUpdate
+
+	go func() {
+		time.Sleep(delay)
+
+		h.pendingMu.Lock()
+		delete(h.pendingUpdates, streamID)
+		h.pendingMu.Unlock()
+
+		h.viewUpdateMu.Lock()
+		h.lastViewUpdate[streamID] = time.Now()
+		h.viewUpdateMu.Unlock()
+
+		h.sendViewUpdate(streamID)
+	}()
+}
+
+// sendViewUpdate sends the actual view count update to all clients
+func (h *Hub) sendViewUpdate(streamID int64) {
 	count := h.GetViewerCount(streamID)
+	if count == 0 {
+		return // Room was deleted, no need to broadcast
+	}
 	msg := NewViewUpdateMessage(streamID, count)
 	h.BroadcastMessage(streamID, msg)
 }
 
-// broadcastViewUpdateLocked broadcasts view update (must be called with lock held)
+// broadcastViewUpdateLocked broadcasts view update with throttling (must be called with rooms lock held)
+// This is used internally when clients join/leave
 func (h *Hub) broadcastViewUpdateLocked(streamID int64, count int) {
-	msg := NewViewUpdateMessage(streamID, count)
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return
-	}
-
-	if clients, ok := h.rooms[streamID]; ok {
-		for client := range clients {
-			client.Send(data)
-		}
-	}
+	// Release rooms lock before scheduling to avoid deadlock
+	// We already have the count, so we can release safely
+	go h.scheduleViewUpdate(streamID)
 }
 
 // ProcessMessage handles incoming messages from clients
@@ -196,24 +239,14 @@ func (h *Hub) ProcessMessage(client *Client, msg *Message) {
 }
 
 // handleChatMessage processes chat messages
+// Note: Rate limiting and length validation are done in client.ReadPump()
 func (h *Hub) handleChatMessage(client *Client, msg *Message) {
-	// Validate message content
-	content := msg.Content
-	if content == "" {
-		return // Ignore empty messages
-	}
-
-	// Truncate if too long (max 500 chars)
-	if len(content) > 500 {
-		content = content[:500]
-	}
-
-	// Create broadcast message
+	// Content already validated in ReadPump, just broadcast
 	broadcastMsg := NewChatMessage(
 		client.StreamID(),
 		client.UserID(),
 		client.Username(),
-		content,
+		msg.Content,
 	)
 
 	h.BroadcastMessage(client.StreamID(), broadcastMsg)
