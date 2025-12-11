@@ -1,8 +1,8 @@
 -- Feed Service Database Schema
 CREATE TABLE IF NOT EXISTS feed_items (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL,
-    post_id INTEGER NOT NULL,
+    user_id UUID NOT NULL,
+    post_id UUID NOT NULL,
     score DECIMAL(10, 4) DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     viewed_at TIMESTAMP,

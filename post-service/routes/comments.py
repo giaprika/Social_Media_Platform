@@ -248,10 +248,14 @@ async def create_comment(
         }).eq("post_id", post_id).execute()
         
         # Publish notification event qua RabbitMQ
-        # Publish notification event qua RabbitMQ
         try:
             from rabbitmq_producer import publish_event
             post_owner = post_result.data[0]["user_id"]
+            # Get current counts
+            post_info = supabase.table(POSTS_TABLE).select("reacts_count, comments_count").eq("post_id", post_id).execute()
+            likes_count = post_info.data[0].get("reacts_count", 0) if post_info.data else 0
+            comments_count = post_info.data[0].get("comments_count", 0) if post_info.data else 0
+            
             if post_owner != user_id:
                 await publish_event("post.commented", {
                     "user_id": post_owner,
@@ -260,7 +264,10 @@ async def create_comment(
                     "comment_content": content,
                     "title_template": "Bài viết của bạn có bình luận mới!",
                     "body_template": f"Ai đó đã bình luận: {content}",
-                    "link_url": f"/posts/{post_id}#comment-{created_comment.get('comment_id')}"
+                    "link_url": f"/posts/{post_id}#comment-{created_comment.get('comment_id')}",
+                    "post_id": post_id,
+                    "likes": likes_count,
+                    "comments": comments_count
                 })
         except Exception as e:
             print(f"[Notification] Failed to publish post.commented event: {str(e)}")
@@ -418,30 +425,17 @@ async def delete_comment(
         
         # Publish post.uncommented event for feed-service
         try:
-            import aio_pika
-            import asyncio
-            import json
+            from rabbitmq_producer import publish_event
             # Get current counts
             post_info = supabase.table(POSTS_TABLE).select("reacts_count, comments_count").eq("post_id", post_id).execute()
             likes_count = post_info.data[0].get("reacts_count", 0) if post_info.data else 0
             comments_count = post_info.data[0].get("comments_count", 0) if post_info.data else 0
             
-            async def publish_post_uncommented():
-                connection = await aio_pika.connect_robust(os.getenv("RABBITMQ_URL", "amqp://rabbitmq"))
-                channel = await connection.channel()
-                await channel.default_exchange.publish(
-                    aio_pika.Message(
-                        body=bytes(json.dumps({
-                            "post_id": post_id,
-                            "likes": likes_count,
-                            "comments": comments_count
-                        }), encoding="utf-8"),
-                        delivery_mode=aio_pika.DeliveryMode.PERSISTENT
-                    ),
-                    routing_key="post.uncommented"
-                )
-                await connection.close()
-            await publish_post_uncommented()
+            await publish_event("post.uncommented", {
+                "post_id": post_id,
+                "likes": likes_count,
+                "comments": comments_count
+            })
         except Exception as e:
             print(f"[Feed] Failed to publish post.uncommented event: {str(e)}")
         

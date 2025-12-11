@@ -1,140 +1,150 @@
-const { getChannel, QUEUES } = require("../config/rabbitmq");
+const { getChannel, getQueueName } = require("../config/rabbitmq");
 const feedService = require("./feed.service");
 const logger = require("../utils/logger");
 
 class RabbitMQConsumer {
   /**
-   * Start consuming messages from RabbitMQ queues
+   * Start consuming messages from RabbitMQ queue
+   * Similar to notification-service pattern
    */
   async startConsuming() {
-    const channel = getChannel();
+    try {
+      const channel = getChannel();
 
-    if (!channel) {
-      logger.error("RabbitMQ channel not available");
-      return;
-    }
+      if (!channel) {
+        logger.error("RabbitMQ channel not available");
+        throw new Error("RabbitMQ channel not available");
+      }
 
-    // Set prefetch to process one message at a time
-    await channel.prefetch(1);
+      const queueName = getQueueName();
 
-    // Consume post.created messages (for fanout)
-    await channel.consume(QUEUES.FEED_FANOUT, async (msg) => {
-      if (msg) {
+      // Set prefetch to process one message at a time
+      await channel.prefetch(1);
+
+      logger.info(`[*] Waiting for messages in ${queueName}`);
+
+      // Consume messages from the queue
+      await channel.consume(queueName, async (msg) => {
+        if (!msg) return;
+
         try {
-          const data = JSON.parse(msg.content.toString());
-          logger.info("Received post.created message:", data);
+          const content = JSON.parse(msg.content.toString());
+          const routingKey = msg.fields.routingKey;
 
-          // Extract data from post-service format
-          const postData = {
-            postId: data.post_id,
-            authorId: data.user_id,
-            content: data.post_title || data.body_template,
-          };
+          logger.info(`[x] Received '${routingKey}':`, content);
 
-          await feedService.fanoutPostToFollowers(postData);
+          await this.handleMessage(routingKey, content);
 
           channel.ack(msg);
         } catch (error) {
-          logger.error("Error processing post.created message:", error);
+          logger.error("Error processing message:", error);
           // Requeue message for retry
           channel.nack(msg, false, true);
         }
-      }
-    });
+      });
 
-    // Consume post.liked messages
-    await channel.consume(QUEUES.POST_LIKED, async (msg) => {
-      if (msg) {
-        try {
-          const data = JSON.parse(msg.content.toString());
-          logger.info("Received post.liked message:", data);
+      logger.info("RabbitMQ consumers started successfully");
+    } catch (error) {
+      logger.error("Failed to start RabbitMQ consumers:", error);
+      throw error;
+    }
+  }
 
-          const engagementData = {
-            postId: data.post_id,
-            likes: data.likes || 0,
-            comments: data.comments || 0,
-          };
+  /**
+   * Handle messages based on routing key
+   */
+  async handleMessage(routingKey, eventData) {
+    switch (routingKey) {
+      case "post.created":
+        await this.handlePostCreated(eventData);
+        break;
+      case "post.liked":
+        await this.handlePostLiked(eventData);
+        break;
+      case "post.unliked":
+        await this.handlePostUnliked(eventData);
+        break;
+      case "post.commented":
+        await this.handlePostCommented(eventData);
+        break;
+      case "post.uncommented":
+        await this.handlePostUncommented(eventData);
+        break;
+      default:
+        logger.warn(`Unknown routing key: ${routingKey}`);
+    }
+  }
 
-          await feedService.updatePostScore(engagementData);
+  /**
+   * Handle post.created event - fanout to followers
+   */
+  async handlePostCreated(data) {
+    const postData = {
+      postId: data.post_id,
+      authorId: data.user_id,
+      content: data.post_title || data.body_template,
+    };
 
-          channel.ack(msg);
-        } catch (error) {
-          logger.error("Error processing post.liked message:", error);
-          channel.nack(msg, false, true);
-        }
-      }
-    });
+    await feedService.fanoutPostToFollowers(postData);
+    logger.info(`Post ${postData.postId} fanned out to followers`);
+  }
 
-    // Consume post.unliked messages
-    await channel.consume(QUEUES.POST_UNLIKED, async (msg) => {
-      if (msg) {
-        try {
-          const data = JSON.parse(msg.content.toString());
-          logger.info("Received post.unliked message:", data);
+  /**
+   * Handle post.liked event - update score
+   */
+  async handlePostLiked(data) {
+    const engagementData = {
+      postId: data.post_id,
+      likes: data.likes || 0,
+      comments: data.comments || 0,
+    };
 
-          const engagementData = {
-            postId: data.post_id,
-            likes: data.likes || 0,
-            comments: data.comments || 0,
-          };
+    await feedService.updatePostScore(engagementData);
+    logger.info(`Score updated for post ${engagementData.postId} (liked)`);
+  }
 
-          await feedService.updatePostScore(engagementData);
+  /**
+   * Handle post.unliked event - update score
+   */
+  async handlePostUnliked(data) {
+    const engagementData = {
+      postId: data.post_id,
+      likes: data.likes || 0,
+      comments: data.comments || 0,
+    };
 
-          channel.ack(msg);
-        } catch (error) {
-          logger.error("Error processing post.unliked message:", error);
-          channel.nack(msg, false, true);
-        }
-      }
-    });
+    await feedService.updatePostScore(engagementData);
+    logger.info(`Score updated for post ${engagementData.postId} (unliked)`);
+  }
 
-    // Consume post.commented messages
-    await channel.consume(QUEUES.POST_COMMENTED, async (msg) => {
-      if (msg) {
-        try {
-          const data = JSON.parse(msg.content.toString());
-          logger.info("Received post.commented message:", data);
+  /**
+   * Handle post.commented event - update score
+   */
+  async handlePostCommented(data) {
+    const engagementData = {
+      postId: data.post_id,
+      likes: data.likes || 0,
+      comments: data.comments || 0,
+    };
 
-          const engagementData = {
-            postId: data.post_id,
-            likes: data.likes || 0,
-            comments: data.comments || 0,
-          };
+    await feedService.updatePostScore(engagementData);
+    logger.info(`Score updated for post ${engagementData.postId} (commented)`);
+  }
 
-          await feedService.updatePostScore(engagementData);
+  /**
+   * Handle post.uncommented event - update score
+   */
+  async handlePostUncommented(data) {
+    const engagementData = {
+      postId: data.post_id,
+      likes: data.likes || 0,
+      comments: data.comments || 0,
+    };
 
-          channel.ack(msg);
-        } catch (error) {
-          logger.error("Error processing post.commented message:", error);
-          channel.nack(msg, false, true);
-        }
-      }
-    });
-
-    // Consume post.uncommented messages
-    await channel.consume(QUEUES.POST_UNCOMMENTED, async (msg) => {
-      if (msg) {
-        try {
-          const data = JSON.parse(msg.content.toString());
-          logger.info("Received post.uncommented message:", data);
-
-          const engagementData = {
-            postId: data.post_id,
-            likes: data.likes || 0,
-            comments: data.comments || 0,
-          };
-
-          await feedService.updatePostScore(engagementData);
-
-          channel.ack(msg);
-        } catch (error) {
-          logger.error("Error processing post.uncommented message:", error);
-          channel.nack(msg, false, true);
-        }
-      }
-    });
-
-    logger.info("RabbitMQ consumers started successfully for all queues");
+    await feedService.updatePostScore(engagementData);
+    logger.info(
+      `Score updated for post ${engagementData.postId} (uncommented)`
+    );
   }
 }
 

@@ -5,20 +5,8 @@ let connection = null;
 let channel = null;
 
 const RABBITMQ_URL = process.env.RABBITMQ_URL || "amqp://localhost:5672";
-
-const EXCHANGES = {
-  POST_EVENTS: "post.events",
-  ENGAGEMENT_EVENTS: "engagement.events",
-};
-
-const QUEUES = {
-  FEED_FANOUT: "post.created", // Direct binding to default exchange routing key
-  FEED_SCORE_UPDATE: "feed.score.update",
-  POST_LIKED: "post.liked", // Direct queue for default exchange
-  POST_UNLIKED: "post.unliked",
-  POST_COMMENTED: "post.commented",
-  POST_UNCOMMENTED: "post.uncommented",
-};
+const EXCHANGE_NAME = "social.events"; // Same as post-service and notification-service
+const QUEUE_NAME = "feed.queue"; // Dedicated queue for feed-service
 
 const ROUTING_KEYS = {
   POST_CREATED: "post.created",
@@ -33,14 +21,26 @@ const connectRabbitMQ = async () => {
     connection = await amqp.connect(RABBITMQ_URL);
     channel = await connection.createChannel();
 
-    // Declare queues for receiving messages from post-service default exchange
-    // When post-service uses default_exchange.publish(routing_key="post.created"),
-    // RabbitMQ routes the message to a queue named "post.created"
-    await channel.assertQueue(QUEUES.FEED_FANOUT, { durable: true });
-    await channel.assertQueue(QUEUES.POST_LIKED, { durable: true });
-    await channel.assertQueue(QUEUES.POST_UNLIKED, { durable: true });
-    await channel.assertQueue(QUEUES.POST_COMMENTED, { durable: true });
-    await channel.assertQueue(QUEUES.POST_UNCOMMENTED, { durable: true });
+    // Declare the topic exchange (same as notification-service)
+    await channel.assertExchange(EXCHANGE_NAME, "topic", { durable: true });
+
+    // Declare feed service queue
+    const q = await channel.assertQueue(QUEUE_NAME, { durable: true });
+
+    // Bind queue to exchange with routing keys
+    await channel.bindQueue(q.queue, EXCHANGE_NAME, ROUTING_KEYS.POST_CREATED);
+    await channel.bindQueue(q.queue, EXCHANGE_NAME, ROUTING_KEYS.POST_LIKED);
+    await channel.bindQueue(q.queue, EXCHANGE_NAME, ROUTING_KEYS.POST_UNLIKED);
+    await channel.bindQueue(
+      q.queue,
+      EXCHANGE_NAME,
+      ROUTING_KEYS.POST_COMMENTED
+    );
+    await channel.bindQueue(
+      q.queue,
+      EXCHANGE_NAME,
+      ROUTING_KEYS.POST_UNCOMMENTED
+    );
 
     logger.info("RabbitMQ connected and queues configured successfully");
 
@@ -61,6 +61,7 @@ const connectRabbitMQ = async () => {
 };
 
 const getChannel = () => channel;
+const getQueueName = () => QUEUE_NAME;
 
 const closeRabbitMQ = async () => {
   try {
@@ -75,8 +76,9 @@ const closeRabbitMQ = async () => {
 module.exports = {
   connectRabbitMQ,
   getChannel,
+  getQueueName,
   closeRabbitMQ,
-  EXCHANGES,
-  QUEUES,
+  EXCHANGE_NAME,
+  QUEUE_NAME,
   ROUTING_KEYS,
 };

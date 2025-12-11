@@ -171,20 +171,27 @@ async def upsert_post_reaction(
         reaction = result.data[0]
 
         # Publish notification event khi like bài viết (chỉ khi là like, không phải update reaction khác)
-        # Publish notification event khi like bài viết (chỉ khi là like, không phải update reaction khác)
         try:
             if reaction_data.reaction_type == "like":
                 from rabbitmq_producer import publish_event
                 post_owner = post_result.data[0]["user_id"]
+                # Get current counts
+                post_info = supabase.table(POSTS_TABLE).select("reacts_count, comments_count").eq("post_id", post_id).execute()
+                likes_count = post_info.data[0].get("reacts_count", 0) if post_info.data else 0
+                comments_count = post_info.data[0].get("comments_count", 0) if post_info.data else 0
+                
                 # Don't notify if liking own post
                 if post_owner != user_id:
                     await publish_event("post.liked", {
                         "user_id": post_owner,
                         "liker_id": user_id,
-                        "liker_username": None, # Frontend/Notification service will handle fetching username if needed, or pass it if available
+                        "liker_username": None,
                         "title_template": "Bài viết của bạn được thích!",
                         "body_template": "Ai đó đã thích bài viết của bạn!",
-                        "link_url": f"/posts/{post_id}"
+                        "link_url": f"/posts/{post_id}",
+                        "post_id": post_id,
+                        "likes": likes_count,
+                        "comments": comments_count
                     })
         except Exception as e:
             print(f"[Notification] Failed to publish post.liked event: {str(e)}")
@@ -237,30 +244,17 @@ async def delete_post_reaction(
         
         # Publish post.unliked event for feed-service
         try:
-            import aio_pika
-            import asyncio
-            import json
+            from rabbitmq_producer import publish_event
             # Get current counts
             post_info = supabase.table(POSTS_TABLE).select("reacts_count, comments_count").eq("post_id", post_id).execute()
             likes_count = post_info.data[0].get("reacts_count", 0) if post_info.data else 0
             comments_count = post_info.data[0].get("comments_count", 0) if post_info.data else 0
             
-            async def publish_post_unliked():
-                connection = await aio_pika.connect_robust(os.getenv("RABBITMQ_URL", "amqp://rabbitmq"))
-                channel = await connection.channel()
-                await channel.default_exchange.publish(
-                    aio_pika.Message(
-                        body=bytes(json.dumps({
-                            "post_id": post_id,
-                            "likes": likes_count,
-                            "comments": comments_count
-                        }), encoding="utf-8"),
-                        delivery_mode=aio_pika.DeliveryMode.PERSISTENT
-                    ),
-                    routing_key="post.unliked"
-                )
-                await connection.close()
-            await publish_post_unliked()
+            await publish_event("post.unliked", {
+                "post_id": post_id,
+                "likes": likes_count,
+                "comments": comments_count
+            })
         except Exception as e:
             print(f"[Feed] Failed to publish post.unliked event: {str(e)}")
         

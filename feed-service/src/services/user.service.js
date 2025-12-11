@@ -10,13 +10,19 @@ const USER_SERVICE_URL =
 async function getUserFollowers(userId) {
   try {
     const response = await axios.get(
-      `${USER_SERVICE_URL}/api/relationships/followers/${userId}`
+      `${USER_SERVICE_URL}/users/relationships/followers`,
+      {
+        params: { userId },
+      }
     );
+    console.log("response data:", response.data);
 
-    if (response.data && response.data.success) {
+    if (response.data) {
       // Extract follower IDs from response
-      const followers = response.data.data || [];
-      return followers.map((follower) => follower.follower_id || follower.id);
+      const followers = response.data || [];
+      return followers.map(
+        (follower) => follower.user_id || follower.follower_info.id
+      );
     }
 
     logger.warn(`No followers found for user ${userId}`);
