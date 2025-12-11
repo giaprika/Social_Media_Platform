@@ -23,6 +23,12 @@
 		file_server
 	}
 	
+	# Proxy SRS WebRTC API (WHIP/WHEP)
+	# This allows browser to call SRS via HTTPS
+	handle /rtc/* {
+		reverse_proxy srs:1985
+	}
+	
 	# Reverse proxy tới Go API service
 	reverse_proxy api:8080 {
 		# Health check
