@@ -2,18 +2,15 @@ import { NotificationRepository } from "../repositories/notification.repository.
 import axios from "axios";
 
 const GATEWAY_URL = process.env.GATEWAY_URL || "http://localhost:8000";
-const USER_SERVICE_URL = process.env.USER_SERVICE_URL || "http://user-service:8001";
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "your-super-secret-key-for-internal-services";
-
+const USER_SERVICE_URL =
+  process.env.USER_SERVICE_URL || "http://user-service:8001";
+const INTERNAL_SECRET =
+  process.env.INTERNAL_SECRET || "your-super-secret-key-for-internal-services";
 
 export class NotificationService {
   static async createNotification(notificationData) {
-    const {
-      user_id,
-      title_template,
-      body_template,
-      link_url
-    } = notificationData;
+    const { user_id, title_template, body_template, link_url } =
+      notificationData;
 
     const createdNotification = await NotificationRepository.createNotification(
       user_id,
@@ -25,18 +22,15 @@ export class NotificationService {
   }
 
   static async createNotificationToMultipleUsers(notificationData) {
-    const {
-      user_ids,
-      title_template,
-      body_template,
-      link_url
-    } = notificationData;
-    const createdNotifications = await NotificationRepository.createNotificationToMultipleUsers(
-      user_ids,
-      title_template,
-      body_template,
-      link_url
-    );
+    const { user_ids, title_template, body_template, link_url } =
+      notificationData;
+    const createdNotifications =
+      await NotificationRepository.createNotificationToMultipleUsers(
+        user_ids,
+        title_template,
+        body_template,
+        link_url
+      );
 
     // Emit realtime qua gateway
     try {
@@ -63,18 +57,23 @@ export class NotificationService {
       console.error("Failed to emit realtime notification", err.message);
     }
 
-
     return createdNotifications;
   }
 
   static async getFollowersOfUser(userId) {
     try {
-      const response = await axios.get(`${USER_SERVICE_URL}/users/relationships/followers`, {
-        params: { userId },
-      });
+      const response = await axios.get(
+        `${USER_SERVICE_URL}/users/relationships/followers`,
+        {
+          params: { userId },
+        }
+      );
       return response.data || [];
     } catch (error) {
-      console.error(`Failed to get followers for user ${userId}:`, error.message);
+      console.error(
+        `Failed to get followers for user ${userId}:`,
+        error.message
+      );
       return [];
     }
   }
@@ -92,17 +91,25 @@ export class NotificationService {
   }
 
   // Create or update aggregated notification (for likes, comments on same post)
-  static async createAggregatedNotification({ user_id, notification_type, reference_id, title_template, body_template, link_url, last_actor_id, last_actor_name }) {
-    const { notification, isNew } = await NotificationRepository.upsertAggregatedNotification({
-      user_id,
-      notification_type,
-      reference_id,
-      title_template,
-      body_template,
-      link_url,
-      last_actor_id,
-      last_actor_name
-    });
+  static async createAggregatedNotification({
+    user_id,
+    reference_id,
+    title_template,
+    body_template,
+    link_url,
+    last_actor_id,
+    last_actor_name,
+  }) {
+    const { notification, isNew } =
+      await NotificationRepository.upsertAggregatedNotification({
+        user_id,
+        reference_id,
+        title_template,
+        body_template,
+        link_url,
+        last_actor_id,
+        last_actor_name,
+      });
 
     // Emit realtime notification
     try {
@@ -117,7 +124,6 @@ export class NotificationService {
             link: notification.link_url,
             actors_count: notification.actors_count,
             last_actor_name: notification.last_actor_name,
-            notification_type: notification.notification_type,
             isNew,
             createdAt: notification.updated_at || notification.created_at,
           },
@@ -130,7 +136,10 @@ export class NotificationService {
         }
       );
     } catch (err) {
-      console.error("Failed to emit realtime aggregated notification", err.message);
+      console.error(
+        "Failed to emit realtime aggregated notification",
+        err.message
+      );
     }
 
     return notification;
