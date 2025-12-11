@@ -43,7 +43,7 @@
             color: #fff;
             font-size: 14px;
         }
-        input[type="text"] { flex: 1; min-width: 150px; }
+        input[type="text"], input[type="number"] { width: 120px; }
         button {
             padding: 10px 20px;
             border: none;
@@ -55,12 +55,17 @@
         }
         button:hover { background: #3dbdb5; }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
-        .status {
-            font-size: 13px;
-            color: #888;
-        }
+        .status { font-size: 13px; color: #888; }
         .status.live { color: #4ecdc4; }
         .status.error { color: #ff6b6b; }
+        .stream-info {
+            background: #1a1a1a;
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .stream-info .title { font-weight: 600; color: #fff; }
+        .stream-info .meta { color: #888; margin-top: 5px; }
     </style>
 </head>
 <body>
@@ -69,29 +74,100 @@
     </div>
     <div class="controls">
         <input type="text" id="serverIP" placeholder="Server IP">
-        <input type="text" id="streamKey" placeholder="Stream Key">
+        <input type="number" id="streamId" placeholder="Stream ID" min="1">
         <button id="btnPlay">▶ Play</button>
         <button id="btnStop" disabled>⏹ Stop</button>
         <span id="status" class="status">Ready</span>
+        <div id="streamInfo" class="stream-info" style="display: none;">
+            <div class="title" id="streamTitle"></div>
+            <div class="meta" id="streamMeta"></div>
+        </div>
     </div>
 
     <script>
         let pc = null;
+        let streamKey = null; // Fetched from API, not exposed to user
+
+        /**
+         * Fetch stream info from API using public stream ID
+         */
+        async function getStreamInfo(serverIP, streamId) {
+            // Try HTTPS first, fallback to HTTP
+            const urls = [
+                `https://${serverIP}/api/v1/live/${streamId}`,
+                `http://${serverIP}:8081/api/v1/live/${streamId}`
+            ];
+
+            for (const url of urls) {
+                try {
+                    const res = await fetch(url);
+                    if (res.ok) {
+                        return await res.json();
+                    }
+                } catch (e) {
+                    continue;
+                }
+            }
+            throw new Error('Failed to fetch stream info');
+        }
+
+        /**
+         * Get WebRTC play info from API
+         */
+        async function getWebRTCInfo(serverIP, streamId) {
+            const urls = [
+                `https://${serverIP}/api/v1/live/${streamId}/webrtc`,
+                `http://${serverIP}:8081/api/v1/live/${streamId}/webrtc`
+            ];
+
+            for (const url of urls) {
+                try {
+                    const res = await fetch(url);
+                    if (res.ok) {
+                        return await res.json();
+                    }
+                } catch (e) {
+                    continue;
+                }
+            }
+            throw new Error('Failed to fetch WebRTC info');
+        }
 
         async function play() {
             const serverIP = document.getElementById('serverIP').value.trim();
-            const streamKey = document.getElementById('streamKey').value.trim();
+            const streamId = document.getElementById('streamId').value.trim();
             
-            if (!serverIP || !streamKey) {
-                setStatus('Enter server IP and stream key', 'error');
+            if (!serverIP || !streamId) {
+                setStatus('Enter server IP and stream ID', 'error');
                 return;
             }
 
-            setStatus('Connecting...', '');
+            setStatus('Fetching stream info...', '');
 
             try {
+                // 1. Get stream info (public)
+                const streamInfo = await getStreamInfo(serverIP, streamId);
+                
+                if (streamInfo.status !== 'LIVE') {
+                    setStatus(`Stream is ${streamInfo.status}`, 'error');
+                    showStreamInfo(streamInfo);
+                    return;
+                }
+
+                showStreamInfo(streamInfo);
+
+                // 2. Get WebRTC info (contains play URL with stream key internally)
+                const webrtcInfo = await getWebRTCInfo(serverIP, streamId);
+                
+                // Extract stream key from play_url: webrtc://ip/live/STREAM_KEY
+                const playUrl = webrtcInfo.play_url;
+                streamKey = playUrl.split('/').pop();
+
+                setStatus('Connecting...', '');
+
+                // 3. Connect via WebRTC
                 pc = new RTCPeerConnection({
-                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                    iceServers: webrtcInfo.ice_servers || [{ urls: 'stun:stun.l.google.com:19302' }]
                 });
 
                 pc.ontrack = (e) => {
@@ -111,7 +187,7 @@
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
 
-                // Wait for ICE
+                // Wait for ICE gathering
                 await new Promise(r => {
                     if (pc.iceGatheringState === 'complete') return r();
                     pc.onicegatheringstatechange = () => {
@@ -120,7 +196,11 @@
                     setTimeout(r, 3000);
                 });
 
-                const res = await fetch(`http://${serverIP}:1985/rtc/v1/whep/?app=live&stream=${streamKey}`, {
+                // Use WHEP endpoint from API or construct it
+                const whepUrl = webrtcInfo.whep_endpoint || 
+                    `http://${serverIP}:1985/rtc/v1/whep/?app=live&stream=${streamKey}`;
+
+                const res = await fetch(whepUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/sdp' },
                     body: pc.localDescription.sdp
@@ -141,6 +221,7 @@
 
         function stop() {
             if (pc) { pc.close(); pc = null; }
+            streamKey = null;
             document.getElementById('video').srcObject = null;
             document.getElementById('btnPlay').disabled = false;
             document.getElementById('btnStop').disabled = true;
@@ -153,10 +234,18 @@
             el.className = 'status ' + cls;
         }
 
+        function showStreamInfo(info) {
+            const infoEl = document.getElementById('streamInfo');
+            document.getElementById('streamTitle').textContent = info.title || 'Untitled Stream';
+            document.getElementById('streamMeta').textContent = 
+                `👁️ ${info.viewer_count || 0} viewers • ${info.status}`;
+            infoEl.style.display = 'block';
+        }
+
         // Parse URL params
         const params = new URLSearchParams(window.location.search);
         if (params.get('server')) document.getElementById('serverIP').value = params.get('server');
-        if (params.get('stream')) document.getElementById('streamKey').value = params.get('stream');
+        if (params.get('id')) document.getElementById('streamId').value = params.get('id');
         if (params.get('autoplay')) play();
 
         document.getElementById('btnPlay').onclick = play;

@@ -138,14 +138,32 @@
                     <input type="text" id="serverIP" placeholder="e.g., 34.123.45.67">
                 </div>
                 <div class="form-group">
-                    <label>Stream Key</label>
-                    <input type="text" id="streamKey" placeholder="e.g., abc123xyz">
+                    <label>Stream ID (public)</label>
+                    <input type="number" id="streamId" placeholder="Auto-filled after create" min="1">
                 </div>
                 <div class="form-group">
-                    <label>API Port (Signaling)</label>
+                    <label>Stream Key (secret token)</label>
+                    <input type="password" id="streamKey" placeholder="Auto-filled after create">
+                </div>
+                <div class="form-group">
+                    <label>API Port</label>
                     <input type="number" id="apiPort" value="1985">
                 </div>
             </div>
+            <div class="form-row" style="margin-top: 10px;">
+                <div class="form-group">
+                    <label>User ID (for testing)</label>
+                    <input type="number" id="userId" value="1" min="1">
+                </div>
+                <div class="form-group">
+                    <label>Stream Title</label>
+                    <input type="text" id="streamTitle" value="Test Stream">
+                </div>
+                <div class="form-group" style="display: flex; align-items: flex-end;">
+                    <button id="btnCreateStream" class="btn-start" style="width: 100%;">🎬 Create Stream</button>
+                </div>
+            </div>
+            <div id="createStreamResult" style="margin-top: 10px; font-size: 13px; color: #888;"></div>
         </div>
 
         <div class="panels">

@@ -35,6 +35,7 @@ type LiveRepository interface {
 
 	// Update operations
 	Update(ctx context.Context, session *entity.LiveSession) error
+	UpdateURLs(ctx context.Context, id int64, rtmpURL, webrtcURL, hlsURL string) error
 	UpdateStatus(ctx context.Context, id int64, status entity.LiveSessionStatus) error
 	UpdateViewerCount(ctx context.Context, id int64, count int) error
 	IncrementViewerCount(ctx context.Context, id int64) error
@@ -223,6 +224,17 @@ func (r *liveRepository) Update(ctx context.Context, session *entity.LiveSession
 	}
 
 	return nil
+}
+
+func (r *liveRepository) UpdateURLs(ctx context.Context, id int64, rtmpURL, webrtcURL, hlsURL string) error {
+	query := `UPDATE live_sessions SET rtmp_url = $1, webrtc_url = $2, hls_url = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4`
+
+	result, err := r.db.ExecContext(ctx, query, rtmpURL, webrtcURL, hlsURL, id)
+	if err != nil {
+		return fmt.Errorf("failed to update URLs: %w", err)
+	}
+
+	return checkRowsAffected(result)
 }
 
 func (r *liveRepository) UpdateStatus(ctx context.Context, id int64, status entity.LiveSessionStatus) error {

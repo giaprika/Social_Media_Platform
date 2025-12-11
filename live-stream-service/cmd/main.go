@@ -52,8 +52,9 @@ func main() {
 		{
 			live.POST("/create", middleware.Auth(), liveHandler.CreateStream)
 			live.GET("/feed", liveHandler.ListStreams)
-			live.GET("/:id", liveHandler.GetStreamDetail)
-			live.GET("/:id/webrtc", liveHandler.GetWebRTCInfo)
+			// OptionalAuth allows owner to see their stream key while keeping endpoint public
+			live.GET("/:id", middleware.OptionalAuth(), liveHandler.GetStreamDetail)
+			live.GET("/:id/webrtc", middleware.OptionalAuth(), liveHandler.GetWebRTCInfo)
 		}
 
 		// Webhook routes for SRS callbacks
