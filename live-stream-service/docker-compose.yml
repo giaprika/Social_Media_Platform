@@ -6,6 +6,7 @@ services:
     image: ossrs/srs:5
     container_name: live-service-srs
     restart: unless-stopped
+    command: ./objs/srs -c conf/srs.conf
     ports:
       - "1935:1935"      # RTMP (OBS Studio)
       - "8080:8080"      # HTTP API & HLS
@@ -16,7 +17,6 @@ services:
       # HLS output: gcsfuse mount (/mnt/live_data) → container (/data)
       - ${HLS_DATA_PATH:-./data/hls}:/data
     environment:
-      # Public IP for WebRTC (set your server's public IP in production)
       - CANDIDATE=${SRS_PUBLIC_IP:-127.0.0.1}
     # Required for gcsfuse mount access
     privileged: false
