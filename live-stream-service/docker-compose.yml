@@ -18,12 +18,6 @@ services:
     environment:
       # Public IP for WebRTC (set your server's public IP in production)
       - CANDIDATE=${SRS_PUBLIC_IP:-127.0.0.1}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:1985/api/v1/versions"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
     # Required for gcsfuse mount access
     privileged: false
     security_opt:
