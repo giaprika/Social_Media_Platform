@@ -1,0 +1,56 @@
+sync:
+  defaults:
+    mode: "two-way-safe" # Cho phép sửa cả 2 đầu (thường sửa ở Local là chính)
+    ignore:
+      vcs: true # Bỏ qua folder .git
+      paths:
+        # IDE & Editor
+        - ".idea/"
+        - ".vscode/"
+        - ".kiro/"
+        - "*.iml"
+
+        # OS files
+        - ".DS_Store"
+        - "Thumbs.db"
+
+        # Build & Binary output
+        - "bin/"
+        - "dist/"
+        - "*.exe"
+        - "*.dll"
+        - "*.so"
+        - "*.dylib"
+        - "*.test"
+        - "*.out"
+
+        # Go specific
+        - "vendor/"
+        - "coverage.txt"
+        - "profile.out"
+
+        # Logs
+        - "*.log"
+
+        # Environment & Secrets
+        - ".env"
+        - ".env.*"
+        - "*.pem"
+        - "*.key"
+        - "*.cert"
+
+        # Docker local data volumes
+        - "postgres_data/"
+        - "redis_data/"
+        - "grafana_data/"
+
+        # Buf cache
+        - ".buf/"
+
+        # Terraform (nếu dùng)
+        - ".terraform/"
+        - "*.tfstate"
+        - "*.tfstate.backup"
+
+        # Test temp files
+        - "cmd/test-infra/"

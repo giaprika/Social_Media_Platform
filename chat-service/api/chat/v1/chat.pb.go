@@ -28,8 +28,9 @@ type SendMessageRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	// sender_id is extracted from JWT token via auth middleware
-	Content        string `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
-	IdempotencyKey string `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	Content        string   `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
+	IdempotencyKey string   `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	ReceiverIds    []string `protobuf:"bytes,5,rep,name=receiver_ids,json=receiverIds,proto3" json:"receiver_ids,omitempty"` // Optional list of receiver UUIDs
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -83,6 +84,13 @@ func (x *SendMessageRequest) GetIdempotencyKey() string {
 		return x.IdempotencyKey
 	}
 	return ""
+}
+
+func (x *SendMessageRequest) GetReceiverIds() []string {
+	if x != nil {
+		return x.ReceiverIds
+	}
+	return nil
 }
 
 type SendMessageResponse struct {
@@ -590,11 +598,12 @@ var File_chat_v1_chat_proto protoreflect.FileDescriptor
 
 const file_chat_v1_chat_proto_rawDesc = "" +
 	"\n" +
-	"\x12chat/v1/chat.proto\x12\achat.v1\x1a\x1cgoogle/api/annotations.proto\"\x80\x01\n" +
+	"\x12chat/v1/chat.proto\x12\achat.v1\x1a\x1cgoogle/api/annotations.proto\"\xa3\x01\n" +
 	"\x12SendMessageRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x18\n" +
 	"\acontent\x18\x03 \x01(\tR\acontent\x12'\n" +
-	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\"L\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\x12!\n" +
+	"\freceiver_ids\x18\x05 \x03(\tR\vreceiverIds\"L\n" +
 	"\x13SendMessageResponse\x12\x1d\n" +
 	"\n" +
 	"message_id\x18\x01 \x01(\tR\tmessageId\x12\x16\n" +

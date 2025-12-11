@@ -1,7 +1,41 @@
 services:
   # ============================================
-  # Databases cho services chưa hoàn thiện (commented)
+  # Databases
   # ============================================
+  postgres-user:
+    image: postgres:15-alpine
+    container_name: postgres-user
+    environment:
+      POSTGRES_DB: user_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-user-data:/var/lib/postgresql/data
+      - ./user-service/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: >
+      sh -c "
+        docker-entrypoint.sh postgres &
+        sleep 5 &&
+        until pg_isready -U postgres; do sleep 1; done &&
+        psql -U postgres -d user_db -tAc \"SELECT 1 FROM information_schema.tables WHERE table_name='users'\" | grep -q 1 ||
+        (echo 'Initializing database...' && psql -U postgres -d user_db -f /docker-entrypoint-initdb.d/init.sql && echo 'Database initialized!') &&
+        wait
+      "
+    ports:
+      - "5432:5432"
+    networks:
+      - social-network
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'pg_isready -U postgres && psql -U postgres -d user_db -tAc "SELECT 1 FROM information_schema.tables WHERE table_name=''users''" | grep -q 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
   postgres-notification:
     image: postgres:15-alpine
     container_name: postgres-notification
@@ -101,6 +135,7 @@ services:
       NOTIFICATION_SERVICE_URL: http://notification-service:8002
       POST_SERVICE_URL: http://post-service:8003
       COMMUNITY_SERVICE_URL: http://community-service:8004
+      AI_SERVICE_URL: http://ai-service:9000
       CORS_ORIGIN: http://localhost:3000
       INTERNAL_SECRET: your-super-secret-key-for-internal-services
     ports:
@@ -110,30 +145,11 @@ services:
       - notification-service
       - community-service
       - post-service
+      - ai-service
     networks:
       - social-network
     restart: unless-stopped
 
-  postgres-user:
-    image: postgres:15-alpine
-    container_name: postgres-user
-    environment:
-      POSTGRES_DB: user_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    volumes:
-      - postgres-user-data:/var/lib/postgresql/data
-      - ./user-service/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    ports:
-      - "5437:5432"
-    networks:
-      - social-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
 
   user-service:
     build:
@@ -385,10 +401,10 @@ networks:
     driver: bridge
 
 volumes:
+  postgres-user-data:
   postgres-social-data:
   postgres-community-data:
   postgres-notification-data:
   postgres-ai-data:
   rabbitmq-data:
   redis-data:
-  postgres-user-data:

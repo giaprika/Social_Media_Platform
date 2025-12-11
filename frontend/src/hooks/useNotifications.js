@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback } from "react";
 import { io } from "socket.io-client";
 import * as notificationApi from "../api/notification";
 
-const GATEWAY_URL = process.env.REACT_APP_GATEWAY_URL || "http://localhost:8000";
+const GATEWAY_URL =
+  process.env.REACT_APP_GATEWAY_URL || "http://localhost:8000";
 
 export const useNotifications = (token) => {
   const [notifications, setNotifications] = useState([]);
@@ -23,7 +24,7 @@ export const useNotifications = (token) => {
       const data = await notificationApi.getNotifications();
 
       // Transform API data to match component format
-      const rawNotifications = Array.isArray(data) ? data : (data?.data || []);
+      const rawNotifications = Array.isArray(data) ? data : data?.data || [];
 
       const extractSender = (body) => {
         if (!body) return null;
@@ -123,7 +124,11 @@ export const useNotifications = (token) => {
         type: data.notification_type || data.type,
         actors_count: data.actors_count || 1,
         last_actor_name: data.last_actor_name,
-        sender: data.last_actor_name || (data.body && data.body.match(/^u\/([^\s]+)/) ? data.body.match(/^u\/([^\s]+)/)[1] : null),
+        sender:
+          data.last_actor_name ||
+          (data.body && data.body.match(/^u\/([^\s]+)/)
+            ? data.body.match(/^u\/([^\s]+)/)[1]
+            : null),
         isAggregated: !!data.notification_type,
       };
 

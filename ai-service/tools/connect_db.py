@@ -46,8 +46,8 @@ def create_violation_record(user_id: str, description: str, text_content: str, i
         cursor = conn.cursor()
         image_content = (base64.b64decode(image_content)) if image_content else None
         insert_query = """
-        INSERT INTO violations (user_id, violation_type, description, text_content, image_content)
-        VALUES (%s, %s, %s, %s, %s);
+        INSERT INTO violations (user_id, description, text_content, image_content)
+        VALUES (%s, %s, %s, %s);
         """
         cursor.execute(insert_query, (user_id, description, text_content, image_content))
         conn.commit()

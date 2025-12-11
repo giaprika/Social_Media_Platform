@@ -12,6 +12,9 @@
 *.test
 *.out
 
+# Test result file
+*-results.json
+
 # Test coverage & reports
 coverage.txt
 profile.out
@@ -21,8 +24,8 @@ vendor/
 
 # --- Environment & Secrets (QUAN TRỌNG) ---
 # Tuyệt đối không commit file chứa mật khẩu, key, connection string
-.env
-.env.*
+*.env
+app.env
 *.pem
 *.key
 *.cert

@@ -20,12 +20,19 @@ import { PATHS } from "src/constants/paths";
 import Avatar from "../ui/Avatar";
 import useAuth from "src/hooks/useAuth";
 import { useTheme } from "src/contexts/ThemeContext";
-import { useNotifications } from "src/hooks/useNotifications";
 import NotificationDropdown from "./NotificationDropdown";
+import { useNotifications } from "src/contexts/NotificationsContext";
 
 // Navigation items removed - search bar moved to left
 
-const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onToggleChat, onToggleSidebar, onCreatePost }) => {
+const Header = ({
+  activeNav = "home",
+  onActiveNavChange,
+  isChatOpen = false,
+  onToggleChat,
+  onToggleSidebar,
+  onCreatePost,
+}) => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
@@ -48,7 +55,8 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
     markAllAsRead: handleMarkAllAsRead,
   } = useNotifications(token);
 
-  const displayName = user?.displayName || user?.fullName || user?.username || "SocialUser";
+  const displayName =
+    user?.displayName || user?.fullName || user?.username || "SocialUser";
   const userHandle = user?.username ? `u/${user.username}` : "u/socialuser";
 
   useEffect(() => {
@@ -60,7 +68,12 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
       const menuNode = profileMenuRef.current;
       const buttonNode = profileButtonRef.current;
 
-      if (menuNode && buttonNode && !menuNode.contains(event.target) && !buttonNode.contains(event.target)) {
+      if (
+        menuNode &&
+        buttonNode &&
+        !menuNode.contains(event.target) &&
+        !buttonNode.contains(event.target)
+      ) {
         setIsProfileMenuOpen(false);
       }
     };
@@ -172,7 +185,11 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
         <Icon className="h-5 w-5 text-muted-foreground" />
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="text-sm font-medium">{item.label}</span>
-          {item.description && <span className="truncate text-xs text-muted-foreground">{item.description}</span>}
+          {item.description && (
+            <span className="truncate text-xs text-muted-foreground">
+              {item.description}
+            </span>
+          )}
         </div>
         {isToggle && (
           <span
@@ -301,8 +318,12 @@ const Header = ({ activeNav = "home", onActiveNavChange, isChatOpen = false, onT
                   size="md"
                 />
                 <div className="flex min-w-0 flex-col text-left">
-                  <span className="text-sm font-semibold text-foreground">{displayName}</span>
-                  <span className="text-xs text-muted-foreground hover:text-foreground transition-colors">{userHandle}</span>
+                  <span className="text-sm font-semibold text-foreground">
+                    {displayName}
+                  </span>
+                  <span className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                    {userHandle}
+                  </span>
                 </div>
               </button>
 

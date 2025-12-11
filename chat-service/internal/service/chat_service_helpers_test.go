@@ -196,15 +196,16 @@ func (m *mockDBTX) Rollback(ctx context.Context) error {
 //   resp, err := service.SendMessage(ctx, req)
 //   assert.Error(t, err)
 type mockTransactionHelpers struct {
-	mockTx                 *mockDBTX
-	mockBeginTx            func(ctx context.Context) (repository.DBTX, error)
-	mockUpsertConversation func(ctx context.Context, qtx *repository.Queries, id pgtype.UUID) (repository.Conversation, error)
-	mockAddParticipant     func(ctx context.Context, qtx *repository.Queries, params repository.AddParticipantParams) error
-	mockInsertMessage      func(ctx context.Context, qtx *repository.Queries, params repository.InsertMessageParams) (repository.Message, error)
-	mockUpdateLastMessage  func(ctx context.Context, qtx *repository.Queries, params repository.UpdateConversationLastMessageParams) error
-	mockInsertOutbox       func(ctx context.Context, qtx *repository.Queries, params repository.InsertOutboxParams) error
-	mockCommitTx           func(ctx context.Context, tx repository.DBTX) error
-	mockRollbackTx         func(ctx context.Context, tx repository.DBTX) error
+	mockTx                           *mockDBTX
+	mockBeginTx                      func(ctx context.Context) (repository.DBTX, error)
+	mockUpsertConversation           func(ctx context.Context, qtx *repository.Queries, id pgtype.UUID) (repository.Conversation, error)
+	mockAddConversationParticipants  func(ctx context.Context, qtx *repository.Queries, params repository.AddConversationParticipantsParams) error
+	mockInsertMessage                func(ctx context.Context, qtx *repository.Queries, params repository.InsertMessageParams) (repository.Message, error)
+	mockUpdateLastMessage            func(ctx context.Context, qtx *repository.Queries, params repository.UpdateConversationLastMessageParams) error
+	mockGetConversationParticipants  func(ctx context.Context, qtx *repository.Queries, conversationID pgtype.UUID) ([]pgtype.UUID, error)
+	mockInsertOutbox                 func(ctx context.Context, qtx *repository.Queries, params repository.InsertOutboxParams) error
+	mockCommitTx                     func(ctx context.Context, tx repository.DBTX) error
+	mockRollbackTx                   func(ctx context.Context, tx repository.DBTX) error
 }
 
 // newMockTransactionHelpers creates a new set of mock transaction helpers
@@ -243,7 +244,8 @@ func (m *mockTransactionHelpers) setupHappyPathTransaction(
 		return repository.Conversation{ID: conversationID}, nil
 	}
 
-	m.mockAddParticipant = func(ctx context.Context, qtx *repository.Queries, params repository.AddParticipantParams) error {
+	// Use bulk insert for participants (sender + receivers)
+	m.mockAddConversationParticipants = func(ctx context.Context, qtx *repository.Queries, params repository.AddConversationParticipantsParams) error {
 		return nil
 	}
 
@@ -260,6 +262,12 @@ func (m *mockTransactionHelpers) setupHappyPathTransaction(
 
 	m.mockUpdateLastMessage = func(ctx context.Context, qtx *repository.Queries, params repository.UpdateConversationLastMessageParams) error {
 		return nil
+	}
+
+	// Return sender as participant (will be filtered out) plus a receiver
+	receiverID, _ := parseUUID("880e8400-e29b-41d4-a716-446655440000")
+	m.mockGetConversationParticipants = func(ctx context.Context, qtx *repository.Queries, convID pgtype.UUID) ([]pgtype.UUID, error) {
+		return []pgtype.UUID{senderID, receiverID}, nil
 	}
 
 	m.mockInsertOutbox = func(ctx context.Context, qtx *repository.Queries, params repository.InsertOutboxParams) error {
@@ -309,8 +317,8 @@ func (m *mockTransactionHelpers) setupUpsertConversationError(err error) {
 	}
 }
 
-// setupAddParticipantError configures mocks for addParticipant failure
-func (m *mockTransactionHelpers) setupAddParticipantError(conversationID pgtype.UUID, err error) {
+// setupAddConversationParticipantsError configures mocks for bulk addConversationParticipants failure
+func (m *mockTransactionHelpers) setupAddConversationParticipantsError(conversationID pgtype.UUID, err error) {
 	m.mockBeginTx = func(ctx context.Context) (repository.DBTX, error) {
 		return m.mockTx, nil
 	}
@@ -319,7 +327,7 @@ func (m *mockTransactionHelpers) setupAddParticipantError(conversationID pgtype.
 		return repository.Conversation{ID: conversationID}, nil
 	}
 
-	m.mockAddParticipant = func(ctx context.Context, qtx *repository.Queries, params repository.AddParticipantParams) error {
+	m.mockAddConversationParticipants = func(ctx context.Context, qtx *repository.Queries, params repository.AddConversationParticipantsParams) error {
 		return err
 	}
 
@@ -330,6 +338,9 @@ func (m *mockTransactionHelpers) setupAddParticipantError(conversationID pgtype.
 
 // setupInsertMessageError configures mocks for insertMessage failure
 func (m *mockTransactionHelpers) setupInsertMessageError(conversationID pgtype.UUID, err error) {
+	senderID, _ := parseUUID("660e8400-e29b-41d4-a716-446655440000")
+	receiverID, _ := parseUUID("880e8400-e29b-41d4-a716-446655440000")
+
 	m.mockBeginTx = func(ctx context.Context) (repository.DBTX, error) {
 		return m.mockTx, nil
 	}
@@ -338,12 +349,17 @@ func (m *mockTransactionHelpers) setupInsertMessageError(conversationID pgtype.U
 		return repository.Conversation{ID: conversationID}, nil
 	}
 
-	m.mockAddParticipant = func(ctx context.Context, qtx *repository.Queries, params repository.AddParticipantParams) error {
+	// Use bulk insert for participants
+	m.mockAddConversationParticipants = func(ctx context.Context, qtx *repository.Queries, params repository.AddConversationParticipantsParams) error {
 		return nil
 	}
 
 	m.mockInsertMessage = func(ctx context.Context, qtx *repository.Queries, params repository.InsertMessageParams) (repository.Message, error) {
 		return repository.Message{}, err
+	}
+
+	m.mockGetConversationParticipants = func(ctx context.Context, qtx *repository.Queries, convID pgtype.UUID) ([]pgtype.UUID, error) {
+		return []pgtype.UUID{senderID, receiverID}, nil
 	}
 
 	m.mockRollbackTx = func(ctx context.Context, tx repository.DBTX) error {
@@ -353,6 +369,8 @@ func (m *mockTransactionHelpers) setupInsertMessageError(conversationID pgtype.U
 
 // setupInsertOutboxError configures mocks for insertOutbox failure
 func (m *mockTransactionHelpers) setupInsertOutboxError(conversationID, senderID, messageID pgtype.UUID, content string, err error) {
+	receiverID, _ := parseUUID("880e8400-e29b-41d4-a716-446655440000")
+
 	m.mockBeginTx = func(ctx context.Context) (repository.DBTX, error) {
 		return m.mockTx, nil
 	}
@@ -361,7 +379,8 @@ func (m *mockTransactionHelpers) setupInsertOutboxError(conversationID, senderID
 		return repository.Conversation{ID: conversationID}, nil
 	}
 
-	m.mockAddParticipant = func(ctx context.Context, qtx *repository.Queries, params repository.AddParticipantParams) error {
+	// Use bulk insert for participants
+	m.mockAddConversationParticipants = func(ctx context.Context, qtx *repository.Queries, params repository.AddConversationParticipantsParams) error {
 		return nil
 	}
 
@@ -378,6 +397,10 @@ func (m *mockTransactionHelpers) setupInsertOutboxError(conversationID, senderID
 
 	m.mockUpdateLastMessage = func(ctx context.Context, qtx *repository.Queries, params repository.UpdateConversationLastMessageParams) error {
 		return nil
+	}
+
+	m.mockGetConversationParticipants = func(ctx context.Context, qtx *repository.Queries, convID pgtype.UUID) ([]pgtype.UUID, error) {
+		return []pgtype.UUID{senderID, receiverID}, nil
 	}
 
 	m.mockInsertOutbox = func(ctx context.Context, qtx *repository.Queries, params repository.InsertOutboxParams) error {
@@ -391,6 +414,8 @@ func (m *mockTransactionHelpers) setupInsertOutboxError(conversationID, senderID
 
 // setupCommitTxError configures mocks for commit failure
 func (m *mockTransactionHelpers) setupCommitTxError(conversationID, senderID, messageID pgtype.UUID, content string, err error) {
+	receiverID, _ := parseUUID("880e8400-e29b-41d4-a716-446655440000")
+
 	m.mockBeginTx = func(ctx context.Context) (repository.DBTX, error) {
 		return m.mockTx, nil
 	}
@@ -399,7 +424,8 @@ func (m *mockTransactionHelpers) setupCommitTxError(conversationID, senderID, me
 		return repository.Conversation{ID: conversationID}, nil
 	}
 
-	m.mockAddParticipant = func(ctx context.Context, qtx *repository.Queries, params repository.AddParticipantParams) error {
+	// Use bulk insert for participants
+	m.mockAddConversationParticipants = func(ctx context.Context, qtx *repository.Queries, params repository.AddConversationParticipantsParams) error {
 		return nil
 	}
 
@@ -416,6 +442,10 @@ func (m *mockTransactionHelpers) setupCommitTxError(conversationID, senderID, me
 
 	m.mockUpdateLastMessage = func(ctx context.Context, qtx *repository.Queries, params repository.UpdateConversationLastMessageParams) error {
 		return nil
+	}
+
+	m.mockGetConversationParticipants = func(ctx context.Context, qtx *repository.Queries, convID pgtype.UUID) ([]pgtype.UUID, error) {
+		return []pgtype.UUID{senderID, receiverID}, nil
 	}
 
 	m.mockInsertOutbox = func(ctx context.Context, qtx *repository.Queries, params repository.InsertOutboxParams) error {
@@ -454,14 +484,17 @@ func (m *mockTransactionHelpers) injectIntoService(service *ChatService) {
 	if m.mockUpsertConversation != nil {
 		service.upsertConversationFn = m.mockUpsertConversation
 	}
-	if m.mockAddParticipant != nil {
-		service.addParticipantFn = m.mockAddParticipant
+	if m.mockAddConversationParticipants != nil {
+		service.addConversationParticipantsFn = m.mockAddConversationParticipants
 	}
 	if m.mockInsertMessage != nil {
 		service.insertMessageFn = m.mockInsertMessage
 	}
 	if m.mockUpdateLastMessage != nil {
 		service.updateLastMessageFn = m.mockUpdateLastMessage
+	}
+	if m.mockGetConversationParticipants != nil {
+		service.getConversationParticipantsFn = m.mockGetConversationParticipants
 	}
 	if m.mockInsertOutbox != nil {
 		service.insertOutboxFn = m.mockInsertOutbox
