@@ -196,9 +196,9 @@
                     setTimeout(r, 3000);
                 });
 
-                // Use WHEP endpoint from API or construct it
-                const whepUrl = webrtcInfo.whep_endpoint || 
-                    `http://${serverIP}:1985/rtc/v1/whep/?app=live&stream=${streamKey}`;
+                // Use relative URL to go through Caddy proxy (handles HTTPS)
+                // Extract stream ID from play_url for WHEP
+                const whepUrl = `/rtc/v1/whep/?app=live&stream=${streamId}`;
 
                 const res = await fetch(whepUrl, {
                     method: 'POST',
