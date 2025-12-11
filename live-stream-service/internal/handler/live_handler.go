@@ -174,6 +174,55 @@ func (h *LiveHandler) GetStreamDetail(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// GetWebRTCInfo handles GET /api/v1/live/:id/webrtc
+// @Summary Get WebRTC connection info
+// @Description Get WebRTC URLs and ICE servers for publishing or playing a stream
+// @Tags live
+// @Accept json
+// @Produce json
+// @Param id path int true "Stream ID"
+// @Success 200 {object} entity.WebRTCInfoResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/live/{id}/webrtc [get]
+func (h *LiveHandler) GetWebRTCInfo(c *gin.Context) {
+	// Parse stream ID from path
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "invalid_id",
+			Message: "Stream ID must be a valid positive integer",
+		})
+		return
+	}
+
+	// Get user ID from context (optional - affects what URLs are returned)
+	var userID int64
+	if uid, exists := c.Get("user_id"); exists {
+		userID = uid.(int64)
+	}
+
+	resp, err := h.service.GetWebRTCInfo(c.Request.Context(), id, userID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			c.JSON(http.StatusNotFound, ErrorResponse{
+				Error:   "not_found",
+				Message: "Stream not found",
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "fetch_failed",
+			Message: "Failed to retrieve WebRTC info",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
 // OnPublish handles SRS callback when stream starts publishing
 // POST /api/v1/callbacks/on_publish
 // @Summary SRS on_publish webhook
