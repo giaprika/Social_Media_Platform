@@ -12,4 +12,6 @@ __pycache__/
 **/.env
 !**/.env.example
 /ai-service/eval_agent/.adk
+/ai-service/eval_agent/*.json
 *.exe
+cloud-sql-key.json
