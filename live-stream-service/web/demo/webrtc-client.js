@@ -387,6 +387,16 @@ async function createStream() {
         resultEl.innerHTML = '<span style="color: #ff6b6b;">❌ Enter Server IP first</span>';
         return;
     }
+    if (!userId) {
+        resultEl.innerHTML = '<span style="color: #ff6b6b;">❌ Enter User ID (UUID)</span>';
+        return;
+    }
+    // Basic UUID validation (backend will also validate)
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRe.test(userId)) {
+        resultEl.innerHTML = '<span style="color: #ff6b6b;">❌ User ID must be a valid UUID</span>';
+        return;
+    }
 
     resultEl.innerHTML = '⏳ Creating stream...';
     log('info', `Creating stream for user ${userId}...`);
