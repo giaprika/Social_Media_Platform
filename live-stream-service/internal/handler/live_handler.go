@@ -3,7 +3,6 @@ package handler
 import (
 	"errors"
 	"net/http"
-	"strconv"
 
 	"live-service/internal/entity"
 	"live-service/internal/repository"
@@ -35,8 +34,8 @@ func NewLiveHandler(service service.LiveService) *LiveHandler {
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/live/create [post]
 func (h *LiveHandler) CreateStream(c *gin.Context) {
-	// Get user ID from context (set by auth middleware)
-	userID, exists := c.Get("user_id")
+	// Get user ID (UUID) from context (set by auth middleware)
+	userIDVal, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, ErrorResponse{
 			Error:   "unauthorized",
@@ -44,6 +43,7 @@ func (h *LiveHandler) CreateStream(c *gin.Context) {
 		})
 		return
 	}
+	userID := userIDVal.(string)
 
 	// Parse request body
 	var req entity.CreateStreamRequest
@@ -56,7 +56,7 @@ func (h *LiveHandler) CreateStream(c *gin.Context) {
 	}
 
 	// Create stream
-	resp, err := h.service.CreateStream(c.Request.Context(), userID.(int64), &req)
+	resp, err := h.service.CreateStream(c.Request.Context(), userID, &req)
 	if err != nil {
 		// Check for duplicate key error
 		if errors.Is(err, repository.ErrDuplicateKey) {
@@ -131,31 +131,30 @@ func (h *LiveHandler) ListStreams(c *gin.Context) {
 // @Tags live
 // @Accept json
 // @Produce json
-// @Param id path int true "Stream ID"
+// @Param id path string true "Stream ID (NanoID)"
 // @Success 200 {object} entity.StreamDetailResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/live/{id} [get]
 func (h *LiveHandler) GetStreamDetail(c *gin.Context) {
-	// Parse stream ID from path
-	idStr := c.Param("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || id <= 0 {
+	// Parse stream ID (NanoID) from path
+	streamID := c.Param("id")
+	if streamID == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "invalid_id",
-			Message: "Stream ID must be a valid positive integer",
+			Message: "Stream ID is required",
 		})
 		return
 	}
 
-	// Get user ID from context (optional for public streams)
-	var userID int64
+	// Get user ID (UUID) from context (optional for public streams)
+	var userID string
 	if uid, exists := c.Get("user_id"); exists {
-		userID = uid.(int64)
+		userID = uid.(string)
 	}
 
-	resp, err := h.service.GetStreamDetail(c.Request.Context(), id, userID)
+	resp, err := h.service.GetStreamDetail(c.Request.Context(), streamID, userID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			c.JSON(http.StatusNotFound, ErrorResponse{
@@ -180,31 +179,30 @@ func (h *LiveHandler) GetStreamDetail(c *gin.Context) {
 // @Tags live
 // @Accept json
 // @Produce json
-// @Param id path int true "Stream ID"
+// @Param id path string true "Stream ID (NanoID)"
 // @Success 200 {object} entity.WebRTCInfoResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/live/{id}/webrtc [get]
 func (h *LiveHandler) GetWebRTCInfo(c *gin.Context) {
-	// Parse stream ID from path
-	idStr := c.Param("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || id <= 0 {
+	// Parse stream ID (NanoID) from path
+	streamID := c.Param("id")
+	if streamID == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "invalid_id",
-			Message: "Stream ID must be a valid positive integer",
+			Message: "Stream ID is required",
 		})
 		return
 	}
 
-	// Get user ID from context (optional - affects what URLs are returned)
-	var userID int64
+	// Get user ID (UUID) from context (optional - affects what URLs are returned)
+	var userID string
 	if uid, exists := c.Get("user_id"); exists {
-		userID = uid.(int64)
+		userID = uid.(string)
 	}
 
-	resp, err := h.service.GetWebRTCInfo(c.Request.Context(), id, userID)
+	resp, err := h.service.GetWebRTCInfo(c.Request.Context(), streamID, userID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			c.JSON(http.StatusNotFound, ErrorResponse{

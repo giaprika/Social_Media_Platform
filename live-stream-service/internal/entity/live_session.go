@@ -4,6 +4,9 @@ import (
 	"database/sql/driver"
 	"errors"
 	"time"
+
+	"github.com/google/uuid"
+	nanoid "github.com/matoous/go-nanoid/v2"
 )
 
 // LiveSessionStatus represents the status of a live session
@@ -37,10 +40,35 @@ func (s LiveSessionStatus) Value() (driver.Value, error) {
 	return string(s), nil
 }
 
+// GenerateNanoID generates a new NanoID for stream/live session
+func GenerateNanoID() string {
+	id, _ := nanoid.New()
+	return id
+}
+
+// IsValidUUID checks if a string is a valid UUID
+func IsValidUUID(s string) bool {
+	_, err := uuid.Parse(s)
+	return err == nil
+}
+
+// IsValidNanoID checks if a string looks like a valid NanoID (21 chars, URL-safe)
+func IsValidNanoID(s string) bool {
+	if len(s) != 21 {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-') {
+			return false
+		}
+	}
+	return true
+}
+
 // LiveSession represents a live streaming session
 type LiveSession struct {
-	ID          int64             `json:"id" db:"id"`
-	UserID      int64             `json:"user_id" db:"user_id"`
+	ID          string            `json:"id" db:"id"`           // NanoID (21 chars)
+	UserID      string            `json:"user_id" db:"user_id"` // UUID
 	StreamKey   string            `json:"stream_key" db:"stream_key"`
 	Title       string            `json:"title" db:"title"`
 	Description *string           `json:"description,omitempty" db:"description"`
@@ -63,7 +91,7 @@ type CreateStreamRequest struct {
 
 // CreateStreamResponse represents the response after creating a stream
 type CreateStreamResponse struct {
-	ID        int64  `json:"id"`
+	ID        string `json:"id"` // NanoID
 	StreamKey string `json:"stream_key"`
 	RTMPUrl   string `json:"rtmp_url"`
 	WebRTCUrl string `json:"webrtc_url"`
@@ -81,8 +109,8 @@ type ListStreamsResponse struct {
 
 // LiveStreamInfo represents basic stream information for listing
 type LiveStreamInfo struct {
-	ID          int64             `json:"id"`
-	UserID      int64             `json:"user_id"`
+	ID          string            `json:"id"` // NanoID
+	UserID      string            `json:"user_id"` // UUID
 	Title       string            `json:"title"`
 	Status      LiveSessionStatus `json:"status"`
 	ViewerCount int               `json:"viewer_count"`
@@ -97,8 +125,8 @@ type LiveStreamInfo struct {
 
 // StreamDetailResponse represents detailed stream information
 type StreamDetailResponse struct {
-	ID          int64             `json:"id"`
-	UserID      int64             `json:"user_id"`
+	ID          string            `json:"id"` // NanoID
+	UserID      string            `json:"user_id"` // UUID
 	StreamKey   string            `json:"stream_key,omitempty"` // Only shown to owner
 	Title       string            `json:"title"`
 	Description *string           `json:"description,omitempty"`
@@ -163,7 +191,7 @@ func (s LiveSessionStatus) CanTransitionTo(target LiveSessionStatus) bool {
 
 // WebRTCInfoResponse represents WebRTC connection info for a stream
 type WebRTCInfoResponse struct {
-	ID            int64             `json:"id"`
+	ID            string            `json:"id"` // NanoID
 	Status        LiveSessionStatus `json:"status"`
 	PublishURL    string            `json:"publish_url"`              // webrtc://ip/live/stream_key (owner only)
 	PlayURL       string            `json:"play_url"`                 // webrtc://ip/live/stream_key

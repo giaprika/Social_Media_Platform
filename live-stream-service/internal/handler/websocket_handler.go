@@ -3,8 +3,8 @@ package handler
 import (
 	"log"
 	"net/http"
-	"strconv"
 
+	"live-service/internal/entity"
 	"live-service/internal/websocket"
 
 	"github.com/gin-gonic/gin"
@@ -34,33 +34,32 @@ func NewWebSocketHandler(hub *websocket.Hub) *WebSocketHandler {
 
 // HandleWebSocket handles GET /ws/live/:id
 // Query params:
-//   - user_id: required, user identifier
-//   - username: optional, display name (defaults to "User_{user_id}")
+//   - user_id: required, user identifier (UUID)
+//   - username: optional, display name (defaults to "User_{user_id[:8]}")
 //
 // @Summary Connect to live stream WebSocket
 // @Description Upgrade HTTP connection to WebSocket for real-time chat and viewer updates
 // @Tags websocket
-// @Param id path int true "Stream ID"
-// @Param user_id query int true "User ID"
+// @Param id path string true "Stream ID (NanoID)"
+// @Param user_id query string true "User ID (UUID)"
 // @Param username query string false "Display username"
 // @Success 101 {string} string "Switching Protocols"
 // @Failure 400 {object} ErrorResponse
 // @Router /ws/live/{id} [get]
 func (h *WebSocketHandler) HandleWebSocket(c *gin.Context) {
-	// Parse stream ID from path
-	idStr := c.Param("id")
-	streamID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || streamID <= 0 {
+	// Parse stream ID (NanoID) from path
+	streamID := c.Param("id")
+	if streamID == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "invalid_stream_id",
-			Message: "Stream ID must be a valid positive integer",
+			Message: "Stream ID is required",
 		})
 		return
 	}
 
-	// Parse user_id from query param (required)
-	userIDStr := c.Query("user_id")
-	if userIDStr == "" {
+	// Parse user_id (UUID) from query param (required)
+	userID := c.Query("user_id")
+	if userID == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "missing_user_id",
 			Message: "user_id query parameter is required",
@@ -68,11 +67,10 @@ func (h *WebSocketHandler) HandleWebSocket(c *gin.Context) {
 		return
 	}
 
-	userID, err := strconv.ParseInt(userIDStr, 10, 64)
-	if err != nil || userID <= 0 {
+	if !entity.IsValidUUID(userID) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "invalid_user_id",
-			Message: "user_id must be a valid positive integer",
+			Message: "user_id must be a valid UUID",
 		})
 		return
 	}
@@ -80,7 +78,8 @@ func (h *WebSocketHandler) HandleWebSocket(c *gin.Context) {
 	// Parse username from query param (optional)
 	username := c.Query("username")
 	if username == "" {
-		username = "User_" + userIDStr
+		// Use first 8 chars of UUID as default username
+		username = "User_" + userID[:8]
 	}
 
 	// Upgrade HTTP connection to WebSocket
@@ -103,18 +102,17 @@ func (h *WebSocketHandler) HandleWebSocket(c *gin.Context) {
 // @Summary Get current viewer count
 // @Description Get real-time viewer count for a stream from WebSocket hub
 // @Tags live
-// @Param id path int true "Stream ID"
+// @Param id path string true "Stream ID (NanoID)"
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} ErrorResponse
 // @Router /api/v1/live/{id}/viewers [get]
 func (h *WebSocketHandler) GetViewerCount(c *gin.Context) {
-	// Parse stream ID from path
-	idStr := c.Param("id")
-	streamID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || streamID <= 0 {
+	// Parse stream ID (NanoID) from path
+	streamID := c.Param("id")
+	if streamID == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "invalid_stream_id",
-			Message: "Stream ID must be a valid positive integer",
+			Message: "Stream ID is required",
 		})
 		return
 	}
