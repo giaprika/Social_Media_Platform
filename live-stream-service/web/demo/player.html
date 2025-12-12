@@ -74,7 +74,7 @@
     </div>
     <div class="controls">
         <input type="text" id="serverIP" placeholder="Server IP">
-        <input type="number" id="streamId" placeholder="Stream ID" min="1">
+        <input type="text" id="streamId" placeholder="Stream ID (NanoID)">
         <button id="btnPlay">▶ Play</button>
         <button id="btnStop" disabled>⏹ Stop</button>
         <span id="status" class="status">Ready</span>
@@ -86,7 +86,6 @@
 
     <script>
         let pc = null;
-        let streamKey = null; // Fetched from API, not exposed to user
 
         /**
          * Fetch stream info from API using public stream ID
@@ -156,12 +155,8 @@
 
                 showStreamInfo(streamInfo);
 
-                // 2. Get WebRTC info (contains play URL with stream key internally)
+                // 2. Get WebRTC info (contains play_url + ICE servers; play_url uses stream ID)
                 const webrtcInfo = await getWebRTCInfo(serverIP, streamId);
-                
-                // Extract stream key from play_url: webrtc://ip/live/STREAM_KEY
-                const playUrl = webrtcInfo.play_url;
-                streamKey = playUrl.split('/').pop();
 
                 setStatus('Connecting...', '');
 
@@ -221,7 +216,6 @@
 
         function stop() {
             if (pc) { pc.close(); pc = null; }
-            streamKey = null;
             document.getElementById('video').srcObject = null;
             document.getElementById('btnPlay').disabled = false;
             document.getElementById('btnStop').disabled = true;

@@ -24,19 +24,22 @@ https://your-domain.com/demo/index.html
 ```
 
 1. Nhập **Server IP** (public IP của SRS server)
-2. Nhập **Stream Key** (từ API `/api/v1/live/create`)
-3. Click **Start Streaming**
-4. Cho phép camera/mic access
+2. Nhập **User ID (UUID)** để gọi API create (header `X-User-ID`)
+3. Click **Create Stream** để nhận:
+   - **Stream ID (NanoID)**: public, dùng để play
+   - **Stream Key**: secret token, dùng để publish (WHIP/RTMP/WebRTC publish)
+4. Click **Start Streaming**
+5. Cho phép camera/mic access
 
 ### 2. Player (Viewer)
 
 ```
-https://your-domain.com/demo/player.html?server=IP&stream=KEY&autoplay=1
+https://your-domain.com/demo/player.html?server=IP&id=STREAM_ID&autoplay=1
 ```
 
 Query params:
 - `server` - SRS server IP
-- `stream` - Stream key
+- `id` - Stream ID (NanoID)
 - `autoplay` - Tự động play khi load
 
 ## Test Local (Development)
@@ -79,12 +82,15 @@ npx serve web/demo -p 3000 --ssl-cert cert.pem --ssl-key key.pem
 ## WebRTC URLs Format
 
 ```
-# Publish/Play URL (SRS native)
-webrtc://SERVER_IP/live/STREAM_KEY
+# Play URL (SRS native) - public
+webrtc://SERVER_IP/live/STREAM_ID
+
+# Publish URL (SRS native) - requires token
+webrtc://SERVER_IP/live/STREAM_ID?token=STREAM_KEY
 
 # WHIP (HTTP publish)
-POST http://SERVER_IP:1985/rtc/v1/whip/?app=live&stream=STREAM_KEY
+POST https://API_DOMAIN/rtc/v1/whip/?app=live&stream=STREAM_ID&token=STREAM_KEY
 
 # WHEP (HTTP play)
-POST http://SERVER_IP:1985/rtc/v1/whep/?app=live&stream=STREAM_KEY
+POST https://API_DOMAIN/rtc/v1/whep/?app=live&stream=STREAM_ID
 ```
