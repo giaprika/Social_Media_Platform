@@ -106,21 +106,21 @@ func cleanupTestEnvironment() {
 }
 
 // cleanupTestStream removes test stream from database
-func cleanupTestStream(t *testing.T, streamID int64) {
+func cleanupTestStream(t *testing.T, streamID string) {
 	_, err := testDB.Exec("DELETE FROM live_sessions WHERE id = $1", streamID)
 	if err != nil {
-		t.Logf("Warning: failed to cleanup stream %d: %v", streamID, err)
+		t.Logf("Warning: failed to cleanup stream %s: %v", streamID, err)
 	}
 }
 
 // createTestStream creates a stream for testing
-func createTestStream(t *testing.T, userID int64, title string) *entity.CreateStreamResponse {
+func createTestStream(t *testing.T, userID string, title string) *entity.CreateStreamResponse {
 	reqBody := map[string]string{"title": title}
 	body, _ := json.Marshal(reqBody)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/live/create", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-User-ID", fmt.Sprintf("%d", userID))
+	req.Header.Set("X-User-ID", userID)
 
 	w := httptest.NewRecorder()
 	testRouter.ServeHTTP(w, req)
@@ -138,7 +138,7 @@ func createTestStream(t *testing.T, userID int64, title string) *entity.CreateSt
 }
 
 // getStreamStatus retrieves current stream status from database
-func getStreamStatus(t *testing.T, streamID int64) entity.LiveSessionStatus {
+func getStreamStatus(t *testing.T, streamID string) entity.LiveSessionStatus {
 	var status entity.LiveSessionStatus
 	err := testDB.Get(&status, "SELECT status FROM live_sessions WHERE id = $1", streamID)
 	if err != nil {
@@ -148,14 +148,15 @@ func getStreamStatus(t *testing.T, streamID int64) entity.LiveSessionStatus {
 }
 
 // simulateOnPublish simulates SRS on_publish webhook
-func simulateOnPublish(t *testing.T, streamKey string) int {
+func simulateOnPublish(t *testing.T, streamID string, token string) int {
 	reqBody := map[string]string{
 		"action":    "on_publish",
 		"client_id": "test-client-123",
 		"ip":        "127.0.0.1",
 		"vhost":     "__defaultVhost__",
 		"app":       "live",
-		"stream":    streamKey,
+		"stream":    streamID,
+		"param":     "?token=" + token,
 	}
 	body, _ := json.Marshal(reqBody)
 
@@ -169,14 +170,14 @@ func simulateOnPublish(t *testing.T, streamKey string) int {
 }
 
 // simulateOnUnpublish simulates SRS on_unpublish webhook
-func simulateOnUnpublish(t *testing.T, streamKey string) int {
+func simulateOnUnpublish(t *testing.T, streamID string) int {
 	reqBody := map[string]string{
 		"action":    "on_unpublish",
 		"client_id": "test-client-123",
 		"ip":        "127.0.0.1",
 		"vhost":     "__defaultVhost__",
 		"app":       "live",
-		"stream":    streamKey,
+		"stream":    streamID,
 	}
 	body, _ := json.Marshal(reqBody)
 
@@ -195,7 +196,8 @@ func simulateOnUnpublish(t *testing.T, streamKey string) int {
 
 func TestOnPublish_ValidStreamKey(t *testing.T) {
 	// Create a test stream
-	stream := createTestStream(t, 1, "Test Stream - OnPublish Valid")
+	userID := "550e8400-e29b-41d4-a716-446655440000"
+	stream := createTestStream(t, userID, "Test Stream - OnPublish Valid")
 	defer cleanupTestStream(t, stream.ID)
 
 	// Verify initial status is IDLE
@@ -205,7 +207,7 @@ func TestOnPublish_ValidStreamKey(t *testing.T) {
 	}
 
 	// Simulate on_publish webhook
-	code := simulateOnPublish(t, stream.StreamKey)
+	code := simulateOnPublish(t, stream.ID, stream.StreamKey)
 
 	// Verify response
 	if code != http.StatusOK {
@@ -231,7 +233,7 @@ func TestOnPublish_ValidStreamKey(t *testing.T) {
 
 func TestOnPublish_InvalidStreamKey(t *testing.T) {
 	// Simulate on_publish with invalid stream key
-	code := simulateOnPublish(t, "invalid_stream_key_12345")
+	code := simulateOnPublish(t, "invalid_stream_id_12345", "")
 
 	// Should return 403 Forbidden
 	if code != http.StatusForbidden {
@@ -241,17 +243,18 @@ func TestOnPublish_InvalidStreamKey(t *testing.T) {
 
 func TestOnPublish_DuplicatePublish(t *testing.T) {
 	// Create a test stream
-	stream := createTestStream(t, 2, "Test Stream - Duplicate Publish")
+	userID := "550e8400-e29b-41d4-a716-446655440001"
+	stream := createTestStream(t, userID, "Test Stream - Duplicate Publish")
 	defer cleanupTestStream(t, stream.ID)
 
 	// First publish - should succeed
-	code := simulateOnPublish(t, stream.StreamKey)
+	code := simulateOnPublish(t, stream.ID, stream.StreamKey)
 	if code != http.StatusOK {
 		t.Fatalf("First on_publish failed: %d", code)
 	}
 
 	// Second publish - should fail (already LIVE)
-	code = simulateOnPublish(t, stream.StreamKey)
+	code = simulateOnPublish(t, stream.ID, stream.StreamKey)
 	if code != http.StatusForbidden {
 		t.Errorf("Expected 403 for duplicate publish, got %d", code)
 	}
@@ -263,11 +266,12 @@ func TestOnPublish_DuplicatePublish(t *testing.T) {
 
 func TestOnUnpublish_ValidStream(t *testing.T) {
 	// Create and start a test stream
-	stream := createTestStream(t, 3, "Test Stream - OnUnpublish Valid")
+	userID := "550e8400-e29b-41d4-a716-446655440002"
+	stream := createTestStream(t, userID, "Test Stream - OnUnpublish Valid")
 	defer cleanupTestStream(t, stream.ID)
 
 	// Start the stream first
-	code := simulateOnPublish(t, stream.StreamKey)
+	code := simulateOnPublish(t, stream.ID, stream.StreamKey)
 	if code != http.StatusOK {
 		t.Fatalf("Failed to start stream: %d", code)
 	}
@@ -279,7 +283,7 @@ func TestOnUnpublish_ValidStream(t *testing.T) {
 	}
 
 	// Simulate on_unpublish webhook
-	code = simulateOnUnpublish(t, stream.StreamKey)
+	code = simulateOnUnpublish(t, stream.ID)
 
 	// Should return 200
 	if code != http.StatusOK {
@@ -316,7 +320,7 @@ func TestOnUnpublish_ValidStream(t *testing.T) {
 func TestOnUnpublish_InvalidStreamKey(t *testing.T) {
 	// Simulate on_unpublish with invalid stream key
 	// Should still return 200 (stream already stopped)
-	code := simulateOnUnpublish(t, "invalid_stream_key_12345")
+	code := simulateOnUnpublish(t, "invalid_stream_id_12345")
 
 	if code != http.StatusOK {
 		t.Errorf("Expected status 200 for invalid stream key on unpublish, got %d", code)
@@ -325,14 +329,15 @@ func TestOnUnpublish_InvalidStreamKey(t *testing.T) {
 
 func TestOnUnpublish_AlreadyEnded(t *testing.T) {
 	// Create, start, and end a stream
-	stream := createTestStream(t, 4, "Test Stream - Already Ended")
+	userID := "550e8400-e29b-41d4-a716-446655440003"
+	stream := createTestStream(t, userID, "Test Stream - Already Ended")
 	defer cleanupTestStream(t, stream.ID)
 
-	simulateOnPublish(t, stream.StreamKey)
-	simulateOnUnpublish(t, stream.StreamKey)
+	simulateOnPublish(t, stream.ID, stream.StreamKey)
+	simulateOnUnpublish(t, stream.ID)
 
 	// Try to unpublish again - should still return 200
-	code := simulateOnUnpublish(t, stream.StreamKey)
+	code := simulateOnUnpublish(t, stream.ID)
 	if code != http.StatusOK {
 		t.Errorf("Expected status 200 for already ended stream, got %d", code)
 	}
@@ -362,14 +367,12 @@ func TestFullRTMPIntegration(t *testing.T) {
 	resp.Body.Close()
 
 	// Create a test stream
-	stream := createTestStream(t, 100, "Full RTMP Integration Test")
+	userID := "550e8400-e29b-41d4-a716-446655440064"
+	stream := createTestStream(t, userID, "Full RTMP Integration Test")
 	defer cleanupTestStream(t, stream.ID)
 
-	// Build RTMP URL
-	rtmpURL := fmt.Sprintf("rtmp://%s:%d/live/%s",
-		testConfig.SRS.ServerIP,
-		testConfig.SRS.RTMPPort,
-		stream.StreamKey)
+	// Build RTMP URL (new flow: /live/{stream_id}?token={stream_key})
+	rtmpURL := stream.RTMPUrl
 
 	t.Logf("RTMP URL: %s", rtmpURL)
 
@@ -434,7 +437,6 @@ func TestFullRTMPIntegration(t *testing.T) {
 	t.Log("Full RTMP integration test passed!")
 }
 
-
 // ===========================================
 // Task 10: Error Handling Tests
 // ===========================================
@@ -481,12 +483,13 @@ func TestOnPublish_MalformedJSON(t *testing.T) {
 
 func TestOnPublish_StreamAlreadyEnded(t *testing.T) {
 	// Create, start, and end a stream
-	stream := createTestStream(t, 10, "Test Stream - Already Ended Publish")
+	userID := "550e8400-e29b-41d4-a716-44665544000a"
+	stream := createTestStream(t, userID, "Test Stream - Already Ended Publish")
 	defer cleanupTestStream(t, stream.ID)
 
 	// Start and end the stream
-	simulateOnPublish(t, stream.StreamKey)
-	simulateOnUnpublish(t, stream.StreamKey)
+	simulateOnPublish(t, stream.ID, stream.StreamKey)
+	simulateOnUnpublish(t, stream.ID)
 
 	// Verify status is ENDED
 	status := getStreamStatus(t, stream.ID)
@@ -495,7 +498,7 @@ func TestOnPublish_StreamAlreadyEnded(t *testing.T) {
 	}
 
 	// Try to publish again - should fail
-	code := simulateOnPublish(t, stream.StreamKey)
+	code := simulateOnPublish(t, stream.ID, stream.StreamKey)
 	if code != http.StatusForbidden {
 		t.Errorf("Expected 403 for ended stream, got %d", code)
 	}
@@ -539,7 +542,8 @@ func TestOnUnpublish_MalformedJSON(t *testing.T) {
 
 func TestOnUnpublish_NeverStartedStream(t *testing.T) {
 	// Create a stream but never start it
-	stream := createTestStream(t, 11, "Test Stream - Never Started")
+	userID := "550e8400-e29b-41d4-a716-44665544000b"
+	stream := createTestStream(t, userID, "Test Stream - Never Started")
 	defer cleanupTestStream(t, stream.ID)
 
 	// Verify status is IDLE
@@ -549,7 +553,7 @@ func TestOnUnpublish_NeverStartedStream(t *testing.T) {
 	}
 
 	// Try to unpublish - should return 200 (graceful handling)
-	code := simulateOnUnpublish(t, stream.StreamKey)
+	code := simulateOnUnpublish(t, stream.ID)
 	if code != http.StatusOK {
 		t.Errorf("Expected 200 for never started stream, got %d", code)
 	}
@@ -557,11 +561,12 @@ func TestOnUnpublish_NeverStartedStream(t *testing.T) {
 
 func TestOnPublish_FormURLEncoded(t *testing.T) {
 	// Create a test stream
-	stream := createTestStream(t, 12, "Test Stream - Form Encoded")
+	userID := "550e8400-e29b-41d4-a716-44665544000c"
+	stream := createTestStream(t, userID, "Test Stream - Form Encoded")
 	defer cleanupTestStream(t, stream.ID)
 
 	// Send as form-urlencoded (SRS sometimes sends this format)
-	formData := fmt.Sprintf("action=on_publish&client_id=test&ip=127.0.0.1&vhost=__defaultVhost__&app=live&stream=%s", stream.StreamKey)
+	formData := fmt.Sprintf("action=on_publish&client_id=test&ip=127.0.0.1&vhost=__defaultVhost__&app=live&stream=%s&param=?token=%s", stream.ID, stream.StreamKey)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/callbacks/on_publish", bytes.NewReader([]byte(formData)))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -582,24 +587,25 @@ func TestOnPublish_FormURLEncoded(t *testing.T) {
 
 func TestWebhookIdempotency(t *testing.T) {
 	// Create and start a stream
-	stream := createTestStream(t, 13, "Test Stream - Idempotency")
+	userID := "550e8400-e29b-41d4-a716-44665544000d"
+	stream := createTestStream(t, userID, "Test Stream - Idempotency")
 	defer cleanupTestStream(t, stream.ID)
 
 	// Start the stream
-	code := simulateOnPublish(t, stream.StreamKey)
+	code := simulateOnPublish(t, stream.ID, stream.StreamKey)
 	if code != http.StatusOK {
 		t.Fatalf("First publish failed: %d", code)
 	}
 
 	// End the stream
-	code = simulateOnUnpublish(t, stream.StreamKey)
+	code = simulateOnUnpublish(t, stream.ID)
 	if code != http.StatusOK {
 		t.Fatalf("First unpublish failed: %d", code)
 	}
 
 	// Multiple unpublish calls should all succeed (idempotent)
 	for i := 0; i < 3; i++ {
-		code = simulateOnUnpublish(t, stream.StreamKey)
+		code = simulateOnUnpublish(t, stream.ID)
 		if code != http.StatusOK {
 			t.Errorf("Unpublish attempt %d failed: %d", i+1, code)
 		}

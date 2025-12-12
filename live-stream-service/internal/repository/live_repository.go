@@ -25,26 +25,26 @@ type LiveRepository interface {
 	Create(ctx context.Context, session *entity.LiveSession) error
 
 	// Read operations
-	GetByID(ctx context.Context, id int64) (*entity.LiveSession, error)
+	GetByID(ctx context.Context, id string) (*entity.LiveSession, error)
 	GetByStreamKey(ctx context.Context, streamKey string) (*entity.LiveSession, error)
-	GetByUserID(ctx context.Context, userID int64, limit, offset int) ([]entity.LiveSession, error)
+	GetByUserID(ctx context.Context, userID string, limit, offset int) ([]entity.LiveSession, error)
 	ListByStatus(ctx context.Context, status entity.LiveSessionStatus, limit, offset int) ([]entity.LiveSession, error)
 	ListLive(ctx context.Context, limit, offset int) ([]entity.LiveSession, error)
 	CountByStatus(ctx context.Context, status entity.LiveSessionStatus) (int, error)
-	CountByUserID(ctx context.Context, userID int64) (int, error)
+	CountByUserID(ctx context.Context, userID string) (int, error)
 
 	// Update operations
 	Update(ctx context.Context, session *entity.LiveSession) error
-	UpdateURLs(ctx context.Context, id int64, rtmpURL, webrtcURL, hlsURL string) error
-	UpdateStatus(ctx context.Context, id int64, status entity.LiveSessionStatus) error
-	UpdateViewerCount(ctx context.Context, id int64, count int) error
-	IncrementViewerCount(ctx context.Context, id int64) error
-	DecrementViewerCount(ctx context.Context, id int64) error
-	SetStarted(ctx context.Context, id int64) error
-	SetEnded(ctx context.Context, id int64) error
+	UpdateURLs(ctx context.Context, id string, rtmpURL, webrtcURL, hlsURL string) error
+	UpdateStatus(ctx context.Context, id string, status entity.LiveSessionStatus) error
+	UpdateViewerCount(ctx context.Context, id string, count int) error
+	IncrementViewerCount(ctx context.Context, id string) error
+	DecrementViewerCount(ctx context.Context, id string) error
+	SetStarted(ctx context.Context, id string) error
+	SetEnded(ctx context.Context, id string) error
 
 	// Delete operations
-	Delete(ctx context.Context, id int64) error
+	Delete(ctx context.Context, id string) error
 }
 
 type liveRepository struct {
@@ -57,15 +57,21 @@ func NewLiveRepository(db *sqlx.DB) LiveRepository {
 }
 
 func (r *liveRepository) Create(ctx context.Context, session *entity.LiveSession) error {
+	// Generate NanoID if not set
+	if session.ID == "" {
+		session.ID = entity.GenerateNanoID()
+	}
+
 	query := `
 		INSERT INTO live_sessions (
-			user_id, stream_key, title, description, status, 
+			id, user_id, stream_key, title, description, status, 
 			rtmp_url, webrtc_url, hls_url, viewer_count
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9
-		) RETURNING id, created_at, updated_at`
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+		) RETURNING created_at, updated_at`
 
 	err := r.db.QueryRowxContext(ctx, query,
+		session.ID,
 		session.UserID,
 		session.StreamKey,
 		session.Title,
@@ -75,7 +81,7 @@ func (r *liveRepository) Create(ctx context.Context, session *entity.LiveSession
 		session.WebRTCUrl,
 		session.HLSUrl,
 		session.ViewerCount,
-	).Scan(&session.ID, &session.CreatedAt, &session.UpdatedAt)
+	).Scan(&session.CreatedAt, &session.UpdatedAt)
 
 	if err != nil {
 		if isDuplicateKeyError(err) {
@@ -87,7 +93,7 @@ func (r *liveRepository) Create(ctx context.Context, session *entity.LiveSession
 	return nil
 }
 
-func (r *liveRepository) GetByID(ctx context.Context, id int64) (*entity.LiveSession, error) {
+func (r *liveRepository) GetByID(ctx context.Context, id string) (*entity.LiveSession, error) {
 	var session entity.LiveSession
 	query := `
 		SELECT id, user_id, stream_key, title, description, status,
@@ -127,7 +133,7 @@ func (r *liveRepository) GetByStreamKey(ctx context.Context, streamKey string) (
 	return &session, nil
 }
 
-func (r *liveRepository) GetByUserID(ctx context.Context, userID int64, limit, offset int) ([]entity.LiveSession, error) {
+func (r *liveRepository) GetByUserID(ctx context.Context, userID string, limit, offset int) ([]entity.LiveSession, error) {
 	var sessions []entity.LiveSession
 	query := `
 		SELECT id, user_id, stream_key, title, description, status,
@@ -181,7 +187,7 @@ func (r *liveRepository) CountByStatus(ctx context.Context, status entity.LiveSe
 	return count, nil
 }
 
-func (r *liveRepository) CountByUserID(ctx context.Context, userID int64) (int, error) {
+func (r *liveRepository) CountByUserID(ctx context.Context, userID string) (int, error) {
 	var count int
 	query := `SELECT COUNT(*) FROM live_sessions WHERE user_id = $1`
 
@@ -226,7 +232,7 @@ func (r *liveRepository) Update(ctx context.Context, session *entity.LiveSession
 	return nil
 }
 
-func (r *liveRepository) UpdateURLs(ctx context.Context, id int64, rtmpURL, webrtcURL, hlsURL string) error {
+func (r *liveRepository) UpdateURLs(ctx context.Context, id string, rtmpURL, webrtcURL, hlsURL string) error {
 	query := `UPDATE live_sessions SET rtmp_url = $1, webrtc_url = $2, hls_url = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4`
 
 	result, err := r.db.ExecContext(ctx, query, rtmpURL, webrtcURL, hlsURL, id)
@@ -237,7 +243,7 @@ func (r *liveRepository) UpdateURLs(ctx context.Context, id int64, rtmpURL, webr
 	return checkRowsAffected(result)
 }
 
-func (r *liveRepository) UpdateStatus(ctx context.Context, id int64, status entity.LiveSessionStatus) error {
+func (r *liveRepository) UpdateStatus(ctx context.Context, id string, status entity.LiveSessionStatus) error {
 	query := `UPDATE live_sessions SET status = $1 WHERE id = $2`
 
 	result, err := r.db.ExecContext(ctx, query, status, id)
@@ -248,7 +254,7 @@ func (r *liveRepository) UpdateStatus(ctx context.Context, id int64, status enti
 	return checkRowsAffected(result)
 }
 
-func (r *liveRepository) UpdateViewerCount(ctx context.Context, id int64, count int) error {
+func (r *liveRepository) UpdateViewerCount(ctx context.Context, id string, count int) error {
 	query := `UPDATE live_sessions SET viewer_count = $1 WHERE id = $2`
 
 	result, err := r.db.ExecContext(ctx, query, count, id)
@@ -259,7 +265,7 @@ func (r *liveRepository) UpdateViewerCount(ctx context.Context, id int64, count 
 	return checkRowsAffected(result)
 }
 
-func (r *liveRepository) IncrementViewerCount(ctx context.Context, id int64) error {
+func (r *liveRepository) IncrementViewerCount(ctx context.Context, id string) error {
 	query := `UPDATE live_sessions SET viewer_count = viewer_count + 1 WHERE id = $1`
 
 	result, err := r.db.ExecContext(ctx, query, id)
@@ -270,7 +276,7 @@ func (r *liveRepository) IncrementViewerCount(ctx context.Context, id int64) err
 	return checkRowsAffected(result)
 }
 
-func (r *liveRepository) DecrementViewerCount(ctx context.Context, id int64) error {
+func (r *liveRepository) DecrementViewerCount(ctx context.Context, id string) error {
 	query := `UPDATE live_sessions SET viewer_count = GREATEST(viewer_count - 1, 0) WHERE id = $1`
 
 	result, err := r.db.ExecContext(ctx, query, id)
@@ -281,7 +287,7 @@ func (r *liveRepository) DecrementViewerCount(ctx context.Context, id int64) err
 	return checkRowsAffected(result)
 }
 
-func (r *liveRepository) SetStarted(ctx context.Context, id int64) error {
+func (r *liveRepository) SetStarted(ctx context.Context, id string) error {
 	now := time.Now()
 	query := `
 		UPDATE live_sessions 
@@ -305,7 +311,7 @@ func (r *liveRepository) SetStarted(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (r *liveRepository) SetEnded(ctx context.Context, id int64) error {
+func (r *liveRepository) SetEnded(ctx context.Context, id string) error {
 	now := time.Now()
 	query := `
 		UPDATE live_sessions 
@@ -329,7 +335,7 @@ func (r *liveRepository) SetEnded(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (r *liveRepository) Delete(ctx context.Context, id int64) error {
+func (r *liveRepository) Delete(ctx context.Context, id string) error {
 	query := `DELETE FROM live_sessions WHERE id = $1`
 
 	result, err := r.db.ExecContext(ctx, query, id)

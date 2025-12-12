@@ -1,7 +1,11 @@
+//go:build !windows
+// +build !windows
+
 package repository
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -69,7 +73,7 @@ func (s *LiveRepositoryTestSuite) TearDownSuite() {
 
 func (s *LiveRepositoryTestSuite) SetupTest() {
 	// Clean up table before each test
-	s.db.ExecContext(s.ctx, "TRUNCATE TABLE live_sessions RESTART IDENTITY CASCADE")
+	s.db.ExecContext(s.ctx, "TRUNCATE TABLE live_sessions CASCADE")
 }
 
 func (s *LiveRepositoryTestSuite) runMigrations() {
@@ -86,8 +90,8 @@ func (s *LiveRepositoryTestSuite) runMigrations() {
 	// Create table
 	_, err = s.db.ExecContext(s.ctx, `
 		CREATE TABLE IF NOT EXISTS live_sessions (
-			id BIGSERIAL PRIMARY KEY,
-			user_id BIGINT NOT NULL,
+			id VARCHAR(21) PRIMARY KEY,
+			user_id VARCHAR(36) NOT NULL,
 			stream_key VARCHAR(255) NOT NULL UNIQUE,
 			title VARCHAR(255) NOT NULL,
 			description TEXT,
@@ -106,7 +110,7 @@ func (s *LiveRepositoryTestSuite) runMigrations() {
 }
 
 // Helper to create a test session
-func (s *LiveRepositoryTestSuite) createTestSession(userID int64, streamKey, title string) *entity.LiveSession {
+func (s *LiveRepositoryTestSuite) createTestSession(userID string, streamKey, title string) *entity.LiveSession {
 	rtmpURL := "rtmp://test/live/" + streamKey
 	hlsURL := "https://cdn.test/live/" + streamKey + "/index.m3u8"
 	return &entity.LiveSession{
@@ -123,19 +127,23 @@ func (s *LiveRepositoryTestSuite) createTestSession(userID int64, streamKey, tit
 // ==================== CREATE TESTS ====================
 
 func (s *LiveRepositoryTestSuite) TestCreate_Success() {
-	session := s.createTestSession(1, "live_u1_abc123", "Test Stream")
+	userID := "550e8400-e29b-41d4-a716-446655440000"
+	session := s.createTestSession(userID, "live_"+userID+"_0123456789abcdef0123456789abcdef", "Test Stream")
 
 	err := s.repo.Create(s.ctx, session)
 
 	assert.NoError(s.T(), err)
-	assert.NotZero(s.T(), session.ID)
+	assert.NotEmpty(s.T(), session.ID)
 	assert.NotZero(s.T(), session.CreatedAt)
 	assert.NotZero(s.T(), session.UpdatedAt)
 }
 
 func (s *LiveRepositoryTestSuite) TestCreate_DuplicateStreamKey() {
-	session1 := s.createTestSession(1, "live_u1_duplicate", "Stream 1")
-	session2 := s.createTestSession(2, "live_u1_duplicate", "Stream 2")
+	user1 := "550e8400-e29b-41d4-a716-446655440000"
+	user2 := "550e8400-e29b-41d4-a716-446655440001"
+	dupKey := "live_" + user1 + "_0123456789abcdef0123456789abcdef"
+	session1 := s.createTestSession(user1, dupKey, "Stream 1")
+	session2 := s.createTestSession(user2, dupKey, "Stream 2")
 
 	err := s.repo.Create(s.ctx, session1)
 	assert.NoError(s.T(), err)
@@ -147,7 +155,8 @@ func (s *LiveRepositoryTestSuite) TestCreate_DuplicateStreamKey() {
 // ==================== READ TESTS ====================
 
 func (s *LiveRepositoryTestSuite) TestGetByID_Success() {
-	session := s.createTestSession(1, "live_u1_getbyid", "Test Stream")
+	userID := "550e8400-e29b-41d4-a716-446655440000"
+	session := s.createTestSession(userID, "live_"+userID+"_00000000000000000000000000000001", "Test Stream")
 	err := s.repo.Create(s.ctx, session)
 	require.NoError(s.T(), err)
 
@@ -160,18 +169,20 @@ func (s *LiveRepositoryTestSuite) TestGetByID_Success() {
 }
 
 func (s *LiveRepositoryTestSuite) TestGetByID_NotFound() {
-	found, err := s.repo.GetByID(s.ctx, 99999)
+	found, err := s.repo.GetByID(s.ctx, "nonexistent_stream_id")
 
 	assert.ErrorIs(s.T(), err, ErrNotFound)
 	assert.Nil(s.T(), found)
 }
 
 func (s *LiveRepositoryTestSuite) TestGetByStreamKey_Success() {
-	session := s.createTestSession(1, "live_u1_streamkey", "Test Stream")
+	userID := "550e8400-e29b-41d4-a716-446655440000"
+	key := "live_" + userID + "_00000000000000000000000000000002"
+	session := s.createTestSession(userID, key, "Test Stream")
 	err := s.repo.Create(s.ctx, session)
 	require.NoError(s.T(), err)
 
-	found, err := s.repo.GetByStreamKey(s.ctx, "live_u1_streamkey")
+	found, err := s.repo.GetByStreamKey(s.ctx, key)
 
 	assert.NoError(s.T(), err)
 	assert.Equal(s.T(), session.ID, found.ID)
@@ -185,31 +196,35 @@ func (s *LiveRepositoryTestSuite) TestGetByStreamKey_NotFound() {
 }
 
 func (s *LiveRepositoryTestSuite) TestGetByUserID_Success() {
+	userID := "550e8400-e29b-41d4-a716-446655440000"
 	// Create multiple sessions for same user
 	for i := 1; i <= 3; i++ {
-		session := s.createTestSession(1, "live_u1_user_"+string(rune('a'+i)), "Stream "+string(rune('0'+i)))
+		streamKey := fmt.Sprintf("live_%s_%032x", userID, i)
+		session := s.createTestSession(userID, streamKey, fmt.Sprintf("Stream %d", i))
 		err := s.repo.Create(s.ctx, session)
 		require.NoError(s.T(), err)
 	}
 	// Create session for different user
-	other := s.createTestSession(2, "live_u2_other", "Other Stream")
+	otherUser := "550e8400-e29b-41d4-a716-446655440001"
+	other := s.createTestSession(otherUser, fmt.Sprintf("live_%s_%032x", otherUser, 999), "Other Stream")
 	err := s.repo.Create(s.ctx, other)
 	require.NoError(s.T(), err)
 
-	sessions, err := s.repo.GetByUserID(s.ctx, 1, 10, 0)
+	sessions, err := s.repo.GetByUserID(s.ctx, userID, 10, 0)
 
 	assert.NoError(s.T(), err)
 	assert.Len(s.T(), sessions, 3)
 }
 
 func (s *LiveRepositoryTestSuite) TestListByStatus_Success() {
+	userID := "550e8400-e29b-41d4-a716-446655440000"
 	// Create IDLE session
-	idle := s.createTestSession(1, "live_u1_idle", "Idle Stream")
+	idle := s.createTestSession(userID, fmt.Sprintf("live_%s_%032x", userID, 1), "Idle Stream")
 	err := s.repo.Create(s.ctx, idle)
 	require.NoError(s.T(), err)
 
 	// Create LIVE session
-	live := s.createTestSession(1, "live_u1_live", "Live Stream")
+	live := s.createTestSession(userID, fmt.Sprintf("live_%s_%032x", userID, 2), "Live Stream")
 	live.Status = entity.StatusLive
 	err = s.repo.Create(s.ctx, live)
 	require.NoError(s.T(), err)
@@ -224,7 +239,8 @@ func (s *LiveRepositoryTestSuite) TestListByStatus_Success() {
 func (s *LiveRepositoryTestSuite) TestListLive_Success() {
 	// Create multiple live sessions
 	for i := 1; i <= 5; i++ {
-		session := s.createTestSession(int64(i), "live_u"+string(rune('0'+i))+"_live", "Live Stream")
+		userID := fmt.Sprintf("550e8400-e29b-41d4-a716-44665544000%d", i)
+		session := s.createTestSession(userID, fmt.Sprintf("live_%s_%032x", userID, i), "Live Stream")
 		session.Status = entity.StatusLive
 		err := s.repo.Create(s.ctx, session)
 		require.NoError(s.T(), err)
@@ -238,16 +254,19 @@ func (s *LiveRepositoryTestSuite) TestListLive_Success() {
 
 func (s *LiveRepositoryTestSuite) TestCountByStatus_Success() {
 	// Create sessions with different statuses
-	idle := s.createTestSession(1, "live_u1_count_idle", "Idle")
+	user1 := "550e8400-e29b-41d4-a716-446655440000"
+	user2 := "550e8400-e29b-41d4-a716-446655440001"
+	user3 := "550e8400-e29b-41d4-a716-446655440002"
+	idle := s.createTestSession(user1, fmt.Sprintf("live_%s_%032x", user1, 1), "Idle")
 	err := s.repo.Create(s.ctx, idle)
 	require.NoError(s.T(), err)
 
-	live1 := s.createTestSession(2, "live_u2_count_live1", "Live 1")
+	live1 := s.createTestSession(user2, fmt.Sprintf("live_%s_%032x", user2, 2), "Live 1")
 	live1.Status = entity.StatusLive
 	err = s.repo.Create(s.ctx, live1)
 	require.NoError(s.T(), err)
 
-	live2 := s.createTestSession(3, "live_u3_count_live2", "Live 2")
+	live2 := s.createTestSession(user3, fmt.Sprintf("live_%s_%032x", user3, 3), "Live 2")
 	live2.Status = entity.StatusLive
 	err = s.repo.Create(s.ctx, live2)
 	require.NoError(s.T(), err)
@@ -261,7 +280,8 @@ func (s *LiveRepositoryTestSuite) TestCountByStatus_Success() {
 // ==================== UPDATE TESTS ====================
 
 func (s *LiveRepositoryTestSuite) TestUpdate_Success() {
-	session := s.createTestSession(1, "live_u1_update", "Original Title")
+	userID := "550e8400-e29b-41d4-a716-446655440000"
+	session := s.createTestSession(userID, fmt.Sprintf("live_%s_%032x", userID, 100), "Original Title")
 	err := s.repo.Create(s.ctx, session)
 	require.NoError(s.T(), err)
 
@@ -277,7 +297,8 @@ func (s *LiveRepositoryTestSuite) TestUpdate_Success() {
 }
 
 func (s *LiveRepositoryTestSuite) TestUpdateStatus_Success() {
-	session := s.createTestSession(1, "live_u1_status", "Test")
+	userID := "550e8400-e29b-41d4-a716-446655440000"
+	session := s.createTestSession(userID, fmt.Sprintf("live_%s_%032x", userID, 101), "Test")
 	err := s.repo.Create(s.ctx, session)
 	require.NoError(s.T(), err)
 
@@ -290,7 +311,8 @@ func (s *LiveRepositoryTestSuite) TestUpdateStatus_Success() {
 }
 
 func (s *LiveRepositoryTestSuite) TestUpdateViewerCount_Success() {
-	session := s.createTestSession(1, "live_u1_viewers", "Test")
+	userID := "550e8400-e29b-41d4-a716-446655440000"
+	session := s.createTestSession(userID, fmt.Sprintf("live_%s_%032x", userID, 102), "Test")
 	err := s.repo.Create(s.ctx, session)
 	require.NoError(s.T(), err)
 
@@ -303,7 +325,8 @@ func (s *LiveRepositoryTestSuite) TestUpdateViewerCount_Success() {
 }
 
 func (s *LiveRepositoryTestSuite) TestIncrementViewerCount_Success() {
-	session := s.createTestSession(1, "live_u1_inc", "Test")
+	userID := "550e8400-e29b-41d4-a716-446655440000"
+	session := s.createTestSession(userID, fmt.Sprintf("live_%s_%032x", userID, 103), "Test")
 	err := s.repo.Create(s.ctx, session)
 	require.NoError(s.T(), err)
 
@@ -318,7 +341,8 @@ func (s *LiveRepositoryTestSuite) TestIncrementViewerCount_Success() {
 }
 
 func (s *LiveRepositoryTestSuite) TestDecrementViewerCount_Success() {
-	session := s.createTestSession(1, "live_u1_dec", "Test")
+	userID := "550e8400-e29b-41d4-a716-446655440000"
+	session := s.createTestSession(userID, fmt.Sprintf("live_%s_%032x", userID, 104), "Test")
 	err := s.repo.Create(s.ctx, session)
 	require.NoError(s.T(), err)
 
@@ -333,7 +357,8 @@ func (s *LiveRepositoryTestSuite) TestDecrementViewerCount_Success() {
 }
 
 func (s *LiveRepositoryTestSuite) TestDecrementViewerCount_NotBelowZero() {
-	session := s.createTestSession(1, "live_u1_dec_zero", "Test")
+	userID := "550e8400-e29b-41d4-a716-446655440000"
+	session := s.createTestSession(userID, fmt.Sprintf("live_%s_%032x", userID, 105), "Test")
 	err := s.repo.Create(s.ctx, session)
 	require.NoError(s.T(), err)
 
@@ -346,7 +371,8 @@ func (s *LiveRepositoryTestSuite) TestDecrementViewerCount_NotBelowZero() {
 }
 
 func (s *LiveRepositoryTestSuite) TestSetStarted_Success() {
-	session := s.createTestSession(1, "live_u1_started", "Test")
+	userID := "550e8400-e29b-41d4-a716-446655440000"
+	session := s.createTestSession(userID, fmt.Sprintf("live_%s_%032x", userID, 106), "Test")
 	err := s.repo.Create(s.ctx, session)
 	require.NoError(s.T(), err)
 
@@ -360,7 +386,8 @@ func (s *LiveRepositoryTestSuite) TestSetStarted_Success() {
 }
 
 func (s *LiveRepositoryTestSuite) TestSetStarted_InvalidStatus() {
-	session := s.createTestSession(1, "live_u1_started_invalid", "Test")
+	userID := "550e8400-e29b-41d4-a716-446655440000"
+	session := s.createTestSession(userID, fmt.Sprintf("live_%s_%032x", userID, 107), "Test")
 	session.Status = entity.StatusLive
 	err := s.repo.Create(s.ctx, session)
 	require.NoError(s.T(), err)
@@ -371,7 +398,8 @@ func (s *LiveRepositoryTestSuite) TestSetStarted_InvalidStatus() {
 }
 
 func (s *LiveRepositoryTestSuite) TestSetEnded_Success() {
-	session := s.createTestSession(1, "live_u1_ended", "Test")
+	userID := "550e8400-e29b-41d4-a716-446655440000"
+	session := s.createTestSession(userID, fmt.Sprintf("live_%s_%032x", userID, 108), "Test")
 	session.Status = entity.StatusLive
 	err := s.repo.Create(s.ctx, session)
 	require.NoError(s.T(), err)
@@ -390,7 +418,8 @@ func (s *LiveRepositoryTestSuite) TestSetEnded_Success() {
 }
 
 func (s *LiveRepositoryTestSuite) TestSetEnded_InvalidStatus() {
-	session := s.createTestSession(1, "live_u1_ended_invalid", "Test")
+	userID := "550e8400-e29b-41d4-a716-446655440000"
+	session := s.createTestSession(userID, fmt.Sprintf("live_%s_%032x", userID, 109), "Test")
 	err := s.repo.Create(s.ctx, session)
 	require.NoError(s.T(), err)
 
@@ -402,7 +431,8 @@ func (s *LiveRepositoryTestSuite) TestSetEnded_InvalidStatus() {
 // ==================== DELETE TESTS ====================
 
 func (s *LiveRepositoryTestSuite) TestDelete_Success() {
-	session := s.createTestSession(1, "live_u1_delete", "Test")
+	userID := "550e8400-e29b-41d4-a716-446655440000"
+	session := s.createTestSession(userID, fmt.Sprintf("live_%s_%032x", userID, 110), "Test")
 	err := s.repo.Create(s.ctx, session)
 	require.NoError(s.T(), err)
 
@@ -415,7 +445,7 @@ func (s *LiveRepositoryTestSuite) TestDelete_Success() {
 }
 
 func (s *LiveRepositoryTestSuite) TestDelete_NotFound() {
-	err := s.repo.Delete(s.ctx, 99999)
+	err := s.repo.Delete(s.ctx, "nonexistent_stream_id")
 
 	assert.ErrorIs(s.T(), err, ErrNotFound)
 }
@@ -423,14 +453,15 @@ func (s *LiveRepositoryTestSuite) TestDelete_NotFound() {
 // ==================== COUNT TESTS ====================
 
 func (s *LiveRepositoryTestSuite) TestCountByUserID_Success() {
+	userID := "550e8400-e29b-41d4-a716-446655440000"
 	// Create sessions for user 1
 	for i := 1; i <= 3; i++ {
-		session := s.createTestSession(1, "live_u1_count_"+string(rune('a'+i)), "Stream")
+		session := s.createTestSession(userID, fmt.Sprintf("live_%s_%032x", userID, 200+i), "Stream")
 		err := s.repo.Create(s.ctx, session)
 		require.NoError(s.T(), err)
 	}
 
-	count, err := s.repo.CountByUserID(s.ctx, 1)
+	count, err := s.repo.CountByUserID(s.ctx, userID)
 
 	assert.NoError(s.T(), err)
 	assert.Equal(s.T(), 3, count)
@@ -438,7 +469,7 @@ func (s *LiveRepositoryTestSuite) TestCountByUserID_Success() {
 
 func (s *LiveRepositoryTestSuite) TestUpdate_NotFound() {
 	session := &entity.LiveSession{
-		ID:     99999,
+		ID:     "nonexistent_stream_id",
 		Title:  "Not Found",
 		Status: entity.StatusIdle,
 	}
@@ -449,25 +480,25 @@ func (s *LiveRepositoryTestSuite) TestUpdate_NotFound() {
 }
 
 func (s *LiveRepositoryTestSuite) TestUpdateStatus_NotFound() {
-	err := s.repo.UpdateStatus(s.ctx, 99999, entity.StatusLive)
+	err := s.repo.UpdateStatus(s.ctx, "nonexistent_stream_id", entity.StatusLive)
 
 	assert.ErrorIs(s.T(), err, ErrNotFound)
 }
 
 func (s *LiveRepositoryTestSuite) TestUpdateViewerCount_NotFound() {
-	err := s.repo.UpdateViewerCount(s.ctx, 99999, 100)
+	err := s.repo.UpdateViewerCount(s.ctx, "nonexistent_stream_id", 100)
 
 	assert.ErrorIs(s.T(), err, ErrNotFound)
 }
 
 func (s *LiveRepositoryTestSuite) TestIncrementViewerCount_NotFound() {
-	err := s.repo.IncrementViewerCount(s.ctx, 99999)
+	err := s.repo.IncrementViewerCount(s.ctx, "nonexistent_stream_id")
 
 	assert.ErrorIs(s.T(), err, ErrNotFound)
 }
 
 func (s *LiveRepositoryTestSuite) TestDecrementViewerCount_NotFound() {
-	err := s.repo.DecrementViewerCount(s.ctx, 99999)
+	err := s.repo.DecrementViewerCount(s.ctx, "nonexistent_stream_id")
 
 	assert.ErrorIs(s.T(), err, ErrNotFound)
 }

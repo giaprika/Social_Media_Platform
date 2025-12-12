@@ -63,11 +63,18 @@ Base URL:
 
 ### Authentication
 
-Authentication is handled by API Gateway/upstream service. This service expects `X-User-ID` header:
+Authentication is handled by API Gateway/upstream service. This service expects `X-User-ID` header with UUID:
 
 ```
-X-User-ID: 123
+X-User-ID: 550e8400-e29b-41d4-a716-446655440000
 ```
+
+### ID Formats
+
+| Field | Format | Example |
+|-------|--------|---------|
+| `user_id` | UUID v4 | `550e8400-e29b-41d4-a716-446655440000` |
+| `stream_id` | NanoID (21 chars) | `V1StGXR8_Z5jdHi6B-myT` |
 
 ---
 
@@ -76,7 +83,7 @@ X-User-ID: 123
 #### Create Stream
 ```http
 POST /api/v1/live/create
-X-User-ID: 123
+X-User-ID: 550e8400-e29b-41d4-a716-446655440000
 Content-Type: application/json
 
 {
@@ -88,11 +95,11 @@ Content-Type: application/json
 **Response (201):**
 ```json
 {
-  "id": 123,
-  "stream_key": "abc123xyz",
-  "rtmp_url": "rtmp://server-ip:1935/live/123?token=abc123xyz",
-  "webrtc_url": "webrtc://server-ip/live/123?token=abc123xyz",
-  "hls_url": "https://cdn.example.com/live/123/index.m3u8"
+  "id": "V1StGXR8_Z5jdHi6B-myT",
+  "stream_key": "live_550e8400-e29b-41d4-a716-446655440000_a1b2c3d4e5f6...",
+  "rtmp_url": "rtmp://server-ip:1935/live/V1StGXR8_Z5jdHi6B-myT?token=...",
+  "webrtc_url": "webrtc://server-ip/live/V1StGXR8_Z5jdHi6B-myT?token=...",
+  "hls_url": "https://cdn.example.com/live/V1StGXR8_Z5jdHi6B-myT.m3u8"
 }
 ```
 
@@ -106,12 +113,12 @@ GET /api/v1/live/feed?page=1&limit=20
 {
   "streams": [
     {
-      "id": 123,
-      "user_id": 1,
+      "id": "V1StGXR8_Z5jdHi6B-myT",
+      "user_id": "550e8400-e29b-41d4-a716-446655440000",
       "title": "My Stream",
       "status": "LIVE",
       "viewer_count": 42,
-      "hls_url": "https://cdn.example.com/live/123/index.m3u8",
+      "hls_url": "https://cdn.example.com/live/V1StGXR8_Z5jdHi6B-myT.m3u8",
       "started_at": "2024-01-15T10:30:00Z",
       "created_at": "2024-01-15T10:25:00Z"
     }
@@ -126,21 +133,21 @@ GET /api/v1/live/feed?page=1&limit=20
 #### Get Stream Details
 ```http
 GET /api/v1/live/:id
-X-User-ID: 123  (optional - shows stream_key if owner)
+X-User-ID: 550e8400-e29b-41d4-a716-446655440000  (optional - shows stream_key if owner)
 ```
 
 **Response (200):**
 ```json
 {
-  "id": 123,
-  "user_id": 1,
+  "id": "V1StGXR8_Z5jdHi6B-myT",
+  "user_id": "550e8400-e29b-41d4-a716-446655440000",
   "title": "My Stream",
   "description": "Stream description",
   "status": "LIVE",
-  "stream_key": "abc123xyz",      // Only if owner
+  "stream_key": "live_550e8400-e29b-41d4-a716-446655440000_a1b2c3d4e5f6...",      // Only if owner
   "rtmp_url": "rtmp://...",       // Only if owner
   "webrtc_url": "webrtc://...",   // Only if owner
-  "hls_url": "https://cdn.example.com/live/123/index.m3u8",
+  "hls_url": "https://cdn.example.com/live/V1StGXR8_Z5jdHi6B-myT.m3u8",
   "viewer_count": 42,
   "started_at": "2024-01-15T10:30:00Z",
   "is_owner": true
@@ -150,18 +157,18 @@ X-User-ID: 123  (optional - shows stream_key if owner)
 #### Get WebRTC Info
 ```http
 GET /api/v1/live/:id/webrtc
-X-User-ID: 123  (optional - shows publish_url if owner)
+X-User-ID: 550e8400-e29b-41d4-a716-446655440000  (optional - shows publish_url if owner)
 ```
 
 **Response (200):**
 ```json
 {
-  "id": 123,
+  "id": "V1StGXR8_Z5jdHi6B-myT",
   "status": "LIVE",
-  "publish_url": "webrtc://server-ip/live/123?token=abc123xyz",
-  "play_url": "webrtc://server-ip/live/123",
-  "whip_endpoint": "http://server-ip:1985/rtc/v1/whip/?app=live&stream=123",
-  "whep_endpoint": "http://server-ip:1985/rtc/v1/whep/?app=live&stream=123",
+  "publish_url": "webrtc://server-ip/live/V1StGXR8_Z5jdHi6B-myT?token=live_550e8400-e29b-41d4-a716-446655440000_a1b2c3d4e5f6...",
+  "play_url": "webrtc://server-ip/live/V1StGXR8_Z5jdHi6B-myT",
+  "whip_endpoint": "http://server-ip:1985/rtc/v1/whip/?app=live&stream=V1StGXR8_Z5jdHi6B-myT&token=live_550e8400-e29b-41d4-a716-446655440000_a1b2c3d4e5f6...",
+  "whep_endpoint": "http://server-ip:1985/rtc/v1/whep/?app=live&stream=V1StGXR8_Z5jdHi6B-myT",
   "ice_servers": [
     {
       "urls": ["stun:stun.l.google.com:19302"]
@@ -184,7 +191,7 @@ GET /api/v1/live/:id/viewers
 **Response (200):**
 ```json
 {
-  "stream_id": 123,
+  "stream_id": "V1StGXR8_Z5jdHi6B-myT",
   "viewer_count": 42
 }
 ```
@@ -195,7 +202,7 @@ GET /api/v1/live/:id/viewers
 
 #### Connect
 ```
-ws://localhost:8080/ws/live/:id?user_id=456&username=John
+ws://localhost:8080/ws/live/:id?user_id=550e8400-e29b-41d4-a716-446655440000&username=John
 ```
 
 **Query Parameters:**
@@ -220,8 +227,8 @@ ws://localhost:8080/ws/live/:id?user_id=456&username=John
 ```json
 {
   "type": "CHAT_BROADCAST",
-  "stream_id": 123,
-  "user_id": 456,
+  "stream_id": "V1StGXR8_Z5jdHi6B-myT",
+  "user_id": "550e8400-e29b-41d4-a716-446655440000",
   "username": "John",
   "content": "Hello everyone!",
   "timestamp": "2024-01-15T10:30:00Z"
@@ -232,7 +239,7 @@ ws://localhost:8080/ws/live/:id?user_id=456&username=John
 ```json
 {
   "type": "VIEW_UPDATE",
-  "stream_id": 123,
+  "stream_id": "V1StGXR8_Z5jdHi6B-myT",
   "count": 42,
   "timestamp": "2024-01-15T10:30:00Z"
 }
@@ -242,7 +249,7 @@ ws://localhost:8080/ws/live/:id?user_id=456&username=John
 ```json
 {
   "type": "JOINED",
-  "stream_id": 123,
+  "stream_id": "V1StGXR8_Z5jdHi6B-myT",
   "count": 42,
   "timestamp": "2024-01-15T10:30:00Z"
 }
@@ -344,7 +351,7 @@ class LiveChat {
 }
 
 // Usage
-const chat = new LiveChat(123, 456, 'John');
+const chat = new LiveChat('V1StGXR8_Z5jdHi6B-myT', '550e8400-e29b-41d4-a716-446655440000', 'John');
 chat.onChat = (user, msg) => appendToChatUI(user, msg);
 chat.onViewerUpdate = (count) => updateViewerCount(count);
 chat.sendMessage('Hello!');
@@ -384,6 +391,7 @@ function playStream(streamId) {
 4. Stream Key: `{stream_id}?token={stream_key}` (from create response)
 
 Example: `123?token=abc123xyz`
+Example: `V1StGXR8_Z5jdHi6B-myT?token=live_550e8400-e29b-41d4-a716-446655440000_a1b2c3d4e5f6...`
 
 ---
 
