@@ -20,8 +20,8 @@ const (
 // Message represents a WebSocket message
 type Message struct {
 	Type      MessageType `json:"type"`
-	StreamID  int64       `json:"stream_id,omitempty"`
-	UserID    int64       `json:"user_id,omitempty"`
+	StreamID  string      `json:"stream_id,omitempty"` // NanoID
+	UserID    string      `json:"user_id,omitempty"`   // UUID
 	Username  string      `json:"username,omitempty"`
 	Content   string      `json:"content,omitempty"`
 	Count     int         `json:"count,omitempty"`
@@ -29,7 +29,7 @@ type Message struct {
 }
 
 // NewChatMessage creates a new chat broadcast message
-func NewChatMessage(streamID, userID int64, username, content string) *Message {
+func NewChatMessage(streamID, userID, username, content string) *Message {
 	return &Message{
 		Type:      MessageTypeChatBroadcast,
 		StreamID:  streamID,
@@ -41,7 +41,7 @@ func NewChatMessage(streamID, userID int64, username, content string) *Message {
 }
 
 // NewViewUpdateMessage creates a new viewer count update message
-func NewViewUpdateMessage(streamID int64, count int) *Message {
+func NewViewUpdateMessage(streamID string, count int) *Message {
 	return &Message{
 		Type:      MessageTypeViewUpdate,
 		StreamID:  streamID,
@@ -60,7 +60,7 @@ func NewErrorMessage(content string) *Message {
 }
 
 // NewJoinedMessage creates a message when user joins
-func NewJoinedMessage(streamID int64, count int) *Message {
+func NewJoinedMessage(streamID string, count int) *Message {
 	return &Message{
 		Type:      MessageTypeJoined,
 		StreamID:  streamID,
@@ -70,7 +70,7 @@ func NewJoinedMessage(streamID int64, count int) *Message {
 }
 
 // NewLeftMessage creates a message when user leaves
-func NewLeftMessage(streamID int64, username string, count int) *Message {
+func NewLeftMessage(streamID, username string, count int) *Message {
 	return &Message{
 		Type:      MessageTypeLeft,
 		StreamID:  streamID,

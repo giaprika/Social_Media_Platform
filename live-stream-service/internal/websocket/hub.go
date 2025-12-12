@@ -9,8 +9,8 @@ import (
 
 // Hub maintains the set of active clients and broadcasts messages to clients
 type Hub struct {
-	// Map of streamID -> set of clients
-	rooms map[int64]map[*Client]bool
+	// Map of streamID (NanoID string) -> set of clients
+	rooms map[string]map[*Client]bool
 
 	// RWMutex for thread-safe access to rooms
 	mu sync.RWMutex
@@ -22,26 +22,26 @@ type Hub struct {
 	unregister chan *Client
 
 	// Track last view count update time per stream (for throttling)
-	lastViewUpdate map[int64]time.Time
+	lastViewUpdate map[string]time.Time
 	viewUpdateMu   sync.Mutex
 
 	// Minimum interval between view count updates (throttling)
 	viewUpdateInterval time.Duration
 
 	// Pending view updates (for debouncing)
-	pendingUpdates map[int64]bool
+	pendingUpdates map[string]bool
 	pendingMu      sync.Mutex
 }
 
 // NewHub creates a new Hub instance
 func NewHub() *Hub {
 	h := &Hub{
-		rooms:              make(map[int64]map[*Client]bool),
+		rooms:              make(map[string]map[*Client]bool),
 		register:           make(chan *Client, 256),
 		unregister:         make(chan *Client, 256),
-		lastViewUpdate:     make(map[int64]time.Time),
+		lastViewUpdate:     make(map[string]time.Time),
 		viewUpdateInterval: 3 * time.Second, // Throttle view updates to max 1 per 3 seconds
-		pendingUpdates:     make(map[int64]bool),
+		pendingUpdates:     make(map[string]bool),
 	}
 	return h
 }
@@ -83,7 +83,7 @@ func (h *Hub) addClient(client *Client) {
 	h.rooms[streamID][client] = true
 
 	count := len(h.rooms[streamID])
-	log.Printf("Client joined stream %d, total viewers: %d", streamID, count)
+	log.Printf("Client joined stream %s, total viewers: %d", streamID, count)
 
 	// Send joined message to the client
 	joinedMsg := NewJoinedMessage(streamID, count)
@@ -107,7 +107,7 @@ func (h *Hub) removeClient(client *Client) {
 			delete(clients, client)
 
 			count := len(clients)
-			log.Printf("Client left stream %d, total viewers: %d", streamID, count)
+			log.Printf("Client left stream %s, total viewers: %d", streamID, count)
 
 			// Clean up empty rooms
 			if count == 0 {
@@ -121,7 +121,7 @@ func (h *Hub) removeClient(client *Client) {
 }
 
 // GetViewerCount returns the number of viewers for a stream
-func (h *Hub) GetViewerCount(streamID int64) int {
+func (h *Hub) GetViewerCount(streamID string) int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
@@ -132,7 +132,7 @@ func (h *Hub) GetViewerCount(streamID int64) int {
 }
 
 // Broadcast sends a message to all clients in a stream room
-func (h *Hub) Broadcast(streamID int64, message []byte) {
+func (h *Hub) Broadcast(streamID string, message []byte) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
@@ -147,7 +147,7 @@ func (h *Hub) Broadcast(streamID int64, message []byte) {
 }
 
 // BroadcastMessage sends a Message to all clients in a stream room
-func (h *Hub) BroadcastMessage(streamID int64, msg *Message) {
+func (h *Hub) BroadcastMessage(streamID string, msg *Message) {
 	data, err := json.Marshal(msg)
 	if err != nil {
 		log.Printf("Failed to marshal message: %v", err)
@@ -158,14 +158,14 @@ func (h *Hub) BroadcastMessage(streamID int64, msg *Message) {
 
 // BroadcastViewUpdate sends viewer count update with throttling
 // This is the public API that applies throttling
-func (h *Hub) BroadcastViewUpdate(streamID int64) {
+func (h *Hub) BroadcastViewUpdate(streamID string) {
 	h.scheduleViewUpdate(streamID)
 }
 
 // scheduleViewUpdate schedules a throttled view count update
 // Uses debounce pattern: if multiple changes happen within the interval,
 // only one update is sent after the interval passes
-func (h *Hub) scheduleViewUpdate(streamID int64) {
+func (h *Hub) scheduleViewUpdate(streamID string) {
 	h.viewUpdateMu.Lock()
 	lastUpdate := h.lastViewUpdate[streamID]
 	now := time.Now()
@@ -211,7 +211,7 @@ func (h *Hub) scheduleViewUpdate(streamID int64) {
 }
 
 // sendViewUpdate sends the actual view count update to all clients
-func (h *Hub) sendViewUpdate(streamID int64) {
+func (h *Hub) sendViewUpdate(streamID string) {
 	count := h.GetViewerCount(streamID)
 	if count == 0 {
 		return // Room was deleted, no need to broadcast
@@ -222,7 +222,7 @@ func (h *Hub) sendViewUpdate(streamID int64) {
 
 // broadcastViewUpdateLocked broadcasts view update with throttling (must be called with rooms lock held)
 // This is used internally when clients join/leave
-func (h *Hub) broadcastViewUpdateLocked(streamID int64, count int) {
+func (h *Hub) broadcastViewUpdateLocked(streamID string, count int) {
 	// Release rooms lock before scheduling to avoid deadlock
 	// We already have the count, so we can release safely
 	go h.scheduleViewUpdate(streamID)
@@ -253,7 +253,7 @@ func (h *Hub) handleChatMessage(client *Client, msg *Message) {
 }
 
 // BroadcastExcept sends a message to all clients except the specified one
-func (h *Hub) BroadcastExcept(streamID int64, message []byte, exclude *Client) {
+func (h *Hub) BroadcastExcept(streamID string, message []byte, exclude *Client) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
@@ -279,12 +279,12 @@ func (h *Hub) SendToClient(client *Client, msg *Message) {
 	client.Send(data)
 }
 
-// GetActiveStreams returns list of stream IDs with active viewers
-func (h *Hub) GetActiveStreams() []int64 {
+// GetActiveStreams returns list of stream IDs (NanoID) with active viewers
+func (h *Hub) GetActiveStreams() []string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	streams := make([]int64, 0, len(h.rooms))
+	streams := make([]string, 0, len(h.rooms))
 	for streamID := range h.rooms {
 		streams = append(streams, streamID)
 	}
@@ -292,7 +292,7 @@ func (h *Hub) GetActiveStreams() []int64 {
 }
 
 // GetClientsInStream returns all clients in a stream room
-func (h *Hub) GetClientsInStream(streamID int64) []*Client {
+func (h *Hub) GetClientsInStream(streamID string) []*Client {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 

@@ -33,8 +33,8 @@ type Client struct {
 	hub      *Hub
 	conn     *websocket.Conn
 	send     chan []byte
-	streamID int64
-	userID   int64
+	streamID string // NanoID
+	userID   string // UUID
 	username string
 	mu       sync.Mutex
 	closed   bool
@@ -45,7 +45,7 @@ type Client struct {
 }
 
 // NewClient creates a new WebSocket client
-func NewClient(hub *Hub, conn *websocket.Conn, streamID, userID int64, username string) *Client {
+func NewClient(hub *Hub, conn *websocket.Conn, streamID, userID, username string) *Client {
 	return &Client{
 		hub:           hub,
 		conn:          conn,
@@ -116,7 +116,7 @@ func (c *Client) ReadPump() {
 		if msg.Type == MessageTypeChat {
 			// Check rate limit
 			if c.checkRateLimit() {
-				log.Printf("Rate limit exceeded for user %d, closing connection", c.userID)
+				log.Printf("Rate limit exceeded for user %s, closing connection", c.userID)
 				// Send error message before closing
 				errMsg := NewErrorMessage("Rate limit exceeded. Connection closed.")
 				if data, err := json.Marshal(errMsg); err == nil {
@@ -127,7 +127,7 @@ func (c *Client) ReadPump() {
 
 			// Validate message length
 			if len(msg.Content) > maxMessageContent {
-				log.Printf("Message too long from user %d: %d chars", c.userID, len(msg.Content))
+				log.Printf("Message too long from user %s: %d chars", c.userID, len(msg.Content))
 				errMsg := NewErrorMessage("Message too long. Maximum 200 characters allowed.")
 				if data, err := json.Marshal(errMsg); err == nil {
 					c.Send(data)
@@ -226,13 +226,13 @@ func (c *Client) Close() {
 	}
 }
 
-// StreamID returns the stream ID this client is connected to
-func (c *Client) StreamID() int64 {
+// StreamID returns the stream ID (NanoID) this client is connected to
+func (c *Client) StreamID() string {
 	return c.streamID
 }
 
-// UserID returns the user ID of this client
-func (c *Client) UserID() int64 {
+// UserID returns the user ID (UUID) of this client
+func (c *Client) UserID() string {
 	return c.userID
 }
 
