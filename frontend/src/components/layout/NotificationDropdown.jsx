@@ -5,6 +5,7 @@ import { BellIcon as BellIconSolid } from "@heroicons/react/24/solid";
 import clsx from "clsx";
 import Avatar from "../ui/Avatar";
 import { formatDistanceToNow } from "date-fns";
+import { markAsRead } from "../../api/notification";
 
 const NotificationDropdown = ({
   notifications = [],
@@ -61,17 +62,25 @@ const NotificationDropdown = ({
 
   // Use prop unreadCount if provided, otherwise calculate
   const unreadCount =
-    propUnreadCount ?? notifications.filter((n) => !n.read).length;
+    propUnreadCount ?? notifications.filter((n) => !n.is_readed).length;
 
-  const handleNotificationClick = (notification) => {
+  const handleNotificationClick = async (notification) => {
     // Mark as read if not already
-    if (!notification.read && onMarkAsRead) {
-      onMarkAsRead(notification.id);
+    if (!notification.is_readed) {
+      try {
+        await markAsRead(notification.id);
+        // Call parent callback if provided
+        if (onMarkAsRead) {
+          onMarkAsRead(notification.id);
+        }
+      } catch (error) {
+        console.error("Failed to mark notification as read:", error);
+      }
     }
 
     // Navigate to link if provided
-    if (notification.link) {
-      navigate(notification.link);
+    if (notification.link_url) {
+      navigate(notification.link_url);
     }
 
     onClose();
@@ -141,7 +150,7 @@ const NotificationDropdown = ({
                     type="button"
                     className={clsx(
                       "w-full px-4 py-3 text-left transition-colors hover:bg-muted",
-                      !notification.read && "bg-primary/5"
+                      !notification.is_readed && "bg-primary/5"
                     )}
                     onClick={() => handleNotificationClick(notification)}
                   >
@@ -159,23 +168,23 @@ const NotificationDropdown = ({
                         <p
                           className={clsx(
                             "text-sm",
-                            !notification.read
+                            !notification.is_readed
                               ? "font-semibold text-foreground"
                               : "text-muted-foreground"
                           )}
                         >
-                          {notification.title}
+                          {notification.title_template || notification.title}
                         </p>
                         <p className="mt-0.5 text-sm text-muted-foreground line-clamp-2">
-                          {notification.content || notification.message}
+                          {notification.body_template || notification.content || notification.message}
                         </p>
                         <p className="mt-1 text-xs text-muted-foreground/70">
                           {formatTime(
-                            notification.createdAt || notification.timestamp
+                            notification.created_at || notification.createdAt || notification.timestamp
                           )}
                         </p>
                       </div>
-                      {!notification.read && (
+                      {!notification.is_readed && (
                         <div className="h-2 w-2 rounded-full bg-primary flex-shrink-0 mt-2" />
                       )}
                     </div>

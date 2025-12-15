@@ -8,11 +8,11 @@ dotenv.config();
 const { Client } = pkg;
 
 const client = new Client({
-  host: process.env.DB_HOST || "localhost",
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || "notification_db",
-  user: process.env.DB_USER || "postgres",
-  password: process.env.DB_PASSWORD || "binh39",
+  host: "localhost",
+  port:  5432,
+  database:  "notification_db",
+  user:  "postgres",
+  password:"postgres",
 });
 
 async function initDB() {

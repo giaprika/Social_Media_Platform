@@ -18,6 +18,16 @@ docker-compose up -d --build
 
 docker logs backend-gateway --follow #log ra console
 docker exec -it postgres-notification psql -U postgres -d notification_db -c "TRUNCATE TABLE notifications CASCADE;" # xóa dữ liệu
+docker exec -it postgres-ai psql -U postgres -d violations_db -c "TRUNCATE TABLE violations CASCADE;"
+
+# Reset database với file init mới
+docker-compose stop postgres-notification
+docker-compose rm -f postgres-notification
+docker volume rm social_media_platform_postgres-notification-data
+docker-compose up -d postgres-notification
+
+# Nếu đã vào trong container:
+psql -U postgres -d violations_db -c "TRUNCATE TABLE violations CASCADE;"
 
 ```
 {

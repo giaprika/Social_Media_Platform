@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { io } from "socket.io-client";
 import Cookies from "universal-cookie";
+import { markAsRead as markAsReadAPI, markAllAsRead as markAllAsReadAPI } from "../api/notification";
 
 const GATEWAY_URL = process.env.REACT_APP_GATEWAY_URL || "http://localhost:8000";
 
@@ -156,30 +157,22 @@ export const NotificationsProvider = ({ children }) => {
     });
 
     newSocket.on("notification", (data) => {
-      console.log("🔔 New notification received:", data);
+      console.log("🔔 New notification received (trigger only):", data);
       
       // Phát âm thanh thông báo
       playNotificationSound();
       
-      setNotifications((prev) => {
-        // Tránh duplicate notifications
-        const exists = prev.some(n => n.id === data.id);
-        if (exists) {
-          console.log("⚠️ Duplicate notification ignored:", data.id);
-          return prev;
+      // Trigger callbacks for new notification (for toast/alerts)
+      newNotificationCallbacks.current.forEach(callback => {
+        try {
+          callback(data);
+        } catch (err) {
+          console.error("Error in notification callback:", err);
         }
-        
-        // Trigger callbacks for new notification (for toast/alerts)
-        newNotificationCallbacks.current.forEach(callback => {
-          try {
-            callback(data);
-          } catch (err) {
-            console.error("Error in notification callback:", err);
-          }
-        });
-        
-        return [data, ...prev];
       });
+      
+      // Fetch lại notifications từ API để cập nhật danh sách mới nhất
+      fetchNotifications();
     });
 
     newSocket.on("disconnect", () => {
@@ -207,11 +200,60 @@ export const NotificationsProvider = ({ children }) => {
     };
   }, [fetchNotifications, playNotificationSound]); // Thêm dependencies
 
+  // Mark single notification as read
+  const markAsRead = useCallback(async (notificationId) => {
+    try {
+      await markAsReadAPI(notificationId);
+      
+      // Update local state
+      setNotifications(prev => 
+        prev.map(n => 
+          n.id === notificationId 
+            ? { ...n, is_readed: true } 
+            : n
+        )
+      );
+      
+      console.log(`✅ Notification ${notificationId} marked as read`);
+    } catch (error) {
+      console.error("Failed to mark notification as read:", error);
+      throw error;
+    }
+  }, []);
+
+  // Mark all notifications as read
+  const markAllAsRead = useCallback(async () => {
+    try {
+      const unreadIds = notifications
+        .filter(n => !n.is_readed)
+        .map(n => n.id);
+      
+      if (unreadIds.length === 0) return;
+      
+      await markAllAsReadAPI(unreadIds);
+      
+      // Update local state
+      setNotifications(prev => 
+        prev.map(n => ({ ...n, is_readed: true }))
+      );
+      
+      console.log(`✅ All notifications marked as read (${unreadIds.length})`);
+    } catch (error) {
+      console.error("Failed to mark all notifications as read:", error);
+      throw error;
+    }
+  }, [notifications]);
+
+  const unreadCount = notifications.filter(n => !n.is_readed).length;
+
   const value = {
     notifications,
     socket,
     fetchNotifications,
     onNewNotification,
+    markAsRead,
+    markAllAsRead,
+    unreadCount,
     isLoading,
     error,
   };

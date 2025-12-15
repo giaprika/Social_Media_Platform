@@ -31,7 +31,7 @@ def report_user_violation( description: str) -> None:
     """
     Reports a user violation and takes appropriate action based on the number of violations.
     Args:
-        description (str): A description of the violation.
+        description (str): Warning message or reason for reporting the violation sent to user.
     """
     try:
         text_content = get_text_content()
@@ -43,7 +43,7 @@ def report_user_violation( description: str) -> None:
         if violation_count >= 10:
             result = ban_user(user_id, "Exceeded maximum number of violations.")
         else:
-            result = warning_user(user_id, "You have committed a violation. Please adhere to community guidelines. If you continue to violate, you may be banned.")
+            result = warning_user(user_id, description)
         return json.dumps({"result": result, "violation_detail": violation_detail}) # type: ignore
     except Exception as e:
         print(f"Error reporting user violation: {e}")
