@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { BellIcon } from "@heroicons/react/24/outline";
 import { BellIcon as BellIconSolid } from "@heroicons/react/24/solid";
@@ -19,6 +19,7 @@ const NotificationDropdown = ({
   const dropdownRef = useRef(null);
   const buttonRef = useRef(null);
   const navigate = useNavigate();
+  const [expandedNotificationId, setExpandedNotificationId] = useState(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -64,7 +65,16 @@ const NotificationDropdown = ({
   const unreadCount =
     propUnreadCount ?? notifications.filter((n) => !n.is_readed).length;
 
-  const handleNotificationClick = async (notification) => {
+  const handleNotificationClick = async (notification, event) => {
+    // Prevent event if clicking on expand area
+    if (event?.target?.closest('.expand-toggle')) {
+      event.stopPropagation();
+      setExpandedNotificationId(
+        expandedNotificationId === notification.id ? null : notification.id
+      );
+      return;
+    }
+
     // Mark as read if not already
     if (!notification.is_readed) {
       try {
@@ -144,52 +154,78 @@ const NotificationDropdown = ({
               </div>
             ) : (
               <div className="divide-y divide-border">
-                {notifications.map((notification) => (
-                  <button
-                    key={notification.id}
-                    type="button"
-                    className={clsx(
-                      "w-full px-4 py-3 text-left transition-colors hover:bg-muted",
-                      !notification.is_readed && "bg-primary/5"
-                    )}
-                    onClick={() => handleNotificationClick(notification)}
-                  >
-                    <div className="flex gap-3">
-                      <Avatar
-                        src={notification.avatar}
-                        name={
-                          notification.sender ||
-                          notification.last_actor_name ||
-                          "System"
-                        }
-                        size="sm"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p
-                          className={clsx(
-                            "text-sm",
-                            !notification.is_readed
-                              ? "font-semibold text-foreground"
-                              : "text-muted-foreground"
-                          )}
-                        >
-                          {notification.title_template || notification.title}
-                        </p>
-                        <p className="mt-0.5 text-sm text-muted-foreground line-clamp-2">
-                          {notification.body_template || notification.content || notification.message}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground/70">
-                          {formatTime(
-                            notification.created_at || notification.createdAt || notification.timestamp
-                          )}
-                        </p>
-                      </div>
-                      {!notification.is_readed && (
-                        <div className="h-2 w-2 rounded-full bg-primary flex-shrink-0 mt-2" />
+                {notifications.map((notification) => {
+                  const isExpanded = expandedNotificationId === notification.id;
+                  const bodyText = notification.body_template || notification.content || notification.message || "";
+                  const shouldTruncate = bodyText.length > 100;
+
+                  return (
+                    <div
+                      key={notification.id}
+                      className={clsx(
+                        "w-full transition-colors",
+                        !notification.is_readed && "bg-primary/5"
                       )}
+                    >
+                      <button
+                        type="button"
+                        className="w-full px-4 py-3 text-left hover:bg-muted"
+                        onClick={(e) => handleNotificationClick(notification, e)}
+                      >
+                        <div className="flex gap-3">
+                          <Avatar
+                            src={notification.avatar}
+                            name={
+                              notification.sender ||
+                              notification.last_actor_name ||
+                              "System"
+                            }
+                            size="sm"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p
+                              className={clsx(
+                                "text-sm",
+                                !notification.is_readed
+                                  ? "font-semibold text-foreground"
+                                  : "text-muted-foreground"
+                              )}
+                            >
+                              {notification.title_template || notification.title}
+                            </p>
+                            <p className={clsx(
+                              "mt-0.5 text-sm text-muted-foreground",
+                              !isExpanded && shouldTruncate && "line-clamp-2"
+                            )}>
+                              {bodyText}
+                            </p>
+                            {shouldTruncate && (
+                              <button
+                                className="expand-toggle mt-1 text-xs text-primary hover:underline"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setExpandedNotificationId(
+                                    isExpanded ? null : notification.id
+                                  );
+                                }}
+                              >
+                                {isExpanded ? "Show less" : "Show more"}
+                              </button>
+                            )}
+                            <p className="mt-1 text-xs text-muted-foreground/70">
+                              {formatTime(
+                                notification.created_at || notification.createdAt || notification.timestamp
+                              )}
+                            </p>
+                          </div>
+                          {!notification.is_readed && (
+                            <div className="h-2 w-2 rounded-full bg-primary flex-shrink-0 mt-2" />
+                          )}
+                        </div>
+                      </button>
                     </div>
-                  </button>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

@@ -33,7 +33,8 @@ class PostService {
     // Thêm images (nếu có)
     if (files && files.length > 0) {
       for (const file of files) {
-        if (file.mimetype.startsWith('image/')) {
+        if (file.mimetype.startsWith('image/') || file.mimetype === 'video/mp4')
+          {
           parts.push({
             inlineData: {
               displayName: file.originalname,

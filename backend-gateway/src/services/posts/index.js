@@ -8,7 +8,8 @@ const router = express.Router();
 const upload = multer({
   storage: multer.memoryStorage(), // Lưu file vào memory buffer
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 100 * 1024 * 1024, // 100MB limit (tăng từ 10MB để support video)
+    files: 10, // Tối đa 10 files
   },
   fileFilter: (req, file, cb) => {
     // Chỉ accept image và video

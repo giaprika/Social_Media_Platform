@@ -74,7 +74,7 @@ root_agent = Agent(
     15. Spiritual scams/abuse: Identify and flag content that promotes fraudulent spiritual practices or scams.
     16. Self-harm: Identify content that promotes or depicts self-harm or suicidal behavior (cutting, hanging, all bloody images is not allowed, etc).
 
-    When you find content that violates these guidelines, call report_user_violation tool. Finally, return only json result example:
+    When you find content that violates these guidelines, call report_user_violation tool (send a vietnamese warning message to uesr by argument "description"). If the content is a video, the description must include a timestamp indicating where the violation occurs. Finally, return only json result example:
     {
         "result": "Banned or Warning or Accepted", 
         "message": "Detailed explanation of the decision."

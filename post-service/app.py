@@ -51,6 +51,11 @@ Mọi request cần có header `X-User-ID` chứa UUID của user.
     ]
 )
 
+# Tăng giới hạn file upload size (mặc định FastAPI không giới hạn, nhưng có thể bị giới hạn bởi server)
+# Nếu dùng uvicorn, thêm --limit-max-requests vào command
+# Hoặc cấu hình qua environment variable
+app.state.max_upload_size = 100 * 1024 * 1024  # 100MB
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
