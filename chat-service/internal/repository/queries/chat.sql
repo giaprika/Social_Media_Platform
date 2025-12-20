@@ -1,10 +1,20 @@
 -- name: InsertMessage :one
-INSERT INTO messages (conversation_id, sender_id, content)
-VALUES ($1, $2, $3)
+INSERT INTO messages (conversation_id, sender_id, content, type, media_url, media_metadata)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING *;
+
+-- name: InsertTextMessage :one
+INSERT INTO messages (conversation_id, sender_id, content, type)
+VALUES ($1, $2, $3, 'TEXT')
+RETURNING *;
+
+-- name: InsertMediaMessage :one
+INSERT INTO messages (conversation_id, sender_id, content, type, media_url, media_metadata)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
 -- name: GetMessages :many
-SELECT *
+SELECT id, conversation_id, sender_id, content, created_at, type, media_url, media_metadata
 FROM messages
 WHERE conversation_id = sqlc.arg('conversation_id')
 	AND (

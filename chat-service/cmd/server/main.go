@@ -16,6 +16,7 @@ import (
 	"chat-service/internal/config"
 	"chat-service/internal/middleware"
 	"chat-service/internal/service"
+	"chat-service/pkg/cloudinary"
 	"chat-service/pkg/idempotency"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
@@ -74,7 +75,30 @@ func main() {
 
 	// 5. Setup Dependencies
 	idempotencyChecker := idempotency.NewRedisChecker(redisClient)
-	chatService := service.NewChatService(dbPool, idempotencyChecker, logger)
+
+	// 5.1 Setup Cloudinary service (optional)
+	var cloudinaryService *cloudinary.Service
+	if cfg.CloudinaryCloudName != "" && cfg.CloudinaryAPIKey != "" && cfg.CloudinaryAPISecret != "" {
+		cloudinaryService = cloudinary.NewService(
+			cfg.CloudinaryCloudName,
+			cfg.CloudinaryAPIKey,
+			cfg.CloudinaryAPISecret,
+			cfg.CloudinaryUploadFolder,
+		)
+		logger.Info("cloudinary service initialized",
+			zap.String("cloud_name", cfg.CloudinaryCloudName),
+			zap.String("folder", cfg.CloudinaryUploadFolder))
+	} else {
+		logger.Warn("cloudinary not configured - image upload will be disabled")
+	}
+
+	// 5.2 Create ChatService with Cloudinary support
+	var chatService *service.ChatService
+	if cloudinaryService != nil {
+		chatService = service.NewChatServiceWithCloudinary(dbPool, idempotencyChecker, cloudinaryService, logger)
+	} else {
+		chatService = service.NewChatService(dbPool, idempotencyChecker, logger)
+	}
 
 	// 6. Setup gRPC Server
 	grpcServer := grpc.NewServer(

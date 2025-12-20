@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"time"
 
 	chatv1 "chat-service/api/chat/v1"
 	ctxkeys "chat-service/internal/context"
 	"chat-service/internal/repository"
+	"chat-service/pkg/cloudinary"
 	"chat-service/pkg/idempotency"
 
 	"github.com/jackc/pgx/v5"
@@ -26,30 +28,33 @@ var (
 	ErrEmptyContent        = errors.New("message content cannot be empty")
 	ErrEmptyConversationID = errors.New("conversation_id cannot be empty")
 	ErrEmptyIdempotencyKey = errors.New("idempotency_key cannot be empty")
+	ErrEmptyMediaURL       = errors.New("media_url is required for media messages")
+	ErrInvalidMediaURL     = errors.New("invalid media_url format")
 	ErrTransactionFailed   = errors.New("transaction failed")
 )
 
 // ChatService implements the gRPC ChatService interface
 type ChatService struct {
 	chatv1.UnimplementedChatServiceServer
-	db               *pgxpool.Pool
-	queries          *repository.Queries
-	idempotencyCheck idempotency.Checker
-	logger           *zap.Logger
+	db                *pgxpool.Pool
+	queries           *repository.Queries
+	idempotencyCheck  idempotency.Checker
+	cloudinaryService *cloudinary.Service
+	logger            *zap.Logger
 
 	// Injectable functions for testing
-	getMessagesFn                  func(ctx context.Context, arg repository.GetMessagesParams) ([]repository.Message, error)
-	getConversationsForUserFn      func(ctx context.Context, arg repository.GetConversationsForUserParams) ([]repository.GetConversationsForUserRow, error)
-	markAsReadFn                   func(ctx context.Context, arg repository.MarkAsReadParams) error
-	beginTxFn                      func(ctx context.Context) (repository.DBTX, error)
-	upsertConversationFn           func(ctx context.Context, qtx *repository.Queries, id pgtype.UUID) (repository.Conversation, error)
-	addConversationParticipantsFn  func(ctx context.Context, qtx *repository.Queries, params repository.AddConversationParticipantsParams) error
-	insertMessageFn                func(ctx context.Context, qtx *repository.Queries, params repository.InsertMessageParams) (repository.Message, error)
-	updateLastMessageFn            func(ctx context.Context, qtx *repository.Queries, params repository.UpdateConversationLastMessageParams) error
-	insertOutboxFn                 func(ctx context.Context, qtx *repository.Queries, params repository.InsertOutboxParams) error
-	commitTxFn                     func(ctx context.Context, tx repository.DBTX) error
-	rollbackTxFn                   func(ctx context.Context, tx repository.DBTX) error
-	getConversationParticipantsFn  func(ctx context.Context, qtx *repository.Queries, conversationID pgtype.UUID) ([]pgtype.UUID, error)
+	getMessagesFn                 func(ctx context.Context, arg repository.GetMessagesParams) ([]repository.Message, error)
+	getConversationsForUserFn     func(ctx context.Context, arg repository.GetConversationsForUserParams) ([]repository.GetConversationsForUserRow, error)
+	markAsReadFn                  func(ctx context.Context, arg repository.MarkAsReadParams) error
+	beginTxFn                     func(ctx context.Context) (repository.DBTX, error)
+	upsertConversationFn          func(ctx context.Context, qtx *repository.Queries, id pgtype.UUID) (repository.Conversation, error)
+	addConversationParticipantsFn func(ctx context.Context, qtx *repository.Queries, params repository.AddConversationParticipantsParams) error
+	insertMessageFn               func(ctx context.Context, qtx *repository.Queries, params repository.InsertMessageParams) (repository.Message, error)
+	updateLastMessageFn           func(ctx context.Context, qtx *repository.Queries, params repository.UpdateConversationLastMessageParams) error
+	insertOutboxFn                func(ctx context.Context, qtx *repository.Queries, params repository.InsertOutboxParams) error
+	commitTxFn                    func(ctx context.Context, tx repository.DBTX) error
+	rollbackTxFn                  func(ctx context.Context, tx repository.DBTX) error
+	getConversationParticipantsFn func(ctx context.Context, qtx *repository.Queries, conversationID pgtype.UUID) ([]pgtype.UUID, error)
 }
 
 // NewChatService creates a new ChatService instance
@@ -65,6 +70,18 @@ func NewChatService(
 		logger:           logger,
 	}
 	service.getMessagesFn = service.queries.GetMessages
+	return service
+}
+
+// NewChatServiceWithCloudinary creates a new ChatService instance with Cloudinary support
+func NewChatServiceWithCloudinary(
+	db *pgxpool.Pool,
+	idempotencyCheck idempotency.Checker,
+	cloudinaryService *cloudinary.Service,
+	logger *zap.Logger,
+) *ChatService {
+	service := NewChatService(db, idempotencyCheck, logger)
+	service.cloudinaryService = cloudinaryService
 	return service
 }
 
@@ -138,15 +155,71 @@ func (s *ChatService) validateSendMessageRequest(req *chatv1.SendMessageRequest)
 		return ErrEmptyConversationID
 	}
 
-	if req.Content == "" {
-		return ErrEmptyContent
-	}
-
 	if req.IdempotencyKey == "" {
 		return ErrEmptyIdempotencyKey
 	}
 
+	// Determine message type (default to TEXT if not specified)
+	msgType := req.Type
+	if msgType == chatv1.MessageType_MESSAGE_TYPE_UNSPECIFIED {
+		msgType = chatv1.MessageType_MESSAGE_TYPE_TEXT
+	}
+
+	// Validate based on message type
+	switch msgType {
+	case chatv1.MessageType_MESSAGE_TYPE_TEXT:
+		if req.Content == "" {
+			return ErrEmptyContent
+		}
+	case chatv1.MessageType_MESSAGE_TYPE_IMAGE,
+		chatv1.MessageType_MESSAGE_TYPE_VIDEO,
+		chatv1.MessageType_MESSAGE_TYPE_FILE:
+		if req.MediaUrl == "" {
+			return ErrEmptyMediaURL
+		}
+		if !isValidURL(req.MediaUrl) {
+			return ErrInvalidMediaURL
+		}
+		// Content is optional for media messages (can be used as caption)
+	default:
+		return errors.New("invalid message type")
+	}
+
 	return nil
+}
+
+// isValidURL validates URL format
+func isValidURL(urlStr string) bool {
+	u, err := url.Parse(urlStr)
+	return err == nil && u.Scheme != "" && u.Host != ""
+}
+
+// getMessageTypeString converts proto MessageType to database string
+func getMessageTypeString(msgType chatv1.MessageType) string {
+	switch msgType {
+	case chatv1.MessageType_MESSAGE_TYPE_IMAGE:
+		return "IMAGE"
+	case chatv1.MessageType_MESSAGE_TYPE_VIDEO:
+		return "VIDEO"
+	case chatv1.MessageType_MESSAGE_TYPE_FILE:
+		return "FILE"
+	default:
+		return "TEXT"
+	}
+}
+
+// getProtoMessageType converts database string to proto MessageType
+func getProtoMessageType(typeStr string) chatv1.MessageType {
+	switch typeStr {
+	case "IMAGE":
+		return chatv1.MessageType_MESSAGE_TYPE_IMAGE
+	case "VIDEO":
+		return chatv1.MessageType_MESSAGE_TYPE_VIDEO
+	case "FILE":
+		return chatv1.MessageType_MESSAGE_TYPE_FILE
+	default:
+		return chatv1.MessageType_MESSAGE_TYPE_TEXT
+	}
 }
 
 // sendMessageTx executes the message sending in a transaction
@@ -208,20 +281,46 @@ func (s *ChatService) sendMessageTx(ctx context.Context, req *chatv1.SendMessage
 	}
 
 	// 3. Insert message
+	msgType := req.Type
+	if msgType == chatv1.MessageType_MESSAGE_TYPE_UNSPECIFIED {
+		msgType = chatv1.MessageType_MESSAGE_TYPE_TEXT
+	}
+
+	// Prepare media URL
+	var mediaURL pgtype.Text
+	if req.MediaUrl != "" {
+		mediaURL = pgtype.Text{String: req.MediaUrl, Valid: true}
+	}
+
 	message, err := s.insertMessage(ctx, qtx, repository.InsertMessageParams{
 		ConversationID: conversationUUID,
 		SenderID:       senderUUID,
 		Content:        req.Content,
+		Type:           getMessageTypeString(msgType),
+		MediaUrl:       mediaURL,
+		MediaMetadata:  nil, // Can be extended later
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to insert message: %w", err)
 	}
 
-	// 4. Update conversation last message
+	// 4. Update conversation last message (use content or "[Image]" for media)
+	lastMessageContent := req.Content
+	if msgType != chatv1.MessageType_MESSAGE_TYPE_TEXT && lastMessageContent == "" {
+		switch msgType {
+		case chatv1.MessageType_MESSAGE_TYPE_IMAGE:
+			lastMessageContent = "[Hình ảnh]"
+		case chatv1.MessageType_MESSAGE_TYPE_VIDEO:
+			lastMessageContent = "[Video]"
+		case chatv1.MessageType_MESSAGE_TYPE_FILE:
+			lastMessageContent = "[Tệp đính kèm]"
+		}
+	}
+
 	err = s.updateLastMessage(ctx, qtx, repository.UpdateConversationLastMessageParams{
 		ID: conversationUUID,
 		LastMessageContent: pgtype.Text{
-			String: req.Content,
+			String: lastMessageContent,
 			Valid:  true,
 		},
 		LastMessageAt: message.CreatedAt,
@@ -277,7 +376,13 @@ func (s *ChatService) createMessageEventPayload(message repository.Message, rece
 		"sender_id":       uuidToString(message.SenderID),
 		"receiver_ids":    receiverIDs,
 		"content":         message.Content,
+		"type":            message.Type,
 		"created_at":      message.CreatedAt.Time.Format(time.RFC3339),
+	}
+
+	// Add media_url if present
+	if message.MediaUrl.Valid {
+		event["media_url"] = message.MediaUrl.String
 	}
 
 	payload, err := json.Marshal(event)
@@ -373,13 +478,18 @@ func (s *ChatService) GetMessages(ctx context.Context, req *chatv1.GetMessagesRe
 
 	respMessages := make([]*chatv1.ChatMessage, 0, len(messages))
 	for _, msg := range messages {
-		respMessages = append(respMessages, &chatv1.ChatMessage{
+		chatMsg := &chatv1.ChatMessage{
 			Id:             uuidToString(msg.ID),
 			ConversationId: uuidToString(msg.ConversationID),
 			SenderId:       uuidToString(msg.SenderID),
 			Content:        msg.Content,
 			CreatedAt:      formatTimestamp(msg.CreatedAt),
-		})
+			Type:           getProtoMessageType(msg.Type),
+		}
+		if msg.MediaUrl.Valid {
+			chatMsg.MediaUrl = msg.MediaUrl.String
+		}
+		respMessages = append(respMessages, chatMsg)
 	}
 
 	nextCursor := ""
@@ -652,4 +762,37 @@ func getUserIDFromContext(ctx context.Context) (string, error) {
 		return "", status.Error(codes.Unauthenticated, "user_id not found in context")
 	}
 	return userID, nil
+}
+
+// GetUploadCredentials returns Cloudinary upload credentials for the authenticated user
+func (s *ChatService) GetUploadCredentials(ctx context.Context, _ *chatv1.GetUploadCredentialsRequest) (*chatv1.GetUploadCredentialsResponse, error) {
+	// 1. Verify user is authenticated
+	userID, err := getUserIDFromContext(ctx)
+	if err != nil {
+		s.logger.Error("failed to get user_id from context for upload credentials", zap.Error(err))
+		return nil, err
+	}
+
+	// 2. Check if Cloudinary is configured
+	if s.cloudinaryService == nil || !s.cloudinaryService.IsConfigured() {
+		s.logger.Error("cloudinary service not configured")
+		return nil, status.Error(codes.FailedPrecondition, "upload service not configured")
+	}
+
+	// 3. Generate credentials
+	creds := s.cloudinaryService.GetUploadCredentials()
+
+	s.logger.Debug("upload credentials generated",
+		zap.String("user_id", userID),
+		zap.String("cloud_name", creds.CloudName),
+		zap.String("folder", creds.Folder),
+	)
+
+	return &chatv1.GetUploadCredentialsResponse{
+		Signature: creds.Signature,
+		Timestamp: creds.Timestamp,
+		ApiKey:    creds.APIKey,
+		CloudName: creds.CloudName,
+		Folder:    creds.Folder,
+	}, nil
 }

@@ -334,7 +334,7 @@ func (q *Queries) GetDLQEventsByAggregateType(ctx context.Context, arg GetDLQEve
 }
 
 const getMessages = `-- name: GetMessages :many
-SELECT id, conversation_id, sender_id, content, created_at
+SELECT id, conversation_id, sender_id, content, created_at, type, media_url, media_metadata
 FROM messages
 WHERE conversation_id = $1
 	AND (
@@ -366,6 +366,9 @@ func (q *Queries) GetMessages(ctx context.Context, arg GetMessagesParams) ([]Mes
 			&i.SenderID,
 			&i.Content,
 			&i.CreatedAt,
+			&i.Type,
+			&i.MediaUrl,
+			&i.MediaMetadata,
 		); err != nil {
 			return nil, err
 		}
@@ -426,20 +429,30 @@ func (q *Queries) IncrementOutboxRetry(ctx context.Context, id pgtype.UUID) erro
 	return err
 }
 
-const insertMessage = `-- name: InsertMessage :one
-INSERT INTO messages (conversation_id, sender_id, content)
-VALUES ($1, $2, $3)
-RETURNING id, conversation_id, sender_id, content, created_at
+const insertMediaMessage = `-- name: InsertMediaMessage :one
+INSERT INTO messages (conversation_id, sender_id, content, type, media_url, media_metadata)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, conversation_id, sender_id, content, created_at, type, media_url, media_metadata
 `
 
-type InsertMessageParams struct {
+type InsertMediaMessageParams struct {
 	ConversationID pgtype.UUID `json:"conversation_id"`
 	SenderID       pgtype.UUID `json:"sender_id"`
 	Content        string      `json:"content"`
+	Type           string      `json:"type"`
+	MediaUrl       pgtype.Text `json:"media_url"`
+	MediaMetadata  []byte      `json:"media_metadata"`
 }
 
-func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (Message, error) {
-	row := q.db.QueryRow(ctx, insertMessage, arg.ConversationID, arg.SenderID, arg.Content)
+func (q *Queries) InsertMediaMessage(ctx context.Context, arg InsertMediaMessageParams) (Message, error) {
+	row := q.db.QueryRow(ctx, insertMediaMessage,
+		arg.ConversationID,
+		arg.SenderID,
+		arg.Content,
+		arg.Type,
+		arg.MediaUrl,
+		arg.MediaMetadata,
+	)
 	var i Message
 	err := row.Scan(
 		&i.ID,
@@ -447,6 +460,47 @@ func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (M
 		&i.SenderID,
 		&i.Content,
 		&i.CreatedAt,
+		&i.Type,
+		&i.MediaUrl,
+		&i.MediaMetadata,
+	)
+	return i, err
+}
+
+const insertMessage = `-- name: InsertMessage :one
+INSERT INTO messages (conversation_id, sender_id, content, type, media_url, media_metadata)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, conversation_id, sender_id, content, created_at, type, media_url, media_metadata
+`
+
+type InsertMessageParams struct {
+	ConversationID pgtype.UUID `json:"conversation_id"`
+	SenderID       pgtype.UUID `json:"sender_id"`
+	Content        string      `json:"content"`
+	Type           string      `json:"type"`
+	MediaUrl       pgtype.Text `json:"media_url"`
+	MediaMetadata  []byte      `json:"media_metadata"`
+}
+
+func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (Message, error) {
+	row := q.db.QueryRow(ctx, insertMessage,
+		arg.ConversationID,
+		arg.SenderID,
+		arg.Content,
+		arg.Type,
+		arg.MediaUrl,
+		arg.MediaMetadata,
+	)
+	var i Message
+	err := row.Scan(
+		&i.ID,
+		&i.ConversationID,
+		&i.SenderID,
+		&i.Content,
+		&i.CreatedAt,
+		&i.Type,
+		&i.MediaUrl,
+		&i.MediaMetadata,
 	)
 	return i, err
 }
@@ -465,6 +519,34 @@ type InsertOutboxParams struct {
 func (q *Queries) InsertOutbox(ctx context.Context, arg InsertOutboxParams) error {
 	_, err := q.db.Exec(ctx, insertOutbox, arg.AggregateType, arg.AggregateID, arg.Payload)
 	return err
+}
+
+const insertTextMessage = `-- name: InsertTextMessage :one
+INSERT INTO messages (conversation_id, sender_id, content, type)
+VALUES ($1, $2, $3, 'TEXT')
+RETURNING id, conversation_id, sender_id, content, created_at, type, media_url, media_metadata
+`
+
+type InsertTextMessageParams struct {
+	ConversationID pgtype.UUID `json:"conversation_id"`
+	SenderID       pgtype.UUID `json:"sender_id"`
+	Content        string      `json:"content"`
+}
+
+func (q *Queries) InsertTextMessage(ctx context.Context, arg InsertTextMessageParams) (Message, error) {
+	row := q.db.QueryRow(ctx, insertTextMessage, arg.ConversationID, arg.SenderID, arg.Content)
+	var i Message
+	err := row.Scan(
+		&i.ID,
+		&i.ConversationID,
+		&i.SenderID,
+		&i.Content,
+		&i.CreatedAt,
+		&i.Type,
+		&i.MediaUrl,
+		&i.MediaMetadata,
+	)
+	return i, err
 }
 
 const markAsRead = `-- name: MarkAsRead :exec

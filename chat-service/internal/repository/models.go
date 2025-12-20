@@ -28,6 +28,9 @@ type Message struct {
 	SenderID       pgtype.UUID        `json:"sender_id"`
 	Content        string             `json:"content"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	Type           string             `json:"type"`
+	MediaUrl       pgtype.Text        `json:"media_url"`
+	MediaMetadata  []byte             `json:"media_metadata"`
 }
 
 type Outbox struct {
