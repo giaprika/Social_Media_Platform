@@ -46,10 +46,15 @@ Mọi request cần có header `X-User-ID` chứa UUID của user.
     redoc_url="/redoc",
     openapi_url="/openapi.json",
     servers=[
-        {"url": "http://localhost:8000", "description": "Local Development Server"},
-        {"url": "http://127.0.0.1:8000", "description": "Local Development Server (IP)"}
+        {"url": "http://localhost:8003", "description": "Local Development Server"},
+        {"url": "http://127.0.0.1:8003", "description": "Local Development Server (IP)"}
     ]
 )
+
+# Tăng giới hạn file upload size (mặc định FastAPI không giới hạn, nhưng có thể bị giới hạn bởi server)
+# Nếu dùng uvicorn, thêm --limit-max-requests vào command
+# Hoặc cấu hình qua environment variable
+app.state.max_upload_size = 100 * 1024 * 1024  # 100MB
 
 # CORS middleware
 app.add_middleware(
@@ -58,7 +63,9 @@ app.add_middleware(
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
-        "http://127.0.0.1:8000"
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://127.0.0.1:8003"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -161,7 +168,7 @@ def root():
 # ============= RUN APPLICATION =============
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8000))
+    port = int(os.getenv("PORT", 8003))
     uvicorn.run(
         "app:app",
         host="0.0.0.0",

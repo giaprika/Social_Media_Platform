@@ -5,6 +5,9 @@ import * as auth from "src/api/auth";
 import useAuth from "src/hooks/useAuth";
 import { PATHS } from "src/constants/paths";
 import { validateEmail, validatePassword } from "src/utils/validate";
+import TestAccountCard from "src/components/TestAccountCard";
+import { GoogleLogin } from "@react-oauth/google";
+import { jwtDecode } from "jwt-decode";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -14,6 +17,12 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const handleFillCredentials = (testEmail, testPassword) => {
+    setEmail(testEmail);
+    setPassword(testPassword);
+    setError("");
+  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -44,17 +53,17 @@ const Login = () => {
       navigate(PATHS.FEED);
     } catch (err) {
       console.error(err);
-  setError("Login failed. Please try again.");
-  message.error("Login failed. Please try again.");
+      setError("Login failed. Please try again.");
+      message.error("Login failed. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="w-full max-w-md">
-        <div className="mb-8 text-center">
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-8">
+      <div className="w-full max-w-md space-y-6">
+        <div className="text-center">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary">
             <span className="text-xl font-bold text-primary-foreground">S</span>
           </div>
@@ -62,9 +71,17 @@ const Login = () => {
           <p className="mt-2 text-muted-foreground">Welcome back</p>
         </div>
 
+        {/* Test Account Card - Only show in development */}
+        {process.env.NODE_ENV === "development" && (
+          <TestAccountCard onFillCredentials={handleFillCredentials} />
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="email">
+            <label
+              className="mb-2 block text-sm font-medium text-foreground"
+              htmlFor="email"
+            >
               Email
             </label>
             <input
@@ -79,7 +96,10 @@ const Login = () => {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="password">
+            <label
+              className="mb-2 block text-sm font-medium text-foreground"
+              htmlFor="password"
+            >
               Password
             </label>
             <input
@@ -108,10 +128,48 @@ const Login = () => {
           </button>
         </form>
 
+        <div className="mt-4">
+          <GoogleLogin
+            onSuccess={async (credentialResponse) => {
+              try {
+                const token = credentialResponse?.credential;
+                if (!token)
+                  return message.error("No credential returned from Google");
+
+                // const googleInfo = jwtDecode(token);
+
+                // Gửi token Google sang backend user-service
+                const { data } = await auth.loginWithGoogle({
+                  credential: token,
+                });
+
+                await login({
+                  accessToken: data.access_token,
+                  refreshToken: data.refresh_token,
+                  userId: data.user.id,
+                  user: data.user,
+                });
+
+                message.success("Login with Google successful!");
+                navigate(PATHS.FEED);
+              } catch (err) {
+                console.error(err);
+                message.error("Google login failed");
+              }
+            }}
+            onError={() => {
+              message.error("Google login failed");
+            }}
+          />
+        </div>
+
         <div className="mt-6 text-center">
           <p className="text-muted-foreground">
             Don't have an account?{" "}
-            <Link to={PATHS.SIGNUP} className="font-semibold text-primary hover:underline">
+            <Link
+              to={PATHS.SIGNUP}
+              className="font-semibold text-primary hover:underline"
+            >
               Sign up
             </Link>
           </p>

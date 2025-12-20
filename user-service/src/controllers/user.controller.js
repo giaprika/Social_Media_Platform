@@ -1,12 +1,20 @@
 import { UserService } from "../services/user.service.js";
+import bcrypt from "bcrypt";
+import crypto from "crypto";
 
 export class UserController {
   static async createUser(req, res) {
     try {
       const userData = req.body;
+      console.log("Creating user with data:", { ...userData, password: "***" });
       const newUser = await UserService.createUser(userData);
+      console.log("User created successfully:", {
+        id: newUser.id,
+        username: newUser.username,
+      });
       res.status(201).json(newUser);
     } catch (error) {
+      console.error("Error creating user:", error);
       res.status(400).json({ error: error.message });
     }
   }
@@ -89,6 +97,233 @@ export class UserController {
       }
       res.status(200).json(user);
     } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  static async getUserByUsername(req, res) {
+    try {
+      const { username } = req.params;
+      const user = await UserService.findUserByUsername(username);
+      if (!user) {
+        return res.status(404).json({ error: "Không tìm thấy người dùng" });
+      }
+      res.status(200).json(user);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  static async updateUserStatus(req, res) {
+    try {
+      const userId = req.params.id;
+      const { status } = req.body;
+
+      if (!status) {
+        return res
+          .status(400)
+          .json({ error: "Trạng thái (status) là bắt buộc" });
+      }
+
+      const updatedUser = await UserService.updateUserStatus(userId, status);
+      res.status(200).json({
+        message: "Cập nhật trạng thái thành công",
+        user: updatedUser,
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  static async getUserStats(req, res) {
+    try {
+      const userId = req.params.id;
+      const stats = await UserService.getUserStats(userId);
+      res.status(200).json(stats);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  static async updateUser(req, res) {
+    try {
+      const userId = req.params.id;
+      const updateData = req.body;
+
+      console.log("Update user request:", { userId, updateData });
+
+      const updatedUser = await UserService.updateUser(userId, updateData);
+
+      console.log("Updated user:", updatedUser);
+
+      res.status(200).json({
+        message: "Cập nhật thông tin thành công",
+        user: updatedUser,
+      });
+    } catch (error) {
+      console.error("Error updating user:", error);
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  static async updatePassword(req, res) {
+    try {
+      const userId = req.params.id;
+      const { currentPassword, newPassword } = req.body;
+
+      if (!currentPassword || !newPassword) {
+        return res
+          .status(400)
+          .json({ error: "Mật khẩu hiện tại và mật khẩu mới là bắt buộc" });
+      }
+
+      const updatedUser = await UserService.updatePassword(
+        userId,
+        currentPassword,
+        newPassword
+      );
+      res.status(200).json({
+        message: "Đổi mật khẩu thành công",
+        user: updatedUser,
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  static async getUserSettings(req, res) {
+    try {
+      const userId = req.params.id;
+      const settings = await UserService.getUserSettings(userId);
+      res.status(200).json(settings);
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  static async updateUserSettings(req, res) {
+    try {
+      const userId = req.params.id;
+      const settings = req.body;
+
+      const updatedSettings = await UserService.updateUserSettings(
+        userId,
+        settings
+      );
+      res.status(200).json({
+        message: "Cập nhật settings thành công",
+        settings: updatedSettings,
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  static async checkFollowStatus(req, res) {
+    try {
+      const userId = req.headers["x-user-id"];
+      const targetId = req.params.targetId;
+
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const status = await UserService.checkFollowStatus(userId, targetId);
+      res.status(200).json(status);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  static async followUser(req, res) {
+    try {
+      const userId = req.headers["x-user-id"];
+      const targetId = req.params.targetId;
+
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const result = await UserService.followUser(userId, targetId);
+      res.status(200).json({
+        message: "Follow thành công",
+        relationship: result,
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  static async unfollowUser(req, res) {
+    try {
+      const userId = req.headers["x-user-id"];
+      const targetId = req.params.targetId;
+
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const result = await UserService.unfollowUser(userId, targetId);
+      res.status(200).json({
+        message: "Unfollow thành công",
+        relationship: result,
+      });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  static async googleRegister(req, res) {
+    try {
+      const g = req.body; // g = { email, full_name, picture, sub }
+
+      // Gọi UserService để tạo user
+      const newUser = await UserService.createUser({
+        email: g.email,
+        full_name: g.full_name,
+        avatar_url: g.picture,
+        username: g.email.split("@")[0],
+        password: crypto.randomUUID(), // tạo password giả
+        metadata: {
+          auth_type: "google",
+          google_id: g.sub,
+          picture: g.picture,
+          is_oauth: true,
+        },
+      });
+
+      res.status(201).json(newUser);
+    } catch (error) {
+      console.error("Google Register error:", error);
+      if (error.message.includes("email")) {
+        return res.status(400).json({ error: error.message });
+      }
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  // Google Login
+  static async googleLogin(req, res) {
+    try {
+      const { email } = req.body;
+
+      const user = await UserService.findUserByEmail(email);
+
+      if (!user) {
+        return res.status(404).json({ error: "User không tồn tại" });
+      }
+
+      console.log("user:", user);
+
+      if (user.metadata?.auth_type !== "google") {
+        return res
+          .status(400)
+          .json({ error: "User này không phải đăng ký bằng Google" });
+      }
+
+      res.status(200).json(user);
+    } catch (error) {
+      console.error("Google Login error:", error);
       res.status(500).json({ error: error.message });
     }
   }

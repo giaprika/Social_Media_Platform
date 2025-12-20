@@ -1,0 +1,115 @@
+services:
+  # ===========================================
+  # Caddy - Reverse Proxy with Auto SSL
+  # ===========================================
+  caddy:
+    image: caddy:2-alpine
+    container_name: live-service-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"          # HTTP (redirect to HTTPS)
+      - "443:443"        # HTTPS
+      - "443:443/udp"    # HTTP/3 (QUIC)
+    volumes:
+      - ./configs/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web:/srv:ro          # WebRTC demo pages
+      - caddy_data:/data       # SSL certificates
+      - caddy_config:/config   # Caddy config
+    environment:
+      - API_DOMAIN=${API_DOMAIN:-localhost}
+      - ACME_EMAIL=${ACME_EMAIL:-admin@example.com}
+    networks:
+      - live-network
+    depends_on:
+      - api
+
+  # ===========================================
+  # SRS Media Server (Simple Realtime Server)
+  # ===========================================
+  srs:
+    image: ossrs/srs:5
+    container_name: live-service-srs
+    restart: unless-stopped
+    command: ./objs/srs -c conf/srs.conf
+    ports:
+      - "1935:1935"      # RTMP (OBS Studio)
+      - "8080:8080"      # HTTP API & HLS
+      - "1985:1985"      # WebRTC signaling
+      - "8000:8000/udp"  # WebRTC media
+    volumes:
+      - ./configs/srs.conf:/usr/local/srs/conf/srs.conf:ro
+      # HLS output: gcsfuse mount (/mnt/live_data) → container (/data)
+      - ${HLS_DATA_PATH:-./data/hls}:/data
+    environment:
+      - CANDIDATE=${SRS_PUBLIC_IP:-127.0.0.1}
+    # Required for gcsfuse mount access
+    privileged: false
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - live-network
+
+  # ===========================================
+  # Live Service API (Go Application)
+  # ===========================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: live-service-api
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-8081}:8080"
+    env_file:
+      - .env
+    environment:
+      - ENV=${ENV:-development}
+      - SERVER_PORT=8080
+      - DB_HOST=${DB_HOST:-localhost}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_NAME=${DB_NAME:-live_service}
+      - DB_SSLMODE=${DB_SSLMODE:-disable}
+      - SRS_SERVER_URL=http://srs:8080
+      - SRS_SERVER_IP=srs
+      - SRS_RTMP_PORT=1935
+      - SRS_CALLBACK_URL=http://api:8080/api/v1/callbacks
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-key}
+    networks:
+      - live-network
+
+  coturn:
+    image: coturn/coturn
+    container_name: live-service-coturn
+    restart: unless-stopped
+    # Dùng host networking để hiệu năng mạng tốt nhất và tránh lỗi NAT trong Docker
+    network_mode: host
+    command:
+      - -n                                        # Chạy foreground (cho Docker quản lý log)
+      - --log-file=stdout                         # Log ra màn hình console
+      - --min-port=49152                          # Port relay thấp nhất
+      - --max-port=65535                          # Port relay cao nhất
+      - --realm=${TURN_REALM:-extase.dev}         # Tên miền
+      - --listening-port=3478                     # Cổng lắng nghe TURN/STUN
+      - --tls-listening-port=5349                 # Cổng TURNS (TLS) - cho corporate firewall
+      - --fingerprint                             # Dùng fingerprint trong gói tin
+      - --use-auth-secret                         # Dynamic credentials (RFC 5766)
+      - --static-auth-secret=${TURN_SECRET}       # Shared secret (chỉ Backend + Coturn biết)
+      - --external-ip=${TURN_EXTERNAL_IP:-127.0.0.1}
+      - --no-cli                                  # Disable CLI (không cần)
+      - --no-software-attribute                   # Ẩn version trong response
+
+# ===========================================
+# Networks
+# ===========================================
+networks:
+  live-network:
+    driver: bridge
+
+# ===========================================
+# Volumes (Caddy SSL certificates persistence)
+# ===========================================
+volumes:
+  caddy_data:
+  caddy_config:

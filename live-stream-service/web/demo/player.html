@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Stream Player</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #000;
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .player-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        video {
+            max-width: 100%;
+            max-height: 80vh;
+            background: #111;
+            border-radius: 8px;
+        }
+        .controls {
+            background: #111;
+            padding: 15px 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        input {
+            padding: 10px;
+            border: 1px solid #333;
+            border-radius: 6px;
+            background: #222;
+            color: #fff;
+            font-size: 14px;
+        }
+        input[type="text"], input[type="number"] { width: 120px; }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            background: #4ecdc4;
+            color: #000;
+        }
+        button:hover { background: #3dbdb5; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .status { font-size: 13px; color: #888; }
+        .status.live { color: #4ecdc4; }
+        .status.error { color: #ff6b6b; }
+        .stream-info {
+            background: #1a1a1a;
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .stream-info .title { font-weight: 600; color: #fff; }
+        .stream-info .meta { color: #888; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <div class="player-container">
+        <video id="video" autoplay playsinline controls></video>
+    </div>
+    <div class="controls">
+        <input type="text" id="serverIP" placeholder="Server IP">
+        <input type="text" id="streamId" placeholder="Stream ID (NanoID)">
+        <button id="btnPlay">▶ Play</button>
+        <button id="btnStop" disabled>⏹ Stop</button>
+        <span id="status" class="status">Ready</span>
+        <div id="streamInfo" class="stream-info" style="display: none;">
+            <div class="title" id="streamTitle"></div>
+            <div class="meta" id="streamMeta"></div>
+        </div>
+    </div>
+
+    <script>
+        let pc = null;
+
+        /**
+         * Fetch stream info from API using public stream ID
+         */
+        async function getStreamInfo(serverIP, streamId) {
+            // Try HTTPS first, fallback to HTTP
+            const urls = [
+                `https://${serverIP}/api/v1/live/${streamId}`,
+                `http://${serverIP}:8081/api/v1/live/${streamId}`
+            ];
+
+            for (const url of urls) {
+                try {
+                    const res = await fetch(url);
+                    if (res.ok) {
+                        return await res.json();
+                    }
+                } catch (e) {
+                    continue;
+                }
+            }
+            throw new Error('Failed to fetch stream info');
+        }
+
+        /**
+         * Get WebRTC play info from API
+         */
+        async function getWebRTCInfo(serverIP, streamId) {
+            const urls = [
+                `https://${serverIP}/api/v1/live/${streamId}/webrtc`,
+                `http://${serverIP}:8081/api/v1/live/${streamId}/webrtc`
+            ];
+
+            for (const url of urls) {
+                try {
+                    const res = await fetch(url);
+                    if (res.ok) {
+                        return await res.json();
+                    }
+                } catch (e) {
+                    continue;
+                }
+            }
+            throw new Error('Failed to fetch WebRTC info');
+        }
+
+        async function play() {
+            const serverIP = document.getElementById('serverIP').value.trim();
+            const streamId = document.getElementById('streamId').value.trim();
+            
+            if (!serverIP || !streamId) {
+                setStatus('Enter server IP and stream ID', 'error');
+                return;
+            }
+
+            setStatus('Fetching stream info...', '');
+
+            try {
+                // 1. Get stream info (public)
+                const streamInfo = await getStreamInfo(serverIP, streamId);
+                
+                if (streamInfo.status !== 'LIVE') {
+                    setStatus(`Stream is ${streamInfo.status}`, 'error');
+                    showStreamInfo(streamInfo);
+                    return;
+                }
+
+                showStreamInfo(streamInfo);
+
+                // 2. Get WebRTC info (contains play_url + ICE servers; play_url uses stream ID)
+                const webrtcInfo = await getWebRTCInfo(serverIP, streamId);
+
+                setStatus('Connecting...', '');
+
+                // 3. Connect via WebRTC
+                pc = new RTCPeerConnection({
+                    iceServers: webrtcInfo.ice_servers || [{ urls: 'stun:stun.l.google.com:19302' }]
+                });
+
+                pc.ontrack = (e) => {
+                    document.getElementById('video').srcObject = e.streams[0];
+                    setStatus('🟢 Playing', 'live');
+                };
+
+                pc.oniceconnectionstatechange = () => {
+                    if (pc.iceConnectionState === 'failed') {
+                        setStatus('Connection failed', 'error');
+                    }
+                };
+
+                pc.addTransceiver('video', { direction: 'recvonly' });
+                pc.addTransceiver('audio', { direction: 'recvonly' });
+
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+
+                // Wait for ICE gathering
+                await new Promise(r => {
+                    if (pc.iceGatheringState === 'complete') return r();
+                    pc.onicegatheringstatechange = () => {
+                        if (pc.iceGatheringState === 'complete') r();
+                    };
+                    setTimeout(r, 3000);
+                });
+
+                // Use relative URL to go through Caddy proxy (handles HTTPS)
+                // Extract stream ID from play_url for WHEP
+                const whepUrl = `/rtc/v1/whep/?app=live&stream=${streamId}`;
+
+                const res = await fetch(whepUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/sdp' },
+                    body: pc.localDescription.sdp
+                });
+
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+                await pc.setRemoteDescription({ type: 'answer', sdp: await res.text() });
+                
+                document.getElementById('btnPlay').disabled = true;
+                document.getElementById('btnStop').disabled = false;
+
+            } catch (err) {
+                setStatus(`Error: ${err.message}`, 'error');
+                stop();
+            }
+        }
+
+        function stop() {
+            if (pc) { pc.close(); pc = null; }
+            document.getElementById('video').srcObject = null;
+            document.getElementById('btnPlay').disabled = false;
+            document.getElementById('btnStop').disabled = true;
+            setStatus('Stopped', '');
+        }
+
+        function setStatus(msg, cls) {
+            const el = document.getElementById('status');
+            el.textContent = msg;
+            el.className = 'status ' + cls;
+        }
+
+        function showStreamInfo(info) {
+            const infoEl = document.getElementById('streamInfo');
+            document.getElementById('streamTitle').textContent = info.title || 'Untitled Stream';
+            document.getElementById('streamMeta').textContent = 
+                `👁️ ${info.viewer_count || 0} viewers • ${info.status}`;
+            infoEl.style.display = 'block';
+        }
+
+        // Parse URL params
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('server')) document.getElementById('serverIP').value = params.get('server');
+        if (params.get('id')) document.getElementById('streamId').value = params.get('id');
+        if (params.get('autoplay')) play();
+
+        document.getElementById('btnPlay').onclick = play;
+        document.getElementById('btnStop').onclick = stop;
+    </script>
+</body>
+</html>

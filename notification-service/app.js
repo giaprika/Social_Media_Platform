@@ -23,6 +23,12 @@ app.use(express.urlencoded({ extended: true }));
 // Swagger UI setup
 import setupSwagger from "./src/swagger/swagger.js";
 setupSwagger(app);
+
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok", service: "notification-service" });
+});
+
 // Routes
 app.use("/notifications", userRoutes);
 
@@ -32,6 +38,15 @@ app.use((err, req, res, next) => {
   res.status(500).json({
     message: "Lỗi server",
     error: err.stack,
+  });
+});
+
+// Health check
+app.get("/", (req, res) => {
+  res.json({
+    service: "notification-service",
+    status: "running",
+    timestamp: new Date().toISOString()
   });
 });
 

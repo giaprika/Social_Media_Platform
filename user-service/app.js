@@ -21,6 +21,15 @@ app.use(morgan("dev"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Health check route
+app.get("/", (req, res) => {
+  res.json({ 
+    service: "user-service", 
+    status: "running",
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Swagger UI setup
 import setupSwagger from "./src/swagger/swagger.js";
 setupSwagger(app);

@@ -1,14 +1,15 @@
 import os
 import uuid
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Query, Path, Header, UploadFile, File
+from fastapi import APIRouter, HTTPException, Query, Path, Header, UploadFile, File, Form
 from dotenv import load_dotenv
 from supabase import create_client
-from models import (
-    PostCreate, PostUpdate, PostObject, 
+from .models import (
+    PostObject, 
     PostSingleResponse, PostListResponse,
     Pagination, Metadata, Link
 )
+from .enumType import Visibility, ReactionType
 
 load_dotenv()
 
@@ -155,48 +156,18 @@ async def get_posts(
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
-# ============= POST /posts/upload - Upload media files =============
-@router.post("/upload")
-async def upload_media(
-    files: List[UploadFile] = File(...),
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
-):
-    """Upload media files to storage and return URLs"""
-    user_id = get_user_id(x_user_id)
-    
-    if not files:
-        raise HTTPException(status_code=400, detail="No files provided")
-    
-    try:
-        media_urls = []
-        for file in files:
-            if file.filename:
-                url = await upload_to_supabase(file)
-                media_urls.append(url)
-        
-        return {
-            "status": "success",
-            "message": f"Uploaded {len(media_urls)} files successfully",
-            "data": {"media_urls": media_urls, "count": len(media_urls)}
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Upload error: {str(e)}")
-
 
 # ============= POST /posts - Tạo bài viết mới =============
 @router.post("", response_model=PostSingleResponse, status_code=201)
 async def create_post(
-    content: Optional[str] = None,
-    tags: Optional[str] = None,  # JSON string array
-    post_share_id: Optional[str] = None,
-    group_id: Optional[str] = None,
-    visibility: Optional[str] = None,
+    content: Optional[str] = Form(None),
+    tags: Optional[List[str]] = Form(None),
+    post_share_id: Optional[str] = Form(None),
+    group_id: Optional[str] = Form(None),
+    visibility: Optional[str] = Form(None),
     files: Optional[List[UploadFile]] = File(None),
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
+    x_user_id: str = Header(..., alias="X-User-ID")
 ):
-    """Tạo bài viết mới với upload files"""
     user_id = get_user_id(x_user_id)
     
     try:
@@ -208,23 +179,14 @@ async def create_post(
                     url = await upload_to_supabase(file)
                     media_urls.append(url)
         
-        # Parse tags from JSON string
-        tags_list = None
-        if tags:
-            import json
-            try:
-                tags_list = json.loads(tags)
-            except:
-                tags_list = [tags]  # Single tag as fallback
-        
         new_post = {
             "user_id": user_id,
             "content": content,
             "media_urls": media_urls if media_urls else None,
-            "tags": tags_list,
+            "tags": tags,
             "post_share_id": post_share_id,
             "group_id": group_id,
-            "visibility": visibility,
+            "visibility": visibility or Visibility.PUBLIC.value,
             "reacts_count": 0,
             "comments_count": 0,
             "shares_count": 0,
@@ -238,6 +200,21 @@ async def create_post(
         
         created_post = result.data[0]
         
+        # Publish notification event qua RabbitMQ
+        # Publish notification event qua RabbitMQ
+        try:
+            from rabbitmq_producer import publish_event
+            await publish_event("post.created", {
+                "user_id": user_id,
+                "post_id": created_post.get("post_id"),
+                "post_title": content,
+                "title_template": "Bài viết mới đã được tạo!",
+                "body_template": f"Bài viết: {content}",
+                "link_url": f"/posts/{created_post.get('post_id')}"
+            })
+        except Exception as e:
+            print(f"[Notification] Failed to publish post.created event: {str(e)}")
+
         return PostSingleResponse(
             status="success",
             message="Post created successfully",
@@ -279,14 +256,24 @@ async def get_post_by_id(
 # ============= PATCH /posts/{post_id} - Cập nhật bài viết =============
 @router.patch("/{post_id}", response_model=PostSingleResponse)
 async def update_post(
-    post_id: str = Path(..., description="ID của bài viết"),
-    content: Optional[str] = None,
-    tags: Optional[str] = None,  # JSON string array
-    visibility: Optional[str] = None,
+    post_id: str,
+    content: Optional[str] = Form(None),
+    tags: Optional[List[str]] = Form(None),
+    visibility: Optional[str] = Form(None),
     files: Optional[List[UploadFile]] = File(None),
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
+    x_user_id: str = Header(..., alias="X-User-ID")
 ):
-    """Cập nhật bài viết - xóa files cũ và upload files mới"""
+    """Cập nhật bài viết - upload files mới nếu có
+    
+    **Required Header:**
+    - X-User-ID: UUID của user (bắt buộc)
+    
+    **Form-data:**
+    - content: Nội dung mới (optional)
+    - files: Danh sách files mới để upload (optional)
+    - tags: JSON string array hoặc single tag (optional)
+    - visibility: public/private/friends (optional)
+    """
     user_id = get_user_id(x_user_id)
     
     try:
@@ -300,10 +287,11 @@ async def update_post(
         if post.get("user_id") != user_id:
             raise HTTPException(status_code=403, detail="You don't have permission to update this post")
         
-        # Delete old media files from storage
-        old_media_urls = post.get("media_urls", [])
-        if old_media_urls:
-            await delete_files_from_storage(old_media_urls)
+        # Delete old media files from storage if new files provided
+        if files:
+            old_media_urls = post.get("media_urls", [])
+            if old_media_urls:
+                await delete_files_from_storage(old_media_urls)
         
         # Upload new files
         media_urls = []
@@ -313,34 +301,23 @@ async def update_post(
                     url = await upload_to_supabase(file)
                     media_urls.append(url)
         
-        # Parse tags from JSON string
-        tags_list = None
-        if tags:
-            import json
-            try:
-                tags_list = json.loads(tags)
-            except:
-                tags_list = [tags]
-        
-        update_data = {}
+        # Prepare update data
+        update_fields = {}
         if content is not None:
-            update_data["content"] = content
-        # Always update media_urls (even if empty to clear old files)
-        update_data["media_urls"] = media_urls if media_urls else None
+            update_fields["content"] = content
+        if files:  # Only update media_urls if new files provided
+            update_fields["media_urls"] = media_urls if media_urls else None
         if tags is not None:
-            update_data["tags"] = tags_list
+            update_fields["tags"] = tags
         if visibility is not None:
-            update_data["visibility"] = visibility
+            update_fields["visibility"] = visibility
         
-        if len(update_data) == 1 and "media_urls" in update_data and not files:
-            # If only media_urls would be updated but no files provided, still valid (clearing media)
-            pass
-        elif not update_data:
+        if not update_fields:
             raise HTTPException(status_code=400, detail="No fields to update")
         
-        update_data["is_edited"] = True
+        update_fields["is_edited"] = True
         
-        result = supabase.table(POSTS_TABLE).update(update_data).eq("post_id", post_id).execute()
+        result = supabase.table(POSTS_TABLE).update(update_fields).eq("post_id", post_id).execute()
         
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to update post")
@@ -363,9 +340,13 @@ async def update_post(
 @router.delete("/{post_id}", status_code=204)
 async def delete_post(
     post_id: str = Path(..., description="ID của bài viết"),
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
+    x_user_id: str = Header(..., alias="X-User-ID")
 ):
-    """Xóa bài viết"""
+    """Xóa bài viết
+    
+    **Required Header:**
+    - X-User-ID: UUID của user (bắt buộc)
+    """
     user_id = get_user_id(x_user_id)
     
     try:

@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 
 # ============= CONFIGURATION =============
-BASE_URL = "http://localhost:8000/api/v1"
+BASE_URL = "http://localhost:8003/api/v1"
 
 # Helper to build headers for a given user id
 def user_headers(user_id: str, content_type_json: bool = False):

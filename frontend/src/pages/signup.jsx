@@ -4,9 +4,12 @@ import { message } from "antd";
 import { signup } from "src/api/auth";
 import { validatePassword } from "src/utils/validate";
 import { PATHS } from "src/constants/paths";
+import { GoogleLogin } from "@react-oauth/google";
+import { signupWithGoogle } from "src/api/auth";
 
 const defaultForm = {
   fullName: "",
+  username: "",
   email: "",
   birthDate: "",
   gender: "",
@@ -25,9 +28,31 @@ const SignUp = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const validateUsername = (username) => {
+    if (!username || username.trim().length === 0) {
+      return "Username is required";
+    }
+    if (username.length < 3) {
+      return "Username must be at least 3 characters";
+    }
+    if (username.length > 20) {
+      return "Username must be less than 20 characters";
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      return "Username can only contain letters, numbers, and underscores";
+    }
+    return null;
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError("");
+
+    const usernameError = validateUsername(formData.username);
+    if (usernameError) {
+      setError(usernameError);
+      return;
+    }
 
     if (!validatePassword(formData.password)) {
       setError(
@@ -50,6 +75,7 @@ const SignUp = () => {
       setLoading(true);
       await signup({
         full_name: formData.fullName,
+        username: formData.username.trim().toLowerCase(),
         email: formData.email,
         password: formData.password,
         birth_date: formData.birthDate,
@@ -80,7 +106,10 @@ const SignUp = () => {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="fullName">
+            <label
+              className="mb-2 block text-sm font-medium text-foreground"
+              htmlFor="fullName"
+            >
               Full Name
             </label>
             <input
@@ -95,7 +124,35 @@ const SignUp = () => {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="email">
+            <label
+              className="mb-2 block text-sm font-medium text-foreground"
+              htmlFor="username"
+            >
+              Username
+            </label>
+            <input
+              id="username"
+              name="username"
+              type="text"
+              value={formData.username}
+              onChange={handleChange}
+              placeholder="johndoe"
+              className="w-full rounded-lg border border-border bg-card px-4 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              required
+              minLength={3}
+              maxLength={20}
+              pattern="[a-zA-Z0-9_]+"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              3-20 characters, letters, numbers, and underscores only
+            </p>
+          </div>
+
+          <div>
+            <label
+              className="mb-2 block text-sm font-medium text-foreground"
+              htmlFor="email"
+            >
               Email
             </label>
             <input
@@ -111,7 +168,10 @@ const SignUp = () => {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="birthDate">
+            <label
+              className="mb-2 block text-sm font-medium text-foreground"
+              htmlFor="birthDate"
+            >
               Birth Date
             </label>
             <input
@@ -126,7 +186,10 @@ const SignUp = () => {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="gender">
+            <label
+              className="mb-2 block text-sm font-medium text-foreground"
+              htmlFor="gender"
+            >
               Gender
             </label>
             <select
@@ -147,7 +210,10 @@ const SignUp = () => {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="password">
+            <label
+              className="mb-2 block text-sm font-medium text-foreground"
+              htmlFor="password"
+            >
               Password
             </label>
             <input
@@ -163,7 +229,10 @@ const SignUp = () => {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-foreground" htmlFor="confirmPassword">
+            <label
+              className="mb-2 block text-sm font-medium text-foreground"
+              htmlFor="confirmPassword"
+            >
               Confirm Password
             </label>
             <input
@@ -193,10 +262,39 @@ const SignUp = () => {
           </button>
         </form>
 
+        <div className="mt-4">
+          <GoogleLogin
+            text="signup_with"
+            onSuccess={async (credentialResponse) => {
+              try {
+                const googleToken = credentialResponse?.credential;
+                if (!googleToken)
+                  return message.error("No credential returned from Google");
+
+                const { data } = await signupWithGoogle({
+                  credential: googleToken,
+                });
+
+                message.success("Account created with Google!");
+                navigate(PATHS.LOGIN);
+              } catch (err) {
+                console.error(err);
+                message.error("Google signup failed");
+              }
+            }}
+            onError={() => {
+              message.error("Google Signup Failed");
+            }}
+          />
+        </div>
+
         <div className="mt-6 text-center">
           <p className="text-muted-foreground">
             Already have an account?{" "}
-            <Link to={PATHS.LOGIN} className="font-semibold text-primary hover:underline">
+            <Link
+              to={PATHS.LOGIN}
+              className="font-semibold text-primary hover:underline"
+            >
               Log in
             </Link>
           </p>

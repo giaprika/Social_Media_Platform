@@ -9,12 +9,17 @@ dotenv.config();
 class UserService {
   async registerUserService(userData) {
     try {
+      logger.info("Sending user data to user service", {
+        userData: { ...userData, password: "***" },
+      });
       const response = await userServiceInstance.post(`/`, userData);
+      logger.info("User service response", { data: response.data });
       return response.data;
     } catch (error) {
       logger.error("Error while registering user in user service", {
         error: error.message,
         response: error.response?.data,
+        userData: { ...userData, password: "***" },
       });
       throw error;
     }
@@ -131,6 +136,68 @@ class UserService {
         token,
       });
       throw new Error("Invalid refresh token");
+    }
+  }
+
+  async handleGoogleRegister(gUser) {
+    try {
+      // gửi qua user microservice để tạo user
+      const createdUser = await userServiceInstance.post("/gg-registering", {
+        ...gUser,
+        auth_type: "google",
+        password: null,
+      });
+
+      const user = createdUser.data;
+
+      // create JWT
+      const accessToken = generateJwtToken(
+        user,
+        config.accessTokenSecret,
+        "1d"
+      );
+      const refreshToken = generateJwtToken(
+        user,
+        config.refreshTokenSecret,
+        "30d"
+      );
+
+      return { access_token: accessToken, refresh_token: refreshToken, user };
+    } catch (error) {
+      logger.error("Google register failed", error);
+      throw error;
+    }
+  }
+
+  async handleGoogleLogin(gUser) {
+    try {
+      // kiểm tra user tồn tại
+      const response = await userServiceInstance.post("/gg-logining", {
+        email: gUser.email,
+      });
+
+      const user = response.data;
+
+      const accessToken = generateJwtToken(
+        user,
+        config.accessTokenSecret,
+        "1d"
+      );
+      const refreshToken = generateJwtToken(
+        user,
+        config.refreshTokenSecret,
+        "30d"
+      );
+      const expiresAt = new Date(
+        Date.now() + 30 * 24 * 60 * 60 * 1000
+      ).toISOString();
+
+      await this.saveRefreshToken(user.id, refreshToken, expiresAt);
+
+      return { access_token: accessToken, refresh_token: refreshToken, user };
+    } catch (error) {
+      logger.error("Google login failed", error);
+      throw error;
     }
   }
 }

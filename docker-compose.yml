@@ -1,0 +1,485 @@
+services:
+  # ============================================
+  # Databases
+  # ============================================
+  postgres-user:
+    image: postgres:15-alpine
+    container_name: postgres-user
+    environment:
+      POSTGRES_DB: user_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-user-data:/var/lib/postgresql/data
+      - ./user-service/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: >
+      sh -c "
+        docker-entrypoint.sh postgres &
+        sleep 5 &&
+        until pg_isready -U postgres; do sleep 1; done &&
+        psql -U postgres -d user_db -tAc \"SELECT 1 FROM information_schema.tables WHERE table_name='users'\" | grep -q 1 ||
+        (echo 'Initializing database...' && psql -U postgres -d user_db -f /docker-entrypoint-initdb.d/init.sql && echo 'Database initialized!') &&
+        wait
+      "
+    ports:
+      - "5432:5432"
+    networks:
+      - social-network
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'pg_isready -U postgres && psql -U postgres -d user_db -tAc "SELECT 1 FROM information_schema.tables WHERE table_name=''users''" | grep -q 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  postgres-notification:
+    image: postgres:15-alpine
+    container_name: postgres-notification
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-notification-data:/var/lib/postgresql/data
+      - ./notification-service/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: >
+      sh -c "
+        docker-entrypoint.sh postgres &
+        sleep 5 &&
+        until pg_isready -U postgres; do sleep 1; done &&
+        psql -U postgres -d notification_db -tAc \"SELECT 1 FROM information_schema.tables WHERE table_name='notifications'\" | grep -q 1 ||
+        (echo 'Initializing database...' && psql -U postgres -d notification_db -f /docker-entrypoint-initdb.d/init.sql && echo 'Database initialized!') &&
+        wait
+      "
+    ports:
+      - "5433:5432"
+    networks:
+      - social-network
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'pg_isready -U postgres && psql -U postgres -d notification_db -tAc "SELECT 1 FROM information_schema.tables WHERE table_name=''notifications''" | grep -q 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # postgres-posts:
+  #   image: postgres:15-alpine
+  #   container_name: postgres-posts
+  #   environment:
+  #     POSTGRES_DB: posts_db
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #   volumes:
+  #     - postgres-posts-data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5434:5432"
+  #   networks:
+  #     - social-network
+
+  postgres-community:
+    image: postgres:15-alpine
+    container_name: postgres-community
+    environment:
+      POSTGRES_DB: community_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-community-data:/var/lib/postgresql/data
+      - ./community-service/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: >
+      sh -c "
+        docker-entrypoint.sh postgres &
+        sleep 5 &&
+        until pg_isready -U postgres; do sleep 1; done &&
+        psql -U postgres -d community_db -tAc \"SELECT 1 FROM information_schema.tables WHERE table_name='communities'\" | grep -q 1 ||
+        (echo 'Initializing database...' && psql -U postgres -d community_db -f /docker-entrypoint-initdb.d/init.sql && echo 'Database initialized!') &&
+        wait
+      "
+    ports:
+      - "5435:5432"
+    networks:
+      - social-network
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'pg_isready -U postgres && psql -U postgres -d community_db -tAc "SELECT 1 FROM information_schema.tables WHERE table_name=''communities''" | grep -q 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ============================================
+  # Backend Services
+  # ============================================
+  backend-gateway:
+    build:
+      context: ./backend-gateway
+      dockerfile: Dockerfile
+    container_name: backend-gateway
+    environment:
+      NODE_ENV: production
+      PORT: 8000
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:-your_super_secret_access_token_key}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-your_super_secret_refresh_token_key}
+      USER_SERVICE_URL: http://user-service:8001
+      NOTIFICATION_SERVICE_URL: http://notification-service:8002
+      POST_SERVICE_URL: http://post-service:8003
+      COMMUNITY_SERVICE_URL: http://community-service:8004
+      AI_SERVICE_URL: http://ai-service:9000
+      CORS_ORIGIN: http://localhost:3000
+      INTERNAL_SECRET: your-super-secret-key-for-internal-services
+    ports:
+      - "8000:8000"
+    depends_on:
+      - user-service
+      - notification-service
+      - community-service
+      - post-service
+      - ai-service
+    networks:
+      - social-network
+    restart: unless-stopped
+
+
+  user-service:
+    build:
+      context: ./user-service
+      dockerfile: Dockerfile
+    container_name: user-service
+    environment:
+      NODE_ENV: production
+      PORT: 8001
+      DB_HOST: postgres-user
+      DB_PORT: 5432
+      DB_NAME: user_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_MAX_CONNECTIONS: 10
+      DB_SSL: "false"
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:-your_super_secret_access_token_key}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-your_super_secret_refresh_token_key}
+      RABBITMQ_URL: amqp://rabbitmq
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres-user:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - social-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "require(''http'').get(''http://localhost:8001'', (r) => {process.exit(r.statusCode ? 0 : 1)})"',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================
+  # Services chưa hoàn thiện (commented)
+  # ============================================
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    container_name: notification-service
+    environment:
+      NODE_ENV: production
+      PORT: 8002
+      DB_HOST: postgres-notification
+      DB_PORT: 5432
+      DB_NAME: notification_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_MAX_CONNECTIONS: 10
+      DB_SSL: "false"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://rabbitmq
+      GATEWAY_URL: http://backend-gateway:8000
+      INTERNAL_SECRET: your-super-secret-key-for-internal-services
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres-notification:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - social-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "require(''http'').get(''http://localhost:8002'', (r) => {process.exit(r.statusCode ? 0 : 1)})"',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  post-service:
+    build:
+      context: ./post-service
+      dockerfile: Dockerfile
+    container_name: post-service
+    environment:
+      PORT: 8003
+      SUPABASE_URL: ${SUPABASE_URL:-https://pfluzsnvvufmqxfuzhxo.supabase.co}
+      SUPABASE_KEY: ${SUPABASE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBmbHV6c252dnVmbXF4ZnV6aHhvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MTI3Nzc4MCwiZXhwIjoyMDc2ODUzNzgwfQ.WjxOFGtLhx7rTte4jbU2_0CaGXK7UbkcAb3D4Pv8EJ8}
+      POSTS_TABLE_NAME: posts
+      COMMENTS_TABLE_NAME: comments
+      POST_REACT_TABLE_NAME: post_reaction
+      COMMENT_REACT_TABLE_NAME: comment_reaction
+      STORAGE_BUCKET_NAME: posts_service
+      RABBITMQ_URL: amqp://rabbitmq
+    ports:
+      - "8003:8003"
+    networks:
+      - social-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  community-service:
+    build:
+      context: ./community-service
+      dockerfile: Dockerfile
+    container_name: community-service
+    environment:
+      NODE_ENV: production
+      PORT: 8004
+      DB_HOST: postgres-community
+      DB_PORT: 5432
+      DB_NAME: community_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_MAX_CONNECTIONS: 10
+      DB_SSL: "false"
+    ports:
+      - "8004:8004"
+    depends_on:
+      postgres-community:
+        condition: service_healthy
+    networks:
+      - social-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "require(''http'').get(''http://localhost:8004'', (r) => {process.exit(r.statusCode ? 0 : 1)})"',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================
+  # AI Service - Content Moderation
+  # ============================================
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    container_name: ai-service
+    environment:
+      PORT: 9000
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-AIzaSyAoGPpAaA-lp-sk8eKFGI9_EhcKJF3EiFI}
+      GOOGLE_GENAI_USE_VERTEXAI: 0
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      DB_HOST: postgres-ai
+      DB_PORT: 5432
+      DB_NAME: violations_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      GATEWAY_URL: http://backend-gateway:8000
+      INTERNAL_SECRET: your-super-secret-key-for-internal-services
+    ports:
+      - "9000:9000"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres-ai:
+        condition: service_healthy
+    networks:
+      - social-network
+    restart: unless-stopped
+
+  # ============================================
+  # Message Queue
+  # ============================================
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - social-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ============================================
+  # Redis Cache
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - social-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ============================================
+  # Database for AI Service
+  # ============================================
+  postgres-ai:
+    image: postgres:15-alpine
+    container_name: postgres-ai
+    environment:
+      POSTGRES_DB: violations_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-ai-data:/var/lib/postgresql/data
+      - ./ai-service/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5436:5432"
+    networks:
+      - social-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ============================================
+  # Feed Service
+  # ============================================
+  postgres-feed:
+    image: postgres:15-alpine
+    container_name: postgres-feed
+    environment:
+      POSTGRES_DB: feed_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-feed-data:/var/lib/postgresql/data
+      - ./feed-service/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: >
+      sh -c "
+        docker-entrypoint.sh postgres &
+        sleep 5 &&
+        until pg_isready -U postgres; do sleep 1; done &&
+        psql -U postgres -d feed_db -tAc \"SELECT 1 FROM information_schema.tables WHERE table_name='feed_items'\" | grep -q 1 ||
+        (echo 'Initializing database...' && psql -U postgres -d feed_db -f /docker-entrypoint-initdb.d/init.sql && echo 'Database initialized!') &&
+        wait
+      "
+    ports:
+      - "5438:5432"
+    networks:
+      - social-network
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'pg_isready -U postgres && psql -U postgres -d feed_db -tAc "SELECT 1 FROM information_schema.tables WHERE table_name=''feed_items''" | grep -q 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  feed-service:
+    build:
+      context: ./feed-service
+      dockerfile: Dockerfile
+    container_name: feed-service
+    environment:
+      NODE_ENV: production
+      PORT: 3006
+      DB_HOST: postgres-feed
+      DB_PORT: 5432
+      DB_NAME: feed_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      RABBITMQ_URL: amqp://rabbitmq:5672
+      CLEANUP_CRON_SCHEDULE: "0 */12 * * *"
+      CLEANUP_DAYS_THRESHOLD: 10
+    ports:
+      - "3006:3006"
+    depends_on:
+      postgres-feed:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - social-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "require(''http'').get(''http://localhost:3006/api/feed/health'', (r) => {process.exit(r.statusCode ? 0 : 1)})"',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  social-network:
+    driver: bridge
+
+volumes:
+  postgres-user-data:
+  postgres-social-data:
+  postgres-community-data:
+  postgres-notification-data:
+  postgres-ai-data:
+  rabbitmq-data:
+  redis-data:
+  postgres-feed-data:

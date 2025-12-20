@@ -3,11 +3,12 @@ Reactions Service - RESTful API for Reactions on Posts and Comments
 Tuân thủ OpenAPI specification
 """
 import os
+import json
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Query, Path, Header
 from dotenv import load_dotenv
 from supabase import create_client
-from models import (
+from .models import (
     ReactionUpsert, ReactionObject,
     ReactionSingleResponse, ReactionListResponse,
     Pagination, Metadata, Link
@@ -125,8 +126,8 @@ async def upsert_post_reaction(
     user_id = get_user_id(x_user_id)
     
     try:
-        # Check if post exists
-        post_result = supabase.table(POSTS_TABLE).select("post_id").eq("post_id", post_id).execute()
+        # Check if post exists and get owner
+        post_result = supabase.table(POSTS_TABLE).select("post_id, user_id").eq("post_id", post_id).execute()
         if not post_result.data:
             raise HTTPException(status_code=404, detail=f"Post '{post_id}' not found")
         
@@ -166,9 +167,35 @@ async def upsert_post_reaction(
         
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to upsert reaction")
-        
+
         reaction = result.data[0]
-        
+
+        # Publish notification event khi like bài viết (chỉ khi là like, không phải update reaction khác)
+        try:
+            if reaction_data.reaction_type == "like":
+                from rabbitmq_producer import publish_event
+                post_owner = post_result.data[0]["user_id"]
+                # Get current counts
+                post_info = supabase.table(POSTS_TABLE).select("reacts_count, comments_count").eq("post_id", post_id).execute()
+                likes_count = post_info.data[0].get("reacts_count", 0) if post_info.data else 0
+                comments_count = post_info.data[0].get("comments_count", 0) if post_info.data else 0
+                
+                # Don't notify if liking own post
+                if post_owner != user_id:
+                    await publish_event("post.liked", {
+                        "user_id": post_owner,
+                        "liker_id": user_id,
+                        "liker_username": None,
+                        "title_template": "Bài viết của bạn được thích!",
+                        "body_template": "Ai đó đã thích bài viết của bạn!",
+                        "link_url": f"/posts/{post_id}",
+                        "post_id": post_id,
+                        "likes": likes_count,
+                        "comments": comments_count
+                    })
+        except Exception as e:
+            print(f"[Notification] Failed to publish post.liked event: {str(e)}")
+
         return ReactionSingleResponse(
             status="success",
             message=message,
@@ -214,6 +241,22 @@ async def delete_post_reaction(
         supabase.table(POSTS_TABLE).update({
             "reacts_count": new_count
         }).eq("post_id", post_id).execute()
+        
+        # Publish post.unliked event for feed-service
+        try:
+            from rabbitmq_producer import publish_event
+            # Get current counts
+            post_info = supabase.table(POSTS_TABLE).select("reacts_count, comments_count").eq("post_id", post_id).execute()
+            likes_count = post_info.data[0].get("reacts_count", 0) if post_info.data else 0
+            comments_count = post_info.data[0].get("comments_count", 0) if post_info.data else 0
+            
+            await publish_event("post.unliked", {
+                "post_id": post_id,
+                "likes": likes_count,
+                "comments": comments_count
+            })
+        except Exception as e:
+            print(f"[Feed] Failed to publish post.unliked event: {str(e)}")
         
         return None
         
