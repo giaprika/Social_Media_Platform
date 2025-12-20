@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Service Test UI</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="container">
+        <!-- Sidebar: Settings -->
+        <div class="card sidebar">
+            <h1>Chat Tester</h1>
+
+            <div class="form-group">
+                <label for="server-ip">Server IP / Host</label>
+                <input type="text" id="server-ip" placeholder="e.g. 34.123.45.67" value="localhost">
+            </div>
+
+            <div class="form-group">
+                <label for="user-id">My User ID</label>
+                <input type="text" id="user-id" placeholder="UUID of current user" value="user-1">
+            </div>
+
+            <button id="btn-connect">
+                <span id="btn-connect-text">Connect WebSocket</span>
+            </button>
+
+            <div id="status-badge" class="status-badge status-disconnected">
+                <div class="status-dot"></div>
+                <span id="status-text">Disconnected</span>
+            </div>
+
+            <hr style="margin: 24px 0; border: 0; border-top: 1px solid var(--border);">
+
+            <h2>Send Message</h2>
+
+            <div class="form-group">
+                <label for="conv-id">Conversation ID</label>
+                <input type="text" id="conv-id" placeholder="UUID of conversation" value="conv-123">
+            </div>
+
+            <div class="form-group">
+                <label for="receiver-ids">Receiver IDs (comma separated)</label>
+                <input type="text" id="receiver-ids" placeholder="user-2, user-3" value="user-2">
+            </div>
+
+            <div class="form-group">
+                <label for="msg-content">Message Content</label>
+                <textarea id="msg-content" rows="4" placeholder="Type a message..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Media (Optional)</label>
+                <div class="upload-container">
+                    <input type="file" id="image-input" accept="image/*" style="display: none;">
+                    <button id="btn-select-image" style="background: var(--glass); margin-bottom: 10px;">Select
+                        Image</button>
+                    <div id="image-preview-container" style="display: none; position: relative; margin-bottom: 10px;">
+                        <img id="image-preview" src="" alt="Preview"
+                            style="max-width: 100%; border-radius: 8px; border: 1px solid var(--border);">
+                        <button id="btn-remove-image"
+                            style="position: absolute; top: 5px; right: 5px; width: 24px; height: 24px; border-radius: 50%; padding: 0; background: var(--error); font-size: 12px;">X</button>
+                    </div>
+                    <div id="upload-status" class="msg-info" style="display: none; color: var(--warning);">Uploading...
+                    </div>
+                </div>
+            </div>
+
+            <button id="btn-send" disabled>
+                <span>Send Message</span>
+            </button>
+        </div>
+
+        <!-- Main: Chat Log -->
+        <div class="card chat-area">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2>Real-time Events</h2>
+                <button id="btn-clear"
+                    style="width: auto; padding: 4px 12px; font-size: 0.75rem; background: var(--glass);">Clear
+                    Log</button>
+            </div>
+            <div id="messages" class="messages-container">
+                <div class="message-item msg-system">Ready to connect...</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

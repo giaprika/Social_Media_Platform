@@ -174,6 +174,29 @@
           "ChatService"
         ]
       }
+    },
+    "/v1/upload-credentials": {
+      "get": {
+        "summary": "Lấy credentials để upload ảnh lên Cloudinary",
+        "operationId": "ChatService_GetUploadCredentials",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetUploadCredentialsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "ChatService"
+        ]
+      }
     }
   },
   "definitions": {
@@ -224,6 +247,13 @@
           "type": "string"
         },
         "createdAt": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/v1MessageType",
+          "title": "Media support"
+        },
+        "mediaUrl": {
           "type": "string"
         }
       }
@@ -277,6 +307,27 @@
         }
       }
     },
+    "v1GetUploadCredentialsResponse": {
+      "type": "object",
+      "properties": {
+        "signature": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "int64"
+        },
+        "apiKey": {
+          "type": "string"
+        },
+        "cloudName": {
+          "type": "string"
+        },
+        "folder": {
+          "type": "string"
+        }
+      }
+    },
     "v1MarkAsReadResponse": {
       "type": "object",
       "properties": {
@@ -284,6 +335,18 @@
           "type": "boolean"
         }
       }
+    },
+    "v1MessageType": {
+      "type": "string",
+      "enum": [
+        "MESSAGE_TYPE_UNSPECIFIED",
+        "MESSAGE_TYPE_TEXT",
+        "MESSAGE_TYPE_IMAGE",
+        "MESSAGE_TYPE_VIDEO",
+        "MESSAGE_TYPE_FILE"
+      ],
+      "default": "MESSAGE_TYPE_UNSPECIFIED",
+      "title": "Message type enum"
     },
     "v1SendMessageRequest": {
       "type": "object",
@@ -304,6 +367,15 @@
             "type": "string"
           },
           "title": "Optional list of receiver UUIDs"
+        },
+        "type": {
+          "$ref": "#/definitions/v1MessageType",
+          "description": "TEXT, IMAGE, VIDEO, FILE (default: TEXT)",
+          "title": "Media support"
+        },
+        "mediaUrl": {
+          "type": "string",
+          "title": "URL of uploaded media (required for non-TEXT types)"
         }
       }
     },

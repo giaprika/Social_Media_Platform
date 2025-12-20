@@ -42,6 +42,12 @@ type Config struct {
 	DBMinConns     int32 `mapstructure:"DB_MIN_CONNS"`
 	DBMaxConnLife  int   `mapstructure:"DB_MAX_CONN_LIFE_MINUTES"`
 	DBMaxConnIdle  int   `mapstructure:"DB_MAX_CONN_IDLE_MINUTES"`
+
+	// Cloudinary Settings
+	CloudinaryCloudName   string `mapstructure:"CLOUDINARY_CLOUD_NAME"`
+	CloudinaryAPIKey      string `mapstructure:"CLOUDINARY_API_KEY"`
+	CloudinaryAPISecret   string `mapstructure:"CLOUDINARY_API_SECRET"`
+	CloudinaryUploadFolder string `mapstructure:"CLOUDINARY_UPLOAD_FOLDER"`
 }
 
 // GetDBSource returns the database connection string.
@@ -165,6 +171,10 @@ func LoadConfig(path string) (config Config, err error) {
 	_ = viper.BindEnv("DB_MIN_CONNS")
 	_ = viper.BindEnv("DB_MAX_CONN_LIFE_MINUTES")
 	_ = viper.BindEnv("DB_MAX_CONN_IDLE_MINUTES")
+	_ = viper.BindEnv("CLOUDINARY_CLOUD_NAME")
+	_ = viper.BindEnv("CLOUDINARY_API_KEY")
+	_ = viper.BindEnv("CLOUDINARY_API_SECRET")
+	_ = viper.BindEnv("CLOUDINARY_UPLOAD_FOLDER")
 
 	// Đọc từ environment variables
 	viper.AutomaticEnv()

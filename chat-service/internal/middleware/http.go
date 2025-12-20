@@ -14,6 +14,24 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// CORS middleware cho phép mọi origin truy cập
+func CORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, x-user-id, X-User-Id")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+
+		// Handle preflight request
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 // responseWriter wraps http.ResponseWriter to capture status and size.
 type responseWriter struct {
 	http.ResponseWriter
