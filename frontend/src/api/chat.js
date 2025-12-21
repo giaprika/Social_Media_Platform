@@ -1,8 +1,15 @@
 import chatApi from './chatAxios'
 import { filterOffensiveContent } from '../utils/contentFilter'
 
-// API paths - proxied through backend gateway to chat service
-const CHAT_PATH = '/api/chat'
+// API paths - direct to chat service (no gateway prefix)
+const CHAT_PATH = ''
+
+export const CHAT_MESSAGE_TYPES = {
+	TEXT: 'MESSAGE_TYPE_TEXT',
+	IMAGE: 'MESSAGE_TYPE_IMAGE',
+	VIDEO: 'MESSAGE_TYPE_VIDEO',
+	FILE: 'MESSAGE_TYPE_FILE',
+}
 
 /**
  * Generate a UUID v4
@@ -57,18 +64,34 @@ export const generateConversationIdForUsers = (userId1, userId2) => {
  * @param {string[]} [receiverIds] - Optional array of receiver user IDs (for adding participants)
  * @returns {Promise<{message_id: string, status: string}>}
  */
+
 export const sendMessage = async (
 	conversationId,
-	content,
-	receiverIds = null
+	content = '',
+	receiverIds = null,
+	options = {}
 ) => {
 	// ✨ Filter offensive content before sending
-	const filteredContent = await filterOffensiveContent(content)
-	
+	const normalizedContent = typeof content === 'string' ? content : ''
+	const filteredContent = await filterOffensiveContent(normalizedContent)
+	const { type, mediaUrl, mediaMetadata } = options || {}
+
 	const payload = {
 		conversation_id: conversationId,
 		content: filteredContent, // Use filtered content
 		idempotency_key: generateUUID(),
+	}
+
+	if (type) {
+		payload.type = type
+	}
+
+	if (mediaUrl) {
+		payload.media_url = mediaUrl
+	}
+
+	if (mediaMetadata) {
+		payload.media_metadata = mediaMetadata
 	}
 
 	// Add receiver_ids if provided (this adds recipients as participants)
@@ -76,7 +99,12 @@ export const sendMessage = async (
 		payload.receiver_ids = receiverIds
 	}
 
-	const response = await chatApi.post(`${CHAT_PATH}/v1/messages`, payload)
+	const response = await chatApi.post(`/v1/messages`, payload)
+	return response.data
+}
+
+export const getUploadCredentials = async () => {
+	const response = await chatApi.get(`/v1/upload-credentials`)
 	return response.data
 }
 
@@ -97,7 +125,7 @@ export const getMessages = async (
 	if (limit) params.append('limit', limit.toString())
 
 	const queryString = params.toString()
-	const url = `${CHAT_PATH}/v1/conversations/${conversationId}/messages${
+	const url = `/v1/conversations/${conversationId}/messages${
 		queryString ? '?' + queryString : ''
 	}`
 
@@ -118,9 +146,7 @@ export const getConversations = async ({ cursor, limit = 20 } = {}) => {
 	if (limit) params.append('limit', limit.toString())
 
 	const queryString = params.toString()
-	const url = `${CHAT_PATH}/v1/conversations${
-		queryString ? '?' + queryString : ''
-	}`
+	const url = `/v1/conversations${queryString ? '?' + queryString : ''}`
 
 	const response = await chatApi.get(url)
 	return response.data
@@ -133,7 +159,7 @@ export const getConversations = async ({ cursor, limit = 20 } = {}) => {
  */
 export const markAsRead = async (conversationId) => {
 	const response = await chatApi.post(
-		`${CHAT_PATH}/v1/conversations/${conversationId}/read`
+		`/v1/conversations/${conversationId}/read`
 	)
 	return response.data
 }
@@ -156,7 +182,8 @@ export const generateConversationId = () => {
 export const startConversation = async (
 	currentUserId,
 	recipientId,
-	content
+	content = '',
+	options = {}
 ) => {
 	// Generate deterministic conversation ID from both user IDs
 	const conversationId = generateConversationIdForUsers(
@@ -164,12 +191,30 @@ export const startConversation = async (
 		recipientId
 	)
 
-	const response = await chatApi.post(`${CHAT_PATH}/v1/messages`, {
+	const normalizedContent = typeof content === 'string' ? content : ''
+	const filteredContent = await filterOffensiveContent(normalizedContent)
+	const { type, mediaUrl, mediaMetadata } = options || {}
+
+	const payload = {
 		conversation_id: conversationId,
-		content: content,
+		content: filteredContent,
 		idempotency_key: generateUUID(),
 		receiver_ids: [recipientId], // Add recipient as participant
-	})
+	}
+
+	if (type) {
+		payload.type = type
+	}
+
+	if (mediaUrl) {
+		payload.media_url = mediaUrl
+	}
+
+	if (mediaMetadata) {
+		payload.media_metadata = mediaMetadata
+	}
+
+	const response = await chatApi.post(`/v1/messages`, payload)
 
 	return {
 		...response.data,
@@ -186,4 +231,6 @@ export default {
 	startConversation,
 	generateConversationIdForUsers,
 	generateUUID,
+	getUploadCredentials,
+	CHAT_MESSAGE_TYPES,
 }
