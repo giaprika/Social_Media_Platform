@@ -74,7 +74,7 @@ export const sendMessage = async (
 	// ✨ Filter offensive content before sending
 	const normalizedContent = typeof content === 'string' ? content : ''
 	const filteredContent = await filterOffensiveContent(normalizedContent)
-	const { type, mediaUrl, mediaMetadata } = options || {}
+	const { type, mediaUrl } = options || {}
 
 	const payload = {
 		conversation_id: conversationId,
@@ -88,10 +88,6 @@ export const sendMessage = async (
 
 	if (mediaUrl) {
 		payload.media_url = mediaUrl
-	}
-
-	if (mediaMetadata) {
-		payload.media_metadata = mediaMetadata
 	}
 
 	// Add receiver_ids if provided (this adds recipients as participants)
@@ -193,7 +189,7 @@ export const startConversation = async (
 
 	const normalizedContent = typeof content === 'string' ? content : ''
 	const filteredContent = await filterOffensiveContent(normalizedContent)
-	const { type, mediaUrl, mediaMetadata } = options || {}
+	const { type, mediaUrl } = options || {}
 
 	const payload = {
 		conversation_id: conversationId,
@@ -208,10 +204,6 @@ export const startConversation = async (
 
 	if (mediaUrl) {
 		payload.media_url = mediaUrl
-	}
-
-	if (mediaMetadata) {
-		payload.media_metadata = mediaMetadata
 	}
 
 	const response = await chatApi.post(`/v1/messages`, payload)

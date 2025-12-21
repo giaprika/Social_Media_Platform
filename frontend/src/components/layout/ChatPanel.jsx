@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   ArrowTopRightOnSquareIcon,
+  ArrowDownTrayIcon,
   ArrowsPointingOutIcon,
   ArrowsPointingInIcon,
   ChatBubbleOvalLeftEllipsisIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  FlagIcon,
   EnvelopeOpenIcon,
   PaperAirplaneIcon,
   PhotoIcon,
@@ -27,6 +29,7 @@ import {
   uploadImageToCloudinary,
   validateImageFile,
 } from 'src/services/chatMediaUpload'
+import { downloadReportFiles, reportMessageTokens } from 'src/services/chatReportService'
 
 const filterOptions = [
   { id: 'channels', label: 'Chat channels' },
@@ -170,7 +173,7 @@ const ConversationItem = ({ conversation, isActive, onClick, currentUserId, unre
 }
 
 // Message Component
-const MessageItem = ({ message, isOwn, senderName }) => {
+const MessageItem = ({ message, isOwn, senderName, onReport }) => {
   // Support both camelCase (from API) and snake_case (legacy)
   const createdAt = message.createdAt || message.created_at
   const timeAgo = createdAt
@@ -235,13 +238,25 @@ const MessageItem = ({ message, isOwn, senderName }) => {
           )}
         </div>
         {/* Time - only visible on hover */}
-        <span
-          className={clsx(
-            'text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap',
+        <div className="flex flex-col items-center gap-1">
+          <span
+            className={clsx(
+              'text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap',
+            )}
+          >
+            {timeAgo}
+          </span>
+          {!isOwn && onReport && (
+            <button
+              type="button"
+              onClick={() => onReport(message)}
+              className="rounded-full p-1 text-muted-foreground opacity-0 group-hover:opacity-100 transition-all hover:bg-muted"
+              title="Report tin nhắn"
+            >
+              <FlagIcon className="h-3.5 w-3.5" />
+            </button>
           )}
-        >
-          {timeAgo}
-        </span>
+        </div>
       </div>
     </div>
   )
@@ -267,13 +282,133 @@ const ChatView = ({ conversation }) => {
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
   const fileInputRef = useRef(null)
+  const previewUrlRef = useRef('')
+  const [reportModal, setReportModal] = useState({ isOpen: false, message: null })
+  const [selectedReportTokens, setSelectedReportTokens] = useState([])
+  const [customReportText, setCustomReportText] = useState('')
+  const [reportFeedback, setReportFeedback] = useState({ type: '', message: '' })
+  const [isReportSubmitting, setIsReportSubmitting] = useState(false)
 
   const currentUserId = authUser?.id
 
-  const resetAttachment = useCallback(() => {
-    if (imagePreviewUrl) {
-      URL.revokeObjectURL(imagePreviewUrl)
+  const buildTokenOptions = useCallback((text) => {
+    if (!text || typeof text !== 'string') return []
+    const segments = text
+      .split(/[^0-9A-Za-zÀ-ỹà-ỹ]+/u)
+      .map((segment) => segment.trim())
+      .filter((segment) => segment.length > 0)
+    const seen = new Set()
+    return segments
+      .map((segment) => {
+        const value = segment.toLowerCase()
+        if (seen.has(value)) {
+          return null
+        }
+        seen.add(value)
+        return { label: segment, value }
+      })
+      .filter(Boolean)
+  }, [])
+
+  const reportTokenOptions = useMemo(() => {
+    if (!reportModal.message?.content) return []
+    return buildTokenOptions(reportModal.message.content)
+  }, [reportModal.message?.content, buildTokenOptions])
+
+  const closeReportModal = useCallback(() => {
+    setReportModal({ isOpen: false, message: null })
+    setSelectedReportTokens([])
+    setCustomReportText('')
+    setReportFeedback({ type: '', message: '' })
+    setIsReportSubmitting(false)
+  }, [])
+
+  const openReportModal = useCallback((message) => {
+    if (!currentUserId) {
+      if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+        window.alert('Bạn cần đăng nhập để report tin nhắn.')
+      }
+      return
     }
+    setReportModal({ isOpen: true, message })
+    setSelectedReportTokens([])
+    setCustomReportText(message?.content || '')
+    setReportFeedback({ type: '', message: '' })
+  }, [currentUserId])
+
+  const toggleReportToken = (value) => {
+    setSelectedReportTokens((prev) =>
+      prev.includes(value) ? prev.filter((token) => token !== value) : [...prev, value]
+    )
+  }
+
+  const handleSubmitReport = async () => {
+    if (!reportModal.message) {
+      setReportFeedback({ type: 'error', message: 'Không tìm thấy tin nhắn để report.' })
+      return
+    }
+
+    if (!currentUserId) {
+      setReportFeedback({ type: 'error', message: 'Bạn cần đăng nhập để report tin nhắn.' })
+      return
+    }
+
+    const excerpt = customReportText.trim() || reportModal.message.content || ''
+    if (selectedReportTokens.length === 0 && !excerpt) {
+      setReportFeedback({ type: 'error', message: 'Chọn hoặc nhập phần nội dung muốn report.' })
+      return
+    }
+
+    try {
+      setIsReportSubmitting(true)
+      setReportFeedback({ type: '', message: '' })
+      const result = await reportMessageTokens({
+        reporterId: currentUserId,
+        messageId: reportModal.message.id,
+        conversationId:
+          reportModal.message.conversation_id ||
+          reportModal.message.conversationId ||
+          conversation.id,
+        tokens: selectedReportTokens,
+        excerpt,
+      })
+
+      if (result.addedWords?.length) {
+        setReportFeedback({
+          type: 'success',
+          message: `Đã ghi nhận report. Các từ mới được đẩy sang offensive_words.txt: ${result.addedWords.join(', ')}`,
+        })
+      } else {
+        setReportFeedback({
+          type: 'success',
+          message: 'Đã ghi nhận report. Khi một từ bị report đủ 3 lần, hệ thống sẽ tự cập nhật offensive_words.txt.',
+        })
+      }
+
+      setSelectedReportTokens([])
+      setTimeout(() => {
+        closeReportModal()
+      }, 1200)
+    } catch (error) {
+      setReportFeedback({
+        type: 'error',
+        message: error?.message || 'Không thể gửi report, vui lòng thử lại sau.',
+      })
+    } finally {
+      setIsReportSubmitting(false)
+    }
+  }
+
+  const handleReportMessage = useCallback((message) => {
+    openReportModal(message)
+  }, [openReportModal])
+
+  useEffect(() => {
+    previewUrlRef.current = imagePreviewUrl
+  }, [imagePreviewUrl])
+
+  const resetAttachment = useCallback(() => {
+    const previousUrl = previewUrlRef.current
     setSelectedImage(null)
     setImagePreviewUrl('')
     setAttachmentError('')
@@ -281,7 +416,11 @@ const ChatView = ({ conversation }) => {
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
-  }, [imagePreviewUrl])
+    if (previousUrl) {
+      previewUrlRef.current = ''
+      requestAnimationFrame(() => URL.revokeObjectURL(previousUrl))
+    }
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -292,8 +431,11 @@ const ChatView = ({ conversation }) => {
   }, [imagePreviewUrl])
 
   useEffect(() => {
-    resetAttachment()
-  }, [conversation?.id, resetAttachment])
+    if (conversation?.id) {
+      resetAttachment()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resetAttachment intentionally stable
+  }, [conversation?.id])
 
   // Get the other participant for direct chats
   const otherParticipant = conversation.participants?.find(
@@ -441,7 +583,7 @@ const ChatView = ({ conversation }) => {
   const isDirectChat = conversation.participants?.length === 2 || conversation.recipient
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative">
       {/* Chat Header */}
       <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
         {isDirectChat ? (
@@ -514,6 +656,7 @@ const ChatView = ({ conversation }) => {
               message={message}
               isOwn={isOwn}
               senderName={!isDirectChat ? getSenderName(senderId) : null}
+              onReport={handleReportMessage}
             />
           )
         })}
@@ -594,6 +737,103 @@ const ChatView = ({ conversation }) => {
           </button>
         </form>
       </div>
+
+      {reportModal.isOpen && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-4 shadow-2xl">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Report tin nhắn</p>
+                <p className="text-[11px] text-muted-foreground">Chọn phần nội dung độc hại để hệ thống ghi nhận.</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeReportModal}
+                className="rounded-full p-1 text-muted-foreground hover:bg-muted"
+                aria-label="Đóng report"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mb-3 rounded-xl bg-muted/40 p-3 text-sm text-foreground">
+              {reportModal.message?.content
+                ? reportModal.message.content
+                : 'Tin nhắn không có nội dung text. Hãy mô tả nội dung cần report trong ô bên dưới.'}
+            </div>
+
+            <div className="mb-3 space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground">Chọn từ/cụm từ cần report</p>
+              {reportTokenOptions.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {reportTokenOptions.map((token) => {
+                    const isActive = selectedReportTokens.includes(token.value)
+                    return (
+                      <button
+                        key={token.value}
+                        type="button"
+                        onClick={() => toggleReportToken(token.value)}
+                        className={clsx(
+                          'rounded-full border px-3 py-1 text-xs transition-all',
+                          isActive
+                            ? 'border-destructive bg-destructive text-destructive-foreground'
+                            : 'border-border bg-muted text-muted-foreground hover:border-foreground'
+                        )}
+                      >
+                        {token.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Tin nhắn này không có chữ, vui lòng nhập mô tả thủ công ở bên dưới.
+                </p>
+              )}
+            </div>
+
+            <textarea
+              rows={3}
+              value={customReportText}
+              onChange={(event) => setCustomReportText(event.target.value)}
+              placeholder="Nhập phần nội dung cụ thể mà bạn thấy độc hại..."
+              className="w-full rounded-2xl border border-border bg-background p-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Mỗi từ bị report &ge; 3 lần sẽ tự động bị xóa khỏi file thống kê và chuyển sang offensive_words.txt để chặn vĩnh viễn.
+            </p>
+
+            {reportFeedback.message && (
+              <p
+                className={clsx(
+                  'mt-2 text-xs font-semibold',
+                  reportFeedback.type === 'error' ? 'text-destructive' : 'text-emerald-600'
+                )}
+              >
+                {reportFeedback.message}
+              </p>
+            )}
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeReportModal}
+                className="rounded-full border border-border px-4 py-1.5 text-xs font-semibold text-foreground hover:bg-muted"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitReport}
+                disabled={isReportSubmitting}
+                className="rounded-full bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+              >
+                {isReportSubmitting ? 'Đang gửi...' : 'Gửi report'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -795,6 +1035,16 @@ const ChatPanel = ({ isOpen, onClose }) => {
   const [isMinimized, setIsMinimized] = useState(false)
   const [isExpanded, setIsExpanded] = useState(true)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const handleExportReports = useCallback(() => {
+    try {
+      downloadReportFiles()
+    } catch (error) {
+      console.error('[ChatPanel] Failed to export report files', error)
+      if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+        window.alert('Không thể tải file report trong môi trường hiện tại.')
+      }
+    }
+  }, [])
 
   // Auth
   const { user: authUser } = useAuth()
@@ -1010,6 +1260,15 @@ const ChatPanel = ({ isOpen, onClose }) => {
             title="New chat"
           >
             <PlusCircleIcon className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={handleExportReports}
+            className="rounded-full p-1.5 transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="Export report logs"
+            title="Tải file report"
+          >
+            <ArrowDownTrayIcon className="h-4 w-4" />
           </button>
           <div ref={dropdownRef} className="relative">
             <button
