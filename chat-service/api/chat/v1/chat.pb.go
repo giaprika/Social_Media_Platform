@@ -24,6 +24,62 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Message type enum
+type MessageType int32
+
+const (
+	MessageType_MESSAGE_TYPE_UNSPECIFIED MessageType = 0
+	MessageType_MESSAGE_TYPE_TEXT        MessageType = 1
+	MessageType_MESSAGE_TYPE_IMAGE       MessageType = 2
+	MessageType_MESSAGE_TYPE_VIDEO       MessageType = 3
+	MessageType_MESSAGE_TYPE_FILE        MessageType = 4
+)
+
+// Enum value maps for MessageType.
+var (
+	MessageType_name = map[int32]string{
+		0: "MESSAGE_TYPE_UNSPECIFIED",
+		1: "MESSAGE_TYPE_TEXT",
+		2: "MESSAGE_TYPE_IMAGE",
+		3: "MESSAGE_TYPE_VIDEO",
+		4: "MESSAGE_TYPE_FILE",
+	}
+	MessageType_value = map[string]int32{
+		"MESSAGE_TYPE_UNSPECIFIED": 0,
+		"MESSAGE_TYPE_TEXT":        1,
+		"MESSAGE_TYPE_IMAGE":       2,
+		"MESSAGE_TYPE_VIDEO":       3,
+		"MESSAGE_TYPE_FILE":        4,
+	}
+)
+
+func (x MessageType) Enum() *MessageType {
+	p := new(MessageType)
+	*p = x
+	return p
+}
+
+func (x MessageType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (MessageType) Descriptor() protoreflect.EnumDescriptor {
+	return file_chat_v1_chat_proto_enumTypes[0].Descriptor()
+}
+
+func (MessageType) Type() protoreflect.EnumType {
+	return &file_chat_v1_chat_proto_enumTypes[0]
+}
+
+func (x MessageType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use MessageType.Descriptor instead.
+func (MessageType) EnumDescriptor() ([]byte, []int) {
+	return file_chat_v1_chat_proto_rawDescGZIP(), []int{0}
+}
+
 type SendMessageRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
@@ -31,8 +87,11 @@ type SendMessageRequest struct {
 	Content        string   `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
 	IdempotencyKey string   `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	ReceiverIds    []string `protobuf:"bytes,5,rep,name=receiver_ids,json=receiverIds,proto3" json:"receiver_ids,omitempty"` // Optional list of receiver UUIDs
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Media support
+	Type          MessageType `protobuf:"varint,6,opt,name=type,proto3,enum=chat.v1.MessageType" json:"type,omitempty"` // TEXT, IMAGE, VIDEO, FILE (default: TEXT)
+	MediaUrl      string      `protobuf:"bytes,7,opt,name=media_url,json=mediaUrl,proto3" json:"media_url,omitempty"`   // URL of uploaded media (required for non-TEXT types)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SendMessageRequest) Reset() {
@@ -91,6 +150,20 @@ func (x *SendMessageRequest) GetReceiverIds() []string {
 		return x.ReceiverIds
 	}
 	return nil
+}
+
+func (x *SendMessageRequest) GetType() MessageType {
+	if x != nil {
+		return x.Type
+	}
+	return MessageType_MESSAGE_TYPE_UNSPECIFIED
+}
+
+func (x *SendMessageRequest) GetMediaUrl() string {
+	if x != nil {
+		return x.MediaUrl
+	}
+	return ""
 }
 
 type SendMessageResponse struct {
@@ -264,8 +337,11 @@ type ChatMessage struct {
 	SenderId       string                 `protobuf:"bytes,3,opt,name=sender_id,json=senderId,proto3" json:"sender_id,omitempty"`
 	Content        string                 `protobuf:"bytes,4,opt,name=content,proto3" json:"content,omitempty"`
 	CreatedAt      string                 `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Media support
+	Type          MessageType `protobuf:"varint,6,opt,name=type,proto3,enum=chat.v1.MessageType" json:"type,omitempty"`
+	MediaUrl      string      `protobuf:"bytes,7,opt,name=media_url,json=mediaUrl,proto3" json:"media_url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ChatMessage) Reset() {
@@ -329,6 +405,20 @@ func (x *ChatMessage) GetContent() string {
 func (x *ChatMessage) GetCreatedAt() string {
 	if x != nil {
 		return x.CreatedAt
+	}
+	return ""
+}
+
+func (x *ChatMessage) GetType() MessageType {
+	if x != nil {
+		return x.Type
+	}
+	return MessageType_MESSAGE_TYPE_UNSPECIFIED
+}
+
+func (x *ChatMessage) GetMediaUrl() string {
+	if x != nil {
+		return x.MediaUrl
 	}
 	return ""
 }
@@ -594,16 +684,131 @@ func (x *MarkAsReadResponse) GetSuccess() bool {
 	return false
 }
 
+// Upload credentials for Cloudinary
+type GetUploadCredentialsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetUploadCredentialsRequest) Reset() {
+	*x = GetUploadCredentialsRequest{}
+	mi := &file_chat_v1_chat_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUploadCredentialsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUploadCredentialsRequest) ProtoMessage() {}
+
+func (x *GetUploadCredentialsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_v1_chat_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUploadCredentialsRequest.ProtoReflect.Descriptor instead.
+func (*GetUploadCredentialsRequest) Descriptor() ([]byte, []int) {
+	return file_chat_v1_chat_proto_rawDescGZIP(), []int{10}
+}
+
+type GetUploadCredentialsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Signature     string                 `protobuf:"bytes,1,opt,name=signature,proto3" json:"signature,omitempty"`
+	Timestamp     int64                  `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	ApiKey        string                 `protobuf:"bytes,3,opt,name=api_key,json=apiKey,proto3" json:"api_key,omitempty"`
+	CloudName     string                 `protobuf:"bytes,4,opt,name=cloud_name,json=cloudName,proto3" json:"cloud_name,omitempty"`
+	Folder        string                 `protobuf:"bytes,5,opt,name=folder,proto3" json:"folder,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetUploadCredentialsResponse) Reset() {
+	*x = GetUploadCredentialsResponse{}
+	mi := &file_chat_v1_chat_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUploadCredentialsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUploadCredentialsResponse) ProtoMessage() {}
+
+func (x *GetUploadCredentialsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_v1_chat_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUploadCredentialsResponse.ProtoReflect.Descriptor instead.
+func (*GetUploadCredentialsResponse) Descriptor() ([]byte, []int) {
+	return file_chat_v1_chat_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *GetUploadCredentialsResponse) GetSignature() string {
+	if x != nil {
+		return x.Signature
+	}
+	return ""
+}
+
+func (x *GetUploadCredentialsResponse) GetTimestamp() int64 {
+	if x != nil {
+		return x.Timestamp
+	}
+	return 0
+}
+
+func (x *GetUploadCredentialsResponse) GetApiKey() string {
+	if x != nil {
+		return x.ApiKey
+	}
+	return ""
+}
+
+func (x *GetUploadCredentialsResponse) GetCloudName() string {
+	if x != nil {
+		return x.CloudName
+	}
+	return ""
+}
+
+func (x *GetUploadCredentialsResponse) GetFolder() string {
+	if x != nil {
+		return x.Folder
+	}
+	return ""
+}
+
 var File_chat_v1_chat_proto protoreflect.FileDescriptor
 
 const file_chat_v1_chat_proto_rawDesc = "" +
 	"\n" +
-	"\x12chat/v1/chat.proto\x12\achat.v1\x1a\x1cgoogle/api/annotations.proto\"\xa3\x01\n" +
+	"\x12chat/v1/chat.proto\x12\achat.v1\x1a\x1cgoogle/api/annotations.proto\"\xea\x01\n" +
 	"\x12SendMessageRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x18\n" +
 	"\acontent\x18\x03 \x01(\tR\acontent\x12'\n" +
 	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\x12!\n" +
-	"\freceiver_ids\x18\x05 \x03(\tR\vreceiverIds\"L\n" +
+	"\freceiver_ids\x18\x05 \x03(\tR\vreceiverIds\x12(\n" +
+	"\x04type\x18\x06 \x01(\x0e2\x14.chat.v1.MessageTypeR\x04type\x12\x1b\n" +
+	"\tmedia_url\x18\a \x01(\tR\bmediaUrl\"L\n" +
 	"\x13SendMessageResponse\x12\x1d\n" +
 	"\n" +
 	"message_id\x18\x01 \x01(\tR\tmessageId\x12\x16\n" +
@@ -615,14 +820,16 @@ const file_chat_v1_chat_proto_rawDesc = "" +
 	"\x13GetMessagesResponse\x120\n" +
 	"\bmessages\x18\x01 \x03(\v2\x14.chat.v1.ChatMessageR\bmessages\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
-	"nextCursor\"\x9c\x01\n" +
+	"nextCursor\"\xe3\x01\n" +
 	"\vChatMessage\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12'\n" +
 	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x12\x1b\n" +
 	"\tsender_id\x18\x03 \x01(\tR\bsenderId\x12\x18\n" +
 	"\acontent\x18\x04 \x01(\tR\acontent\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\tR\tcreatedAt\"G\n" +
+	"created_at\x18\x05 \x01(\tR\tcreatedAt\x12(\n" +
+	"\x04type\x18\x06 \x01(\x0e2\x14.chat.v1.MessageTypeR\x04type\x12\x1b\n" +
+	"\tmedia_url\x18\a \x01(\tR\bmediaUrl\"G\n" +
 	"\x17GetConversationsRequest\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\x12\x16\n" +
 	"\x06cursor\x18\x03 \x01(\tR\x06cursor\"x\n" +
@@ -638,13 +845,28 @@ const file_chat_v1_chat_proto_rawDesc = "" +
 	"\x11MarkAsReadRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\".\n" +
 	"\x12MarkAsReadResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess2\xe0\x03\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x1d\n" +
+	"\x1bGetUploadCredentialsRequest\"\xaa\x01\n" +
+	"\x1cGetUploadCredentialsResponse\x12\x1c\n" +
+	"\tsignature\x18\x01 \x01(\tR\tsignature\x12\x1c\n" +
+	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp\x12\x17\n" +
+	"\aapi_key\x18\x03 \x01(\tR\x06apiKey\x12\x1d\n" +
+	"\n" +
+	"cloud_name\x18\x04 \x01(\tR\tcloudName\x12\x16\n" +
+	"\x06folder\x18\x05 \x01(\tR\x06folder*\x89\x01\n" +
+	"\vMessageType\x12\x1c\n" +
+	"\x18MESSAGE_TYPE_UNSPECIFIED\x10\x00\x12\x15\n" +
+	"\x11MESSAGE_TYPE_TEXT\x10\x01\x12\x16\n" +
+	"\x12MESSAGE_TYPE_IMAGE\x10\x02\x12\x16\n" +
+	"\x12MESSAGE_TYPE_VIDEO\x10\x03\x12\x15\n" +
+	"\x11MESSAGE_TYPE_FILE\x10\x042\xe6\x04\n" +
 	"\vChatService\x12a\n" +
 	"\vSendMessage\x12\x1b.chat.v1.SendMessageRequest\x1a\x1c.chat.v1.SendMessageResponse\"\x17\x82\xd3\xe4\x93\x02\x11:\x01*\"\f/v1/messages\x12~\n" +
 	"\vGetMessages\x12\x1b.chat.v1.GetMessagesRequest\x1a\x1c.chat.v1.GetMessagesResponse\"4\x82\xd3\xe4\x93\x02.\x12,/v1/conversations/{conversation_id}/messages\x12r\n" +
 	"\x10GetConversations\x12 .chat.v1.GetConversationsRequest\x1a!.chat.v1.GetConversationsResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/conversations\x12z\n" +
 	"\n" +
-	"MarkAsRead\x12\x1a.chat.v1.MarkAsReadRequest\x1a\x1b.chat.v1.MarkAsReadResponse\"3\x82\xd3\xe4\x93\x02-:\x01*\"(/v1/conversations/{conversation_id}/readBv\n" +
+	"MarkAsRead\x12\x1a.chat.v1.MarkAsReadRequest\x1a\x1b.chat.v1.MarkAsReadResponse\"3\x82\xd3\xe4\x93\x02-:\x01*\"(/v1/conversations/{conversation_id}/read\x12\x83\x01\n" +
+	"\x14GetUploadCredentials\x12$.chat.v1.GetUploadCredentialsRequest\x1a%.chat.v1.GetUploadCredentialsResponse\"\x1e\x82\xd3\xe4\x93\x02\x18\x12\x16/v1/upload-credentialsBv\n" +
 	"\vcom.chat.v1B\tChatProtoP\x01Z\x1fchat-service/api/chat/v1;chatv1\xa2\x02\x03CXX\xaa\x02\aChat.V1\xca\x02\aChat\\V1\xe2\x02\x13Chat\\V1\\GPBMetadata\xea\x02\bChat::V1b\x06proto3"
 
 var (
@@ -659,35 +881,43 @@ func file_chat_v1_chat_proto_rawDescGZIP() []byte {
 	return file_chat_v1_chat_proto_rawDescData
 }
 
-var file_chat_v1_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_chat_v1_chat_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_chat_v1_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_chat_v1_chat_proto_goTypes = []any{
-	(*SendMessageRequest)(nil),       // 0: chat.v1.SendMessageRequest
-	(*SendMessageResponse)(nil),      // 1: chat.v1.SendMessageResponse
-	(*GetMessagesRequest)(nil),       // 2: chat.v1.GetMessagesRequest
-	(*GetMessagesResponse)(nil),      // 3: chat.v1.GetMessagesResponse
-	(*ChatMessage)(nil),              // 4: chat.v1.ChatMessage
-	(*GetConversationsRequest)(nil),  // 5: chat.v1.GetConversationsRequest
-	(*GetConversationsResponse)(nil), // 6: chat.v1.GetConversationsResponse
-	(*Conversation)(nil),             // 7: chat.v1.Conversation
-	(*MarkAsReadRequest)(nil),        // 8: chat.v1.MarkAsReadRequest
-	(*MarkAsReadResponse)(nil),       // 9: chat.v1.MarkAsReadResponse
+	(MessageType)(0),                     // 0: chat.v1.MessageType
+	(*SendMessageRequest)(nil),           // 1: chat.v1.SendMessageRequest
+	(*SendMessageResponse)(nil),          // 2: chat.v1.SendMessageResponse
+	(*GetMessagesRequest)(nil),           // 3: chat.v1.GetMessagesRequest
+	(*GetMessagesResponse)(nil),          // 4: chat.v1.GetMessagesResponse
+	(*ChatMessage)(nil),                  // 5: chat.v1.ChatMessage
+	(*GetConversationsRequest)(nil),      // 6: chat.v1.GetConversationsRequest
+	(*GetConversationsResponse)(nil),     // 7: chat.v1.GetConversationsResponse
+	(*Conversation)(nil),                 // 8: chat.v1.Conversation
+	(*MarkAsReadRequest)(nil),            // 9: chat.v1.MarkAsReadRequest
+	(*MarkAsReadResponse)(nil),           // 10: chat.v1.MarkAsReadResponse
+	(*GetUploadCredentialsRequest)(nil),  // 11: chat.v1.GetUploadCredentialsRequest
+	(*GetUploadCredentialsResponse)(nil), // 12: chat.v1.GetUploadCredentialsResponse
 }
 var file_chat_v1_chat_proto_depIdxs = []int32{
-	4, // 0: chat.v1.GetMessagesResponse.messages:type_name -> chat.v1.ChatMessage
-	7, // 1: chat.v1.GetConversationsResponse.conversations:type_name -> chat.v1.Conversation
-	0, // 2: chat.v1.ChatService.SendMessage:input_type -> chat.v1.SendMessageRequest
-	2, // 3: chat.v1.ChatService.GetMessages:input_type -> chat.v1.GetMessagesRequest
-	5, // 4: chat.v1.ChatService.GetConversations:input_type -> chat.v1.GetConversationsRequest
-	8, // 5: chat.v1.ChatService.MarkAsRead:input_type -> chat.v1.MarkAsReadRequest
-	1, // 6: chat.v1.ChatService.SendMessage:output_type -> chat.v1.SendMessageResponse
-	3, // 7: chat.v1.ChatService.GetMessages:output_type -> chat.v1.GetMessagesResponse
-	6, // 8: chat.v1.ChatService.GetConversations:output_type -> chat.v1.GetConversationsResponse
-	9, // 9: chat.v1.ChatService.MarkAsRead:output_type -> chat.v1.MarkAsReadResponse
-	6, // [6:10] is the sub-list for method output_type
-	2, // [2:6] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	0,  // 0: chat.v1.SendMessageRequest.type:type_name -> chat.v1.MessageType
+	5,  // 1: chat.v1.GetMessagesResponse.messages:type_name -> chat.v1.ChatMessage
+	0,  // 2: chat.v1.ChatMessage.type:type_name -> chat.v1.MessageType
+	8,  // 3: chat.v1.GetConversationsResponse.conversations:type_name -> chat.v1.Conversation
+	1,  // 4: chat.v1.ChatService.SendMessage:input_type -> chat.v1.SendMessageRequest
+	3,  // 5: chat.v1.ChatService.GetMessages:input_type -> chat.v1.GetMessagesRequest
+	6,  // 6: chat.v1.ChatService.GetConversations:input_type -> chat.v1.GetConversationsRequest
+	9,  // 7: chat.v1.ChatService.MarkAsRead:input_type -> chat.v1.MarkAsReadRequest
+	11, // 8: chat.v1.ChatService.GetUploadCredentials:input_type -> chat.v1.GetUploadCredentialsRequest
+	2,  // 9: chat.v1.ChatService.SendMessage:output_type -> chat.v1.SendMessageResponse
+	4,  // 10: chat.v1.ChatService.GetMessages:output_type -> chat.v1.GetMessagesResponse
+	7,  // 11: chat.v1.ChatService.GetConversations:output_type -> chat.v1.GetConversationsResponse
+	10, // 12: chat.v1.ChatService.MarkAsRead:output_type -> chat.v1.MarkAsReadResponse
+	12, // 13: chat.v1.ChatService.GetUploadCredentials:output_type -> chat.v1.GetUploadCredentialsResponse
+	9,  // [9:14] is the sub-list for method output_type
+	4,  // [4:9] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_chat_v1_chat_proto_init() }
@@ -700,13 +930,14 @@ func file_chat_v1_chat_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chat_v1_chat_proto_rawDesc), len(file_chat_v1_chat_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   10,
+			NumEnums:      1,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_chat_v1_chat_proto_goTypes,
 		DependencyIndexes: file_chat_v1_chat_proto_depIdxs,
+		EnumInfos:         file_chat_v1_chat_proto_enumTypes,
 		MessageInfos:      file_chat_v1_chat_proto_msgTypes,
 	}.Build()
 	File_chat_v1_chat_proto = out.File

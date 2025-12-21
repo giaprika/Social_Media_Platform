@@ -21,10 +21,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ChatService_SendMessage_FullMethodName      = "/chat.v1.ChatService/SendMessage"
-	ChatService_GetMessages_FullMethodName      = "/chat.v1.ChatService/GetMessages"
-	ChatService_GetConversations_FullMethodName = "/chat.v1.ChatService/GetConversations"
-	ChatService_MarkAsRead_FullMethodName       = "/chat.v1.ChatService/MarkAsRead"
+	ChatService_SendMessage_FullMethodName          = "/chat.v1.ChatService/SendMessage"
+	ChatService_GetMessages_FullMethodName          = "/chat.v1.ChatService/GetMessages"
+	ChatService_GetConversations_FullMethodName     = "/chat.v1.ChatService/GetConversations"
+	ChatService_MarkAsRead_FullMethodName           = "/chat.v1.ChatService/MarkAsRead"
+	ChatService_GetUploadCredentials_FullMethodName = "/chat.v1.ChatService/GetUploadCredentials"
 )
 
 // ChatServiceClient is the client API for ChatService service.
@@ -39,6 +40,8 @@ type ChatServiceClient interface {
 	GetConversations(ctx context.Context, in *GetConversationsRequest, opts ...grpc.CallOption) (*GetConversationsResponse, error)
 	// Đánh dấu tin nhắn đã đọc
 	MarkAsRead(ctx context.Context, in *MarkAsReadRequest, opts ...grpc.CallOption) (*MarkAsReadResponse, error)
+	// Lấy credentials để upload ảnh lên Cloudinary
+	GetUploadCredentials(ctx context.Context, in *GetUploadCredentialsRequest, opts ...grpc.CallOption) (*GetUploadCredentialsResponse, error)
 }
 
 type chatServiceClient struct {
@@ -89,6 +92,16 @@ func (c *chatServiceClient) MarkAsRead(ctx context.Context, in *MarkAsReadReques
 	return out, nil
 }
 
+func (c *chatServiceClient) GetUploadCredentials(ctx context.Context, in *GetUploadCredentialsRequest, opts ...grpc.CallOption) (*GetUploadCredentialsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetUploadCredentialsResponse)
+	err := c.cc.Invoke(ctx, ChatService_GetUploadCredentials_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ChatServiceServer is the server API for ChatService service.
 // All implementations must embed UnimplementedChatServiceServer
 // for forward compatibility.
@@ -101,6 +114,8 @@ type ChatServiceServer interface {
 	GetConversations(context.Context, *GetConversationsRequest) (*GetConversationsResponse, error)
 	// Đánh dấu tin nhắn đã đọc
 	MarkAsRead(context.Context, *MarkAsReadRequest) (*MarkAsReadResponse, error)
+	// Lấy credentials để upload ảnh lên Cloudinary
+	GetUploadCredentials(context.Context, *GetUploadCredentialsRequest) (*GetUploadCredentialsResponse, error)
 	mustEmbedUnimplementedChatServiceServer()
 }
 
@@ -122,6 +137,9 @@ func (UnimplementedChatServiceServer) GetConversations(context.Context, *GetConv
 }
 func (UnimplementedChatServiceServer) MarkAsRead(context.Context, *MarkAsReadRequest) (*MarkAsReadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MarkAsRead not implemented")
+}
+func (UnimplementedChatServiceServer) GetUploadCredentials(context.Context, *GetUploadCredentialsRequest) (*GetUploadCredentialsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetUploadCredentials not implemented")
 }
 func (UnimplementedChatServiceServer) mustEmbedUnimplementedChatServiceServer() {}
 func (UnimplementedChatServiceServer) testEmbeddedByValue()                     {}
@@ -216,6 +234,24 @@ func _ChatService_MarkAsRead_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ChatService_GetUploadCredentials_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetUploadCredentialsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ChatServiceServer).GetUploadCredentials(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ChatService_GetUploadCredentials_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ChatServiceServer).GetUploadCredentials(ctx, req.(*GetUploadCredentialsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ChatService_ServiceDesc is the grpc.ServiceDesc for ChatService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -238,6 +274,10 @@ var ChatService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MarkAsRead",
 			Handler:    _ChatService_MarkAsRead_Handler,
+		},
+		{
+			MethodName: "GetUploadCredentials",
+			Handler:    _ChatService_GetUploadCredentials_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

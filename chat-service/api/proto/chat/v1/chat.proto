@@ -38,6 +38,13 @@ service ChatService {
       body: "*"
     };
   }
+
+  // Lấy credentials để upload ảnh lên Cloudinary
+  rpc GetUploadCredentials(GetUploadCredentialsRequest) returns (GetUploadCredentialsResponse) {
+    option (google.api.http) = {
+      get: "/v1/upload-credentials"
+    };
+  }
 }
 
 message SendMessageRequest {
@@ -46,6 +53,19 @@ message SendMessageRequest {
   string content = 3;
   string idempotency_key = 4;
   repeated string receiver_ids = 5; // Optional list of receiver UUIDs
+  
+  // Media support
+  MessageType type = 6; // TEXT, IMAGE, VIDEO, FILE (default: TEXT)
+  string media_url = 7; // URL of uploaded media (required for non-TEXT types)
+}
+
+// Message type enum
+enum MessageType {
+  MESSAGE_TYPE_UNSPECIFIED = 0;
+  MESSAGE_TYPE_TEXT = 1;
+  MESSAGE_TYPE_IMAGE = 2;
+  MESSAGE_TYPE_VIDEO = 3;
+  MESSAGE_TYPE_FILE = 4;
 }
 
 message SendMessageResponse {
@@ -70,6 +90,10 @@ message ChatMessage {
   string sender_id = 3;
   string content = 4;
   string created_at = 5;
+  
+  // Media support
+  MessageType type = 6;
+  string media_url = 7;
 }
 
 message GetConversationsRequest {
@@ -97,4 +121,17 @@ message MarkAsReadRequest {
 
 message MarkAsReadResponse {
   bool success = 1;
+}
+
+// Upload credentials for Cloudinary
+message GetUploadCredentialsRequest {
+  // user_id is extracted from JWT token via auth middleware
+}
+
+message GetUploadCredentialsResponse {
+  string signature = 1;
+  int64 timestamp = 2;
+  string api_key = 3;
+  string cloud_name = 4;
+  string folder = 5;
 }
