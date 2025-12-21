@@ -1,45 +1,38 @@
-import { appendCustomOffensiveWords } from 'src/utils/contentFilter'
+import {
+	appendCustomOffensiveWords,
+	getCustomOffensiveWords,
+} from 'src/utils/contentFilter'
 
-const REPORT_LOG_KEY = 'chat_report_logs'
-const REPORT_COUNT_KEY = 'chat_report_word_counts'
 const REPORT_THRESHOLD = 3
+const REPORT_LOG_FILENAME = 'reported_messages.txt'
+const REPORT_COUNT_FILENAME = 'reported_word_counts.txt'
+const OFFENSIVE_WORDS_FILENAME = 'offensive_words.txt'
 
 const isBrowser =
-	typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
+	typeof window !== 'undefined' && typeof document !== 'undefined'
 
-const readStorage = (key, fallback) => {
-	if (!isBrowser) return fallback
+let reportEntries = []
+let wordCounts = {}
+let baseOffensiveWordsCache = null
+
+const loadBaseOffensiveWords = async () => {
+	if (baseOffensiveWordsCache) return baseOffensiveWordsCache
 	try {
-		const raw = window.localStorage.getItem(key)
-		if (!raw) return fallback
-		const parsed = JSON.parse(raw)
-		return parsed ?? fallback
+		const response = await fetch('/offensive_words.txt')
+		const text = await response.text()
+		baseOffensiveWordsCache = text
+			.split('\n')
+			.map((line) => line.trim().toLowerCase())
+			.filter((line) => line.length > 0)
+		return baseOffensiveWordsCache
 	} catch (error) {
-		console.warn('[ChatReportService] Failed to parse storage key', key, error)
-		return fallback
+		console.warn('[ChatReportService] Cannot load offensive_words.txt', error)
+		baseOffensiveWordsCache = []
+		return baseOffensiveWordsCache
 	}
 }
 
-const writeStorage = (key, value) => {
-	if (!isBrowser) return
-	try {
-		window.localStorage.setItem(key, JSON.stringify(value))
-	} catch (error) {
-		console.warn('[ChatReportService] Failed to write storage key', key, error)
-	}
-}
-
-const tokenize = (text = '') => {
-	return text
-		.toLowerCase()
-		.split(
-			/[^a-z0-9àáảãạăắằẳẵặâấầẩẫậđéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵ]+/i
-		)
-		.map((token) => token.trim())
-		.filter((token) => token.length > 0)
-}
-
-const sanitizeTokens = (tokens = [], fallbackText = '') => {
+const sanitizeTokens = (tokens = []) => {
 	const normalized = []
 	const seen = new Set()
 
@@ -51,116 +44,15 @@ const sanitizeTokens = (tokens = [], fallbackText = '') => {
 		normalized.push(cleaned)
 	})
 
-	if (normalized.length > 0) {
-		return normalized
-	}
-
-	const fallbackTokens = tokenize(fallbackText)
-	fallbackTokens.forEach((token) => {
-		if (!seen.has(token)) {
-			seen.add(token)
-			normalized.push(token)
-		}
-	})
-
 	return normalized
 }
 
 const appendLogEntry = (entry) => {
-	const logs = readStorage(REPORT_LOG_KEY, [])
-	logs.push(entry)
-	writeStorage(REPORT_LOG_KEY, logs)
-}
-
-const updateWordCounts = async (tokens) => {
-	const counts = readStorage(REPORT_COUNT_KEY, {})
-	const promoted = []
-
-	tokens.forEach((token) => {
-		const nextValue = (counts[token] || 0) + 1
-		counts[token] = nextValue
-		if (nextValue >= REPORT_THRESHOLD) {
-			promoted.push(token)
-			delete counts[token]
-		}
-	})
-
-	writeStorage(REPORT_COUNT_KEY, counts)
-
-	if (promoted.length > 0) {
-		await appendCustomOffensiveWords(promoted)
-	}
-
-	return { countsSnapshot: counts, promoted }
-}
-
-export const reportMessageTokens = async ({
-	reporterId,
-	messageId,
-	conversationId,
-	tokens = [],
-	excerpt = '',
-}) => {
-	if (!isBrowser) {
-		throw new Error('Trình duyệt đang chạy ở chế độ không hỗ trợ localStorage')
-	}
-	if (!reporterId) {
-		throw new Error('Bạn cần đăng nhập để report tin nhắn')
-	}
-	if (!messageId) {
-		throw new Error('Thiếu thông tin tin nhắn để report')
-	}
-
-	const normalizedTokens = sanitizeTokens(tokens, excerpt)
-	if (normalizedTokens.length === 0) {
-		throw new Error('Hãy chọn hoặc nhập phần nội dung muốn report')
-	}
-
-	const entry = {
-		id: `${messageId}_${Date.now()}`,
-		reporterId,
-		messageId,
-		conversationId,
-		excerpt: excerpt?.trim() || '',
-		tokens: normalizedTokens,
-		timestamp: new Date().toISOString(),
-	}
-
-	appendLogEntry(entry)
-
-	const { promoted } = await updateWordCounts(normalizedTokens)
-
-	return {
-		tokens: normalizedTokens,
-		addedWords: promoted,
-	}
-}
-
-const formatLogLines = (logs) => {
-	if (!logs.length) {
-		return 'Chưa có báo cáo nào.'
-	}
-	return logs
-		.map((entry) => {
-			const segment = entry.excerpt ? ` | trích dẫn: ${entry.excerpt}` : ''
-			return `[${entry.timestamp}] convo:${entry.conversationId || 'n/a'} msg:${
-				entry.messageId
-			} người báo cáo:${entry.reporterId} | các từ: ${entry.tokens.join(
-				', '
-			)}${segment}`
-		})
-		.join('\n')
-}
-
-const formatCounts = (counts) => {
-	const entries = Object.entries(counts || {})
-	if (!entries.length) {
-		return 'Không có từ chờ duyệt.'
-	}
-	return entries.map(([word, count]) => `${word}=${count}`).join('\n')
+	reportEntries.push(entry)
 }
 
 const triggerDownload = (filename, content) => {
+	if (!isBrowser) return
 	const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
 	const url = URL.createObjectURL(blob)
 	const link = document.createElement('a')
@@ -172,17 +64,122 @@ const triggerDownload = (filename, content) => {
 	URL.revokeObjectURL(url)
 }
 
+const mergeOffensiveWordList = async () => {
+	const baseList = await loadBaseOffensiveWords()
+	const customExtras = getCustomOffensiveWords()
+	const merged = new Set([...baseList, ...customExtras])
+	return Array.from(merged)
+		.filter((word) => word.length > 0)
+		.sort()
+}
+
+const downloadOffensiveWordsFile = async () => {
+	const content = (await mergeOffensiveWordList()).join('\n')
+	if (!content.length) return
+	triggerDownload(OFFENSIVE_WORDS_FILENAME, content)
+	baseOffensiveWordsCache = content
+		.split('\n')
+		.map((line) => line.trim().toLowerCase())
+		.filter((line) => line.length > 0)
+}
+
+const updateWordCounts = async (tokens) => {
+	const promoted = []
+
+	tokens.forEach((token) => {
+		const nextValue = (wordCounts[token] || 0) + 1
+		wordCounts[token] = nextValue
+		if (nextValue >= REPORT_THRESHOLD) {
+			promoted.push(token)
+			delete wordCounts[token]
+		}
+	})
+
+	if (promoted.length > 0) {
+		await appendCustomOffensiveWords(promoted)
+		await downloadOffensiveWordsFile()
+	}
+
+	return { promoted }
+}
+
+const formatLogLines = () => {
+	if (!reportEntries.length) {
+		return 'Chưa có báo cáo nào.'
+	}
+	return reportEntries
+		.map((entry) => {
+			return `[${entry.timestamp}] convo:${entry.conversationId || 'n/a'} msg:${
+				entry.messageId
+			} người báo cáo:${entry.reporterId} | các từ: ${entry.tokens.join(', ')}`
+		})
+		.join('\n')
+}
+
+const formatCounts = () => {
+	const entries = Object.entries(wordCounts || {})
+	if (!entries.length) {
+		return 'Không có từ chờ duyệt.'
+	}
+	return entries.map(([word, count]) => `${word}=${count}`).join('\n')
+}
+
+const persistReportFiles = () => {
+	if (!isBrowser) return
+	triggerDownload(REPORT_LOG_FILENAME, formatLogLines())
+	triggerDownload(REPORT_COUNT_FILENAME, formatCounts())
+}
+
+export const reportMessageTokens = async ({
+	reporterId,
+	messageId,
+	conversationId,
+	tokens = [],
+}) => {
+	if (!isBrowser) {
+		throw new Error('Trình duyệt hiện không hỗ trợ thao tác file báo cáo')
+	}
+	if (!reporterId) {
+		throw new Error('Bạn cần đăng nhập để report tin nhắn')
+	}
+	if (!messageId) {
+		throw new Error('Thiếu thông tin tin nhắn để report')
+	}
+
+	const normalizedTokens = sanitizeTokens(tokens)
+	if (normalizedTokens.length === 0) {
+		throw new Error('Hãy chọn ít nhất một từ để report')
+	}
+
+	const entry = {
+		id: `${messageId}_${Date.now()}`,
+		reporterId,
+		messageId,
+		conversationId,
+		excerpt: normalizedTokens.join(', '),
+		tokens: normalizedTokens,
+		timestamp: new Date().toISOString(),
+	}
+
+	appendLogEntry(entry)
+
+	const { promoted } = await updateWordCounts(normalizedTokens)
+
+	persistReportFiles()
+
+	return {
+		tokens: normalizedTokens,
+		addedWords: promoted,
+	}
+}
+
 export const downloadReportFiles = () => {
 	if (!isBrowser) {
 		throw new Error('Chức năng export chỉ dùng được trên trình duyệt')
 	}
-	const logs = readStorage(REPORT_LOG_KEY, [])
-	const counts = readStorage(REPORT_COUNT_KEY, {})
-	triggerDownload('reported_messages.txt', formatLogLines(logs))
-	triggerDownload('reported_word_counts.txt', formatCounts(counts))
+	persistReportFiles()
 }
 
 export const getPendingWordCounts = () => {
-	const counts = readStorage(REPORT_COUNT_KEY, {})
-	return counts
+	return { ...wordCounts }
 }

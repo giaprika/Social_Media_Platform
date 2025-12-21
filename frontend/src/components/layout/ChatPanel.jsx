@@ -285,7 +285,6 @@ const ChatView = ({ conversation }) => {
   const previewUrlRef = useRef('')
   const [reportModal, setReportModal] = useState({ isOpen: false, message: null })
   const [selectedReportTokens, setSelectedReportTokens] = useState([])
-  const [customReportText, setCustomReportText] = useState('')
   const [reportFeedback, setReportFeedback] = useState({ type: '', message: '' })
   const [isReportSubmitting, setIsReportSubmitting] = useState(false)
 
@@ -293,21 +292,40 @@ const ChatView = ({ conversation }) => {
 
   const buildTokenOptions = useCallback((text) => {
     if (!text || typeof text !== 'string') return []
-    const segments = text
-      .split(/[^0-9A-Za-zÀ-ỹà-ỹ]+/u)
+
+    const tokens = []
+    const seen = new Set()
+
+    const addToken = (segment) => {
+      const trimmed = segment.trim()
+      if (!trimmed) return
+      const value = trimmed.toLowerCase()
+      if (seen.has(value)) return
+      seen.add(value)
+      tokens.push({ label: trimmed, value })
+    }
+
+    const rawSegments = text
+      .split(/\s+/u)
       .map((segment) => segment.trim())
       .filter((segment) => segment.length > 0)
-    const seen = new Set()
-    return segments
-      .map((segment) => {
-        const value = segment.toLowerCase()
-        if (seen.has(value)) {
-          return null
-        }
-        seen.add(value)
-        return { label: segment, value }
-      })
-      .filter(Boolean)
+
+    rawSegments.forEach((segment) => {
+      addToken(segment)
+
+      const hasSpecial = /[^0-9A-Za-zÀ-ỹà-ỹ]/u.test(segment)
+      if (hasSpecial) {
+        return
+      }
+
+      segment
+        .split(/[^0-9A-Za-zÀ-ỹà-ỹ]+/u)
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0)
+        .forEach((part) => addToken(part))
+    })
+
+    return tokens
   }, [])
 
   const reportTokenOptions = useMemo(() => {
@@ -315,10 +333,11 @@ const ChatView = ({ conversation }) => {
     return buildTokenOptions(reportModal.message.content)
   }, [reportModal.message?.content, buildTokenOptions])
 
+  const canSubmitReport = reportTokenOptions.length > 0 && selectedReportTokens.length > 0
+
   const closeReportModal = useCallback(() => {
     setReportModal({ isOpen: false, message: null })
     setSelectedReportTokens([])
-    setCustomReportText('')
     setReportFeedback({ type: '', message: '' })
     setIsReportSubmitting(false)
   }, [])
@@ -332,7 +351,6 @@ const ChatView = ({ conversation }) => {
     }
     setReportModal({ isOpen: true, message })
     setSelectedReportTokens([])
-    setCustomReportText(message?.content || '')
     setReportFeedback({ type: '', message: '' })
   }, [currentUserId])
 
@@ -353,9 +371,8 @@ const ChatView = ({ conversation }) => {
       return
     }
 
-    const excerpt = customReportText.trim() || reportModal.message.content || ''
-    if (selectedReportTokens.length === 0 && !excerpt) {
-      setReportFeedback({ type: 'error', message: 'Chọn hoặc nhập phần nội dung muốn report.' })
+    if (selectedReportTokens.length === 0) {
+      setReportFeedback({ type: 'error', message: 'Hãy chọn ít nhất một từ để report.' })
       return
     }
 
@@ -370,18 +387,17 @@ const ChatView = ({ conversation }) => {
           reportModal.message.conversationId ||
           conversation.id,
         tokens: selectedReportTokens,
-        excerpt,
       })
 
       if (result.addedWords?.length) {
         setReportFeedback({
           type: 'success',
-          message: `Đã ghi nhận report. Các từ mới được đẩy sang offensive_words.txt: ${result.addedWords.join(', ')}`,
+          message: `Đã cập nhật file report và thêm vào offensive_words.txt: ${result.addedWords.join(', ')}`,
         })
       } else {
         setReportFeedback({
           type: 'success',
-          message: 'Đã ghi nhận report. Khi một từ bị report đủ 3 lần, hệ thống sẽ tự cập nhật offensive_words.txt.',
+          message: 'Đã ghi nhận report và tải lại reported_messages.txt / reported_word_counts.txt.',
         })
       }
 
@@ -762,7 +778,7 @@ const ChatView = ({ conversation }) => {
                 : 'Tin nhắn không có nội dung text. Hãy mô tả nội dung cần report trong ô bên dưới.'}
             </div>
 
-            <div className="mb-3 space-y-2">
+            <div className="mb-4 space-y-2">
               <p className="text-xs font-semibold text-muted-foreground">Chọn từ/cụm từ cần report</p>
               {reportTokenOptions.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
@@ -786,22 +802,11 @@ const ChatView = ({ conversation }) => {
                   })}
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground">
-                  Tin nhắn này không có chữ, vui lòng nhập mô tả thủ công ở bên dưới.
+                <p className="text-xs text-destructive">
+                  Tin nhắn này không chứa ký tự văn bản nên không thể report.
                 </p>
               )}
             </div>
-
-            <textarea
-              rows={3}
-              value={customReportText}
-              onChange={(event) => setCustomReportText(event.target.value)}
-              placeholder="Nhập phần nội dung cụ thể mà bạn thấy độc hại..."
-              className="w-full rounded-2xl border border-border bg-background p-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-            <p className="mt-2 text-[11px] text-muted-foreground">
-              Mỗi từ bị report &ge; 3 lần sẽ tự động bị xóa khỏi file thống kê và chuyển sang offensive_words.txt để chặn vĩnh viễn.
-            </p>
 
             {reportFeedback.message && (
               <p
@@ -825,7 +830,7 @@ const ChatView = ({ conversation }) => {
               <button
                 type="button"
                 onClick={handleSubmitReport}
-                disabled={isReportSubmitting}
+                disabled={!canSubmitReport || isReportSubmitting}
                 className="rounded-full bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50"
               >
                 {isReportSubmitting ? 'Đang gửi...' : 'Gửi report'}
