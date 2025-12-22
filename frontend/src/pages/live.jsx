@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ArrowTopRightOnSquareIcon,
   BoltIcon,
@@ -125,6 +126,7 @@ import { createStream, getLiveFeed, LIVE_SERVICE_BASE_URL } from "src/api/live";
 
   const LiveStreams = () => {
     const toast = useToast();
+    const navigate = useNavigate();
     const [streams, setStreams] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -132,16 +134,8 @@ import { createStream, getLiveFeed, LIVE_SERVICE_BASE_URL } from "src/api/live";
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [createForm, setCreateForm] = useState({ title: "", description: "" });
     const [creating, setCreating] = useState(false);
-    const [createdStream, setCreatedStream] = useState(null);
-    const [isStreaming, setIsStreaming] = useState(false);
-    const [sessionStart, setSessionStart] = useState(null);
-    const [sessionTick, setSessionTick] = useState(0);
 
-    useEffect(() => {
-      if (!isStreaming) return undefined;
-      const timer = setInterval(() => setSessionTick((tick) => tick + 1), 1000);
-      return () => clearInterval(timer);
-    }, [isStreaming]);
+
 
     const loadStreams = useCallback(async () => {
       setLoading(true);
@@ -237,11 +231,16 @@ import { createStream, getLiveFeed, LIVE_SERVICE_BASE_URL } from "src/api/live";
           description: createForm.description.trim() || undefined,
         };
         const { data } = await createStream(payload);
-        setCreatedStream(data);
-        setIsStreaming(false);
-        setSessionStart(null);
-        setSessionTick(0);
-        toast.success("Đã tạo stream. Bắt đầu phát để lên sóng!");
+        toast.success("Stream đã sẵn sàng! Chuyển đến studio...");
+        
+        // Navigate to studio page with stream data
+        setTimeout(() => {
+          navigate("/app/live/studio", { 
+            state: { 
+              stream: data 
+            } 
+          });
+        }, 500);
       } catch (err) {
         console.error("Failed to create stream", err);
         const message =
@@ -255,10 +254,6 @@ import { createStream, getLiveFeed, LIVE_SERVICE_BASE_URL } from "src/api/live";
     const resetModalState = () => {
       setCreateForm({ title: "", description: "" });
       setCreating(false);
-      setCreatedStream(null);
-      setIsStreaming(false);
-      setSessionStart(null);
-      setSessionTick(0);
     };
 
     const CredentialField = ({ label, value, hint }) => (
@@ -279,9 +274,18 @@ import { createStream, getLiveFeed, LIVE_SERVICE_BASE_URL } from "src/api/live";
     );
 
     return (
-      <div className="space-y-10 text-foreground">
-        <section className="relative overflow-hidden rounded-3xl border border-border bg-slate-950 text-white shadow-[0_20px_80px_rgba(15,23,42,0.45)]">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(99,102,241,0.35),_transparent_45%)]" />
+      <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-slate-950 via-indigo-950/50 to-slate-950">
+        {/* Animated background elements */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="absolute -left-1/4 top-0 h-[600px] w-[600px] animate-pulse rounded-full bg-indigo-500/10 blur-3xl" style={{ animationDuration: "4s" }} />
+          <div className="absolute -right-1/4 top-1/3 h-[500px] w-[500px] animate-pulse rounded-full bg-purple-500/10 blur-3xl" style={{ animationDuration: "5s", animationDelay: "2s" }} />
+          <div className="absolute bottom-0 left-1/3 h-[400px] w-[400px] animate-pulse rounded-full bg-blue-500/10 blur-3xl" style={{ animationDuration: "6s", animationDelay: "1s" }} />
+        </div>
+
+        <div className="relative z-10 space-y-10 px-4 py-8 text-foreground sm:px-6 lg:px-8">
+        <section className="relative mx-auto max-w-7xl overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/90 to-slate-950/90 text-white shadow-[0_20px_80px_rgba(99,102,241,0.3)] backdrop-blur-xl">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(99,102,241,0.25),_transparent_50%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,_rgba(168,85,247,0.15),_transparent_50%)]" />
           <div className="relative grid gap-8 px-6 py-10 lg:grid-cols-[1.2fr_0.8fr] lg:px-10">
             <div className="space-y-6">
               <p className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.2em] text-white/80">
@@ -336,8 +340,9 @@ import { createStream, getLiveFeed, LIVE_SERVICE_BASE_URL } from "src/api/live";
           </div>
         </section>
 
+        <div className="mx-auto max-w-7xl space-y-8">
         {error && (
-          <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+          <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive backdrop-blur">
             <div className="flex items-center justify-between">
               <p>{error}</p>
               <Button variant="outline" size="sm" onClick={loadStreams}>
@@ -576,109 +581,6 @@ import { createStream, getLiveFeed, LIVE_SERVICE_BASE_URL } from "src/api/live";
                 </Button>
               </div>
             </form>
-
-            {createdStream && (
-              <div className="space-y-4 rounded-2xl border border-border bg-muted/30 p-4">
-                <div className="flex items-center gap-2 text-emerald-500">
-                  <CheckCircleIcon className="h-5 w-5" />
-                  <p>Stream đã sẵn sàng. Xem preview và khởi động phiên phát ngay trong app.</p>
-                </div>
-
-                <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-                  <div className="rounded-xl border border-border bg-black/80 p-3">
-                    <div className="flex items-center justify-between text-xs text-white/70">
-                      <span className="flex items-center gap-1 font-semibold uppercase tracking-wide">
-                        <VideoCameraIcon className="h-4 w-4" /> Preview
-                      </span>
-                      <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-semibold">
-                        {isStreaming ? "LIVE" : "OFFLINE"}
-                      </span>
-                    </div>
-                    <div className="mt-2 aspect-video overflow-hidden rounded-lg border border-white/10 bg-black">
-                      <video
-                        key={createdStream.hls_url}
-                        controls
-                        muted
-                        className="h-full w-full"
-                        src={createdStream.hls_url}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-3 rounded-xl border border-border bg-background/80 p-3">
-                    <div className="flex items-center justify-between text-sm font-semibold text-foreground">
-                      <span>Phiên live</span>
-                      <span className="text-xs text-muted-foreground">
-                        {isStreaming && sessionStart
-                          ? `${Math.floor(sessionTick / 60)}:${(sessionTick % 60)
-                              .toString()
-                              .padStart(2, "0")}`
-                          : "00:00"}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 text-center text-xs text-muted-foreground">
-                      <div className="rounded-lg border border-border bg-card/80 p-2">
-                        <p className="text-[11px] uppercase tracking-wide">Session</p>
-                        <p className="text-lg font-semibold text-foreground">
-                          {isStreaming ? "Running" : "Idle"}
-                        </p>
-                      </div>
-                      <div className="rounded-lg border border-border bg-card/80 p-2">
-                        <p className="text-[11px] uppercase tracking-wide">Viewers</p>
-                        <p className="text-lg font-semibold text-foreground">—</p>
-                      </div>
-                      <div className="rounded-lg border border-border bg-card/80 p-2">
-                        <p className="text-[11px] uppercase tracking-wide">Bitrate</p>
-                        <p className="text-lg font-semibold text-foreground">auto</p>
-                      </div>
-                    </div>
-
-                    <div className="rounded-lg border border-border bg-card/80 p-3 text-sm text-muted-foreground">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-foreground">Hoạt động</p>
-                      <p className="mt-2 text-muted-foreground">Chat sẽ hiển thị tại đây. Tích hợp WebSocket chat sau.</p>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      {!isStreaming ? (
-                        <Button
-                          className="flex-1 rounded-lg"
-                          onClick={() => {
-                            setIsStreaming(true);
-                            setSessionStart(new Date());
-                            setSessionTick(0);
-                          }}
-                        >
-                          Bắt đầu phát
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="outline"
-                          className="flex-1 rounded-lg text-destructive"
-                          onClick={() => {
-                            setIsStreaming(false);
-                            setSessionStart(null);
-                            setSessionTick(0);
-                          }}
-                        >
-                          Dừng phiên
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        className="rounded-lg"
-                        onClick={() => {
-                          navigator.clipboard.writeText(createdStream.hls_url);
-                          toast.success("Đã copy link xem");
-                        }}
-                      >
-                        Copy link xem
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </Modal>
       </div>

@@ -4,6 +4,7 @@ import DefaultLayout from '../layouts/DefaultLayout'
 import RequireAuth from '../layouts/RequireAuth'
 import Feed from '../pages/feed'
 import LiveStreams from '../pages/live'
+import LiveStudio from '../pages/live-studio'
 import Profile from '../pages/profile'
 import Settings from '../pages/setting'
 import Search from '../pages/search'
@@ -32,6 +33,10 @@ const routes = {
 				{
 					path: PATHS.LIVE,
 					element: <LiveStreams />,
+				},
+				{
+					path: '/app/live/studio',
+					element: <LiveStudio />,
 				},
 				{
 					path: PATHS.PROFILE,
