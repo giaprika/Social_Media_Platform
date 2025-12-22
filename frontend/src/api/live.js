@@ -6,38 +6,35 @@ const LIVE_SERVICE_BASE_URL = (
 	process.env.REACT_APP_LIVE_SERVICE_URL || DEFAULT_LIVE_BASE_URL
 ).replace(/\/$/, '')
 
-const LOCAL_PROXY_PATH = '/live-api'
 const LOCAL_HOSTNAMES = ['localhost', '127.0.0.1', '0.0.0.0']
 
-const resolveApiBaseUrl = () => {
-	const forcedProxy = process.env.REACT_APP_LIVE_API_PROXY?.toLowerCase()
-	if (forcedProxy === 'remote') {
-		return LIVE_SERVICE_BASE_URL
-	}
-	if (forcedProxy === 'local') {
-		return LOCAL_PROXY_PATH
-	}
+const resolveBaseURL = () => {
+	// In local dev, call same-origin `/api/v1/*` and let CRA `proxy` forward.
+	// This avoids browser CORS for `X-User-ID`.
 	if (typeof window !== 'undefined') {
 		const { hostname } = window.location
 		if (LOCAL_HOSTNAMES.includes(hostname)) {
-			return LOCAL_PROXY_PATH
+			return ''
 		}
 	}
 	return LIVE_SERVICE_BASE_URL
 }
 
 const liveInstance = axios.create({
-	baseURL: resolveApiBaseUrl(),
+	baseURL: resolveBaseURL(),
 	timeout: 15000,
 })
 
 liveInstance.interceptors.request.use((config) => {
 	const cookies = new Cookies()
-	const userId = cookies.get('x-user-id')
 	const accessToken = cookies.get('accessToken')
 
-	if (userId && !config.headers['X-User-ID']) {
-		config.headers['X-User-ID'] = userId
+	// Only add X-User-ID for create endpoint (requires auth)
+	if (config.url?.includes('/create')) {
+		const userId = cookies.get('x-user-id')
+		if (userId && !config.headers['X-User-ID']) {
+			config.headers['X-User-ID'] = userId
+		}
 	}
 
 	if (accessToken && !config.headers.Authorization) {

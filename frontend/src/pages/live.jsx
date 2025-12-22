@@ -133,6 +133,15 @@ import { createStream, getLiveFeed, LIVE_SERVICE_BASE_URL } from "src/api/live";
     const [createForm, setCreateForm] = useState({ title: "", description: "" });
     const [creating, setCreating] = useState(false);
     const [createdStream, setCreatedStream] = useState(null);
+    const [isStreaming, setIsStreaming] = useState(false);
+    const [sessionStart, setSessionStart] = useState(null);
+    const [sessionTick, setSessionTick] = useState(0);
+
+    useEffect(() => {
+      if (!isStreaming) return undefined;
+      const timer = setInterval(() => setSessionTick((tick) => tick + 1), 1000);
+      return () => clearInterval(timer);
+    }, [isStreaming]);
 
     const loadStreams = useCallback(async () => {
       setLoading(true);
@@ -229,6 +238,9 @@ import { createStream, getLiveFeed, LIVE_SERVICE_BASE_URL } from "src/api/live";
         };
         const { data } = await createStream(payload);
         setCreatedStream(data);
+        setIsStreaming(false);
+        setSessionStart(null);
+        setSessionTick(0);
         toast.success("Đã tạo stream. Bắt đầu phát để lên sóng!");
       } catch (err) {
         console.error("Failed to create stream", err);
@@ -243,6 +255,10 @@ import { createStream, getLiveFeed, LIVE_SERVICE_BASE_URL } from "src/api/live";
     const resetModalState = () => {
       setCreateForm({ title: "", description: "" });
       setCreating(false);
+      setCreatedStream(null);
+      setIsStreaming(false);
+      setSessionStart(null);
+      setSessionTick(0);
     };
 
     const CredentialField = ({ label, value, hint }) => (
@@ -565,44 +581,101 @@ import { createStream, getLiveFeed, LIVE_SERVICE_BASE_URL } from "src/api/live";
               <div className="space-y-4 rounded-2xl border border-border bg-muted/30 p-4">
                 <div className="flex items-center gap-2 text-emerald-500">
                   <CheckCircleIcon className="h-5 w-5" />
-                  <p>Stream đã sẵn sàng. Mở tool phát để bắt đầu.</p>
+                  <p>Stream đã sẵn sàng. Xem preview và khởi động phiên phát ngay trong app.</p>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
-                  <CredentialField label="Stream ID" value={createdStream.id} hint="Public identifier để share cho viewer." />
-                  <CredentialField
-                    label="Stream Key"
-                    value={createdStream.stream_key}
-                    hint="Secret token, chỉ dùng cho publisher."
-                  />
-                  <CredentialField label="WebRTC publish URL" value={createdStream.webrtc_url} />
-                  <CredentialField label="RTMP URL" value={createdStream.rtmp_url} />
-                  <CredentialField label="HLS playback" value={createdStream.hls_url} />
-                </div>
+                <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+                  <div className="rounded-xl border border-border bg-black/80 p-3">
+                    <div className="flex items-center justify-between text-xs text-white/70">
+                      <span className="flex items-center gap-1 font-semibold uppercase tracking-wide">
+                        <VideoCameraIcon className="h-4 w-4" /> Preview
+                      </span>
+                      <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-semibold">
+                        {isStreaming ? "LIVE" : "OFFLINE"}
+                      </span>
+                    </div>
+                    <div className="mt-2 aspect-video overflow-hidden rounded-lg border border-white/10 bg-black">
+                      <video
+                        key={createdStream.hls_url}
+                        controls
+                        muted
+                        className="h-full w-full"
+                        src={createdStream.hls_url}
+                      />
+                    </div>
+                  </div>
 
-                <div className="grid gap-3 md:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      window.open(
-                        buildPublisherUrl(createdStream.id, createdStream.stream_key),
-                        "_blank",
-                        "noopener,noreferrer"
-                      )
-                    }
-                    className="flex items-center justify-between rounded-xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground transition hover:border-primary"
-                  >
-                    Publisher demo
-                    <ArrowTopRightOnSquareIcon className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => window.open(buildViewerUrl(createdStream.id), "_blank", "noopener,noreferrer")}
-                    className="flex items-center justify-between rounded-xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground transition hover:border-primary"
-                  >
-                    Viewer demo
-                    <ArrowTopRightOnSquareIcon className="h-4 w-4" />
-                  </button>
+                  <div className="space-y-3 rounded-xl border border-border bg-background/80 p-3">
+                    <div className="flex items-center justify-between text-sm font-semibold text-foreground">
+                      <span>Phiên live</span>
+                      <span className="text-xs text-muted-foreground">
+                        {isStreaming && sessionStart
+                          ? `${Math.floor(sessionTick / 60)}:${(sessionTick % 60)
+                              .toString()
+                              .padStart(2, "0")}`
+                          : "00:00"}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-center text-xs text-muted-foreground">
+                      <div className="rounded-lg border border-border bg-card/80 p-2">
+                        <p className="text-[11px] uppercase tracking-wide">Session</p>
+                        <p className="text-lg font-semibold text-foreground">
+                          {isStreaming ? "Running" : "Idle"}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-border bg-card/80 p-2">
+                        <p className="text-[11px] uppercase tracking-wide">Viewers</p>
+                        <p className="text-lg font-semibold text-foreground">—</p>
+                      </div>
+                      <div className="rounded-lg border border-border bg-card/80 p-2">
+                        <p className="text-[11px] uppercase tracking-wide">Bitrate</p>
+                        <p className="text-lg font-semibold text-foreground">auto</p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-border bg-card/80 p-3 text-sm text-muted-foreground">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-foreground">Hoạt động</p>
+                      <p className="mt-2 text-muted-foreground">Chat sẽ hiển thị tại đây. Tích hợp WebSocket chat sau.</p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {!isStreaming ? (
+                        <Button
+                          className="flex-1 rounded-lg"
+                          onClick={() => {
+                            setIsStreaming(true);
+                            setSessionStart(new Date());
+                            setSessionTick(0);
+                          }}
+                        >
+                          Bắt đầu phát
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          className="flex-1 rounded-lg text-destructive"
+                          onClick={() => {
+                            setIsStreaming(false);
+                            setSessionStart(null);
+                            setSessionTick(0);
+                          }}
+                        >
+                          Dừng phiên
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        className="rounded-lg"
+                        onClick={() => {
+                          navigator.clipboard.writeText(createdStream.hls_url);
+                          toast.success("Đã copy link xem");
+                        }}
+                      >
+                        Copy link xem
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
