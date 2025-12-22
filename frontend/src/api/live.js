@@ -2,12 +2,32 @@ import axios from 'axios'
 import Cookies from 'universal-cookie'
 
 const DEFAULT_LIVE_BASE_URL = 'https://api.extase.dev'
-const LIVE_BASE_URL = (
+const LIVE_SERVICE_BASE_URL = (
 	process.env.REACT_APP_LIVE_SERVICE_URL || DEFAULT_LIVE_BASE_URL
 ).replace(/\/$/, '')
 
+const LOCAL_PROXY_PATH = '/live-api'
+const LOCAL_HOSTNAMES = ['localhost', '127.0.0.1', '0.0.0.0']
+
+const resolveApiBaseUrl = () => {
+	const forcedProxy = process.env.REACT_APP_LIVE_API_PROXY?.toLowerCase()
+	if (forcedProxy === 'remote') {
+		return LIVE_SERVICE_BASE_URL
+	}
+	if (forcedProxy === 'local') {
+		return LOCAL_PROXY_PATH
+	}
+	if (typeof window !== 'undefined') {
+		const { hostname } = window.location
+		if (LOCAL_HOSTNAMES.includes(hostname)) {
+			return LOCAL_PROXY_PATH
+		}
+	}
+	return LIVE_SERVICE_BASE_URL
+}
+
 const liveInstance = axios.create({
-	baseURL: LIVE_BASE_URL,
+	baseURL: resolveApiBaseUrl(),
 	timeout: 15000,
 })
 
@@ -44,4 +64,4 @@ export const getViewerCount = (streamId) =>
 export const createStream = (payload) =>
 	liveInstance.post('/api/v1/live/create', payload)
 
-export { LIVE_BASE_URL as LIVE_SERVICE_BASE_URL }
+export { LIVE_SERVICE_BASE_URL }
