@@ -1,15 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   BoltIcon,
+  CalendarDaysIcon,
+  ChevronDownIcon,
   ClockIcon,
+  DocumentDuplicateIcon,
   EyeIcon,
   PlayCircleIcon,
+  PlusIcon,
   SparklesIcon,
+  TrashIcon,
   VideoCameraIcon,
   WifiIcon,
+  ComputerDesktopIcon,
 } from "@heroicons/react/24/outline";
-import { differenceInMinutes, formatDistanceToNow } from "date-fns";
+import { differenceInMinutes, formatDistanceToNow, format } from "date-fns";
 import { useToast } from "src/components/ui";
 import Modal from "src/components/ui/Modal";
 import Button from "src/components/ui/Button";
@@ -26,9 +32,6 @@ const extractHost = (value) => {
 
 const LIVE_SERVICE_URL = sanitizeBaseUrl(LIVE_SERVICE_BASE_URL || "https://api.extase.dev");
 const LIVE_SERVICE_HOST = process.env.REACT_APP_LIVE_SERVER_HOST || extractHost(LIVE_SERVICE_URL);
-const LIVE_DEMO_BASE_URL = sanitizeBaseUrl(
-  process.env.REACT_APP_LIVE_DEMO_URL || `${LIVE_SERVICE_URL}/demo`
-);
 const LIVE_CDN_BASE_URL = sanitizeBaseUrl(
   process.env.REACT_APP_LIVE_CDN_URL || "https://cdn.extase.dev"
 );
@@ -51,29 +54,25 @@ const FILTER_OPTIONS = [
   { id: "fresh", label: "Started < 15 min", matcher: (stream) => stream.categoryTags.fresh },
 ];
 
-const upcomingSessions = [
-  {
-    id: "floating-market",
-    title: "Floating Market Walkthrough",
-    host: "Bao & Linh",
-    start: "Tonight • 21:00 ICT",
-    timezone: "Streaming from Bangkok",
-  },
-  {
-    id: "midnight-circuit",
-    title: "Midnight Circuit B2B",
-    host: "DJ Sora",
-    start: "Tomorrow • 00:30 JST",
-    timezone: "Shibuya rooftop",
-  },
-  {
-    id: "maker-lab",
-    title: "Wearable Sensor Sprint",
-    host: "Astro Lab",
-    start: "Fri • 15:00 CET",
-    timezone: "Lisbon garage",
-  },
-];
+// LocalStorage key for scheduled streams
+const SCHEDULED_STREAMS_KEY = "scheduled_live_streams";
+
+const getScheduledStreams = () => {
+  try {
+    const stored = localStorage.getItem(SCHEDULED_STREAMS_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveScheduledStreams = (streams) => {
+  try {
+    localStorage.setItem(SCHEDULED_STREAMS_KEY, JSON.stringify(streams));
+  } catch (e) {
+    console.error("Failed to save scheduled streams:", e);
+  }
+};
 
 const numberFormatter = new Intl.NumberFormat("en-US", {
   notation: "compact",
@@ -124,13 +123,41 @@ const hydrateStream = (stream, index) => {
 const LiveStreams = () => {
   const toast = useToast();
   const navigate = useNavigate();
+  const dropdownRef = useRef(null);
   const [streams, setStreams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeFilter, setActiveFilter] = useState(FILTER_OPTIONS[0].id);
+
+  // Modal states
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [isOBSModalOpen, setIsOBSModalOpen] = useState(false);
+
+  // Dropdown state
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  // Form states
   const [createForm, setCreateForm] = useState({ title: "", description: "" });
+  const [scheduleForm, setScheduleForm] = useState({ title: "", description: "", scheduledAt: "" });
   const [creating, setCreating] = useState(false);
+
+  // OBS stream data
+  const [obsStreamData, setObsStreamData] = useState(null);
+
+  // Scheduled streams from localStorage
+  const [scheduledStreams, setScheduledStreams] = useState(() => getScheduledStreams());
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const loadStreams = useCallback(async () => {
     setLoading(true);
@@ -162,9 +189,9 @@ const LiveStreams = () => {
   const heroStats = useMemo(() => {
     if (!streams.length) {
       return [
-        { id: "streams", label: "Active streams", value: "—", icon: VideoCameraIcon },
-        { id: "viewers", label: "Total viewers", value: "—", icon: EyeIcon },
-        { id: "duration", label: "Avg runtime", value: "—", icon: ClockIcon },
+        { id: "streams", label: "ACTIVE STREAMS", value: "0", icon: VideoCameraIcon, color: "text-primary" },
+        { id: "viewers", label: "TOTAL VIEWERS", value: "0", icon: EyeIcon, color: "text-purple-500" },
+        { id: "duration", label: "AVG RUNTIME", value: "0 min", icon: ClockIcon, color: "text-blue-500" },
       ];
     }
 
@@ -173,33 +200,21 @@ const LiveStreams = () => {
       streams.reduce((sum, stream) => sum + (stream.minutesLive ?? 0), 0) / streams.length;
 
     return [
-      { id: "streams", label: "Active streams", value: streams.length, icon: VideoCameraIcon },
-      {
-        id: "viewers",
-        label: "Total viewers",
-        value: numberFormatter.format(totalViewers),
-        icon: EyeIcon,
-      },
-      {
-        id: "duration",
-        label: "Avg runtime",
-        value: `${Math.max(1, Math.round(avgMinutes || 1))} min`,
-        icon: ClockIcon,
-      },
+      { id: "streams", label: "ACTIVE STREAMS", value: streams.length.toString(), icon: VideoCameraIcon, color: "text-primary" },
+      { id: "viewers", label: "TOTAL VIEWERS", value: numberFormatter.format(totalViewers), icon: EyeIcon, color: "text-purple-500" },
+      { id: "duration", label: "AVG RUNTIME", value: `${Math.max(1, Math.round(avgMinutes || 1))} min`, icon: ClockIcon, color: "text-blue-500" },
     ];
   }, [streams]);
 
   const spotlightStreams = useMemo(() => streams.slice(0, 3), [streams]);
 
-  const buildViewerUrl = (streamId) =>
-    `${LIVE_DEMO_BASE_URL}/player.html?server=${LIVE_SERVICE_HOST}&id=${streamId}&autoplay=1`;
-
+  // Navigate to in-app watch page
   const handleJoinStream = (stream) => {
-    const viewerUrl = buildViewerUrl(stream.id);
-    window.open(viewerUrl, "_blank", "noopener,noreferrer");
+    navigate(`/app/live/watch/${stream.id}`, { state: { stream } });
   };
 
-  const handleCreateStreamSubmit = async (event) => {
+  // Create stream for Browser (WebRTC)
+  const handleCreateBrowserStream = async (event) => {
     event.preventDefault();
     if (!createForm.title.trim()) {
       toast.error("Please enter a title for your stream");
@@ -215,12 +230,9 @@ const LiveStreams = () => {
       const { data } = await createStream(payload);
       toast.success("Stream ready! Redirecting to studio...");
 
-      // Navigate to studio page with stream data
       setTimeout(() => {
         navigate("/app/live/studio", {
-          state: {
-            stream: data
-          }
+          state: { stream: data }
         });
       }, 500);
     } catch (err) {
@@ -233,23 +245,104 @@ const LiveStreams = () => {
     }
   };
 
-  const resetModalState = () => {
+  // Create stream for OBS
+  const handleCreateOBSStream = async (event) => {
+    event.preventDefault();
+    if (!createForm.title.trim()) {
+      toast.error("Please enter a title for your stream");
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const payload = {
+        title: createForm.title.trim(),
+        description: createForm.description.trim() || undefined,
+      };
+      const { data } = await createStream(payload);
+      setObsStreamData(data);
+      setIsCreateModalOpen(false);
+      setIsOBSModalOpen(true);
+      toast.success("Stream created! Copy your stream key to OBS.");
+    } catch (err) {
+      console.error("Failed to create stream", err);
+      const message =
+        err.response?.data?.message || "Unable to create stream. Please try again.";
+      toast.error(message);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // Schedule a stream
+  const handleScheduleStream = (event) => {
+    event.preventDefault();
+    if (!scheduleForm.title.trim() || !scheduleForm.scheduledAt) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+
+    const newScheduled = {
+      id: `scheduled-${Date.now()}`,
+      title: scheduleForm.title.trim(),
+      description: scheduleForm.description.trim(),
+      scheduledAt: scheduleForm.scheduledAt,
+      createdAt: new Date().toISOString(),
+    };
+
+    const updated = [...scheduledStreams, newScheduled];
+    setScheduledStreams(updated);
+    saveScheduledStreams(updated);
+
+    setIsScheduleModalOpen(false);
+    setScheduleForm({ title: "", description: "", scheduledAt: "" });
+    toast.success("Stream scheduled successfully!");
+  };
+
+  // Delete scheduled stream
+  const handleDeleteScheduled = (id) => {
+    const updated = scheduledStreams.filter((s) => s.id !== id);
+    setScheduledStreams(updated);
+    saveScheduledStreams(updated);
+    toast.info("Scheduled stream removed");
+  };
+
+  // Copy to clipboard
+  const handleCopy = async (value, label) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(`${label} copied!`);
+    } catch {
+      toast.error("Failed to copy");
+    }
+  };
+
+  const resetCreateForm = () => {
     setCreateForm({ title: "", description: "" });
     setCreating(false);
   };
 
+  // Format scheduled date
+  const formatScheduledDate = (dateStr) => {
+    try {
+      const date = new Date(dateStr);
+      return format(date, "EEE, MMM d • HH:mm");
+    } catch {
+      return dateStr;
+    }
+  };
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-background">
-      {/* Subtle animated background elements for light mode */}
+      {/* Subtle animated background */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -left-1/4 top-0 h-[600px] w-[600px] animate-pulse rounded-full bg-primary/5 blur-3xl" style={{ animationDuration: "4s" }} />
         <div className="absolute -right-1/4 top-1/3 h-[500px] w-[500px] animate-pulse rounded-full bg-accent/5 blur-3xl" style={{ animationDuration: "5s", animationDelay: "2s" }} />
-        <div className="absolute bottom-0 left-1/3 h-[400px] w-[400px] animate-pulse rounded-full bg-primary/5 blur-3xl" style={{ animationDuration: "6s", animationDelay: "1s" }} />
       </div>
 
       <div className="relative z-10 space-y-10 px-4 py-8 text-foreground sm:px-6 lg:px-8">
         {/* Hero Section */}
-        <section className="relative mx-auto max-w-7xl overflow-hidden rounded-3xl border border-border bg-card shadow-lg">
+        <section className="relative mx-auto max-w-7xl rounded-3xl border border-border bg-card shadow-lg">
           <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-accent/5" />
           <div className="relative grid gap-8 px-6 py-10 lg:grid-cols-[1.2fr_0.8fr] lg:px-10">
             <div className="space-y-6">
@@ -264,41 +357,87 @@ const LiveStreams = () => {
                 </p>
               </div>
               <div className="flex flex-wrap gap-3">
-                <Button
-                  className="rounded-full px-5 py-2"
-                  onClick={() => {
-                    setIsCreateModalOpen(true);
-                    resetModalState();
-                  }}
-                >
-                  <VideoCameraIcon className="h-5 w-5" />
-                  Go Live Now
-                </Button>
+                {/* Go Live Dropdown */}
+                <div className="relative" ref={dropdownRef}>
+                  <Button
+                    className="rounded-full px-5 py-2"
+                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                  >
+                    <VideoCameraIcon className="h-5 w-5" />
+                    Go Live
+                    <ChevronDownIcon className={`h-4 w-4 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`} />
+                  </Button>
+
+                  {isDropdownOpen && (
+                    <div className="absolute left-0 top-full z-[100] mt-2 w-72 overflow-visible rounded-xl border border-border bg-card p-2 shadow-xl">
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm hover:bg-muted transition-colors"
+                        onClick={() => {
+                          setIsDropdownOpen(false);
+                          setCreateForm({ title: "", description: "", isOBS: false });
+                          setIsCreateModalOpen(true);
+                        }}
+                      >
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                          <VideoCameraIcon className="h-5 w-5 text-primary" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground">Stream from Browser</p>
+                          <p className="text-xs text-muted-foreground">Use webcam & microphone</p>
+                        </div>
+                      </button>
+                      <div className="my-1 border-t border-border" />
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm hover:bg-muted transition-colors"
+                        onClick={() => {
+                          setIsDropdownOpen(false);
+                          setCreateForm({ title: "", description: "", isOBS: true });
+                          setIsCreateModalOpen(true);
+                        }}
+                      >
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/10">
+                          <ComputerDesktopIcon className="h-5 w-5 text-purple-500" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground">Stream with OBS</p>
+                          <p className="text-xs text-muted-foreground">Get RTMP URL & Stream Key</p>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 <Button
                   variant="outline"
                   className="rounded-full px-5 py-2"
-                  onClick={() => window.open(`${LIVE_DEMO_BASE_URL}/index.html?server=${LIVE_SERVICE_HOST}`, "_blank", "noopener,noreferrer")}
+                  onClick={() => setIsScheduleModalOpen(true)}
                 >
-                  <PlayCircleIcon className="h-5 w-5" />
-                  Open Studio Demo
+                  <CalendarDaysIcon className="h-5 w-5" />
+                  Plan Stream
                 </Button>
               </div>
             </div>
 
-            <div className="space-y-4 rounded-3xl border border-border bg-muted/30 p-6">
-              <p className="text-sm text-muted-foreground">Network pulse</p>
-              <div className="grid grid-cols-3 gap-4">
-                {heroStats.map(({ id, label, value, icon: Icon }) => (
-                  <div key={id} className="rounded-2xl border border-border bg-card p-4 shadow-sm">
-                    <Icon className="h-5 w-5 text-primary" />
-                    <p className="mt-4 text-2xl font-semibold text-foreground">{value}</p>
-                    <span className="text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
+            {/* Network Pulse - Improved Design */}
+            <div className="rounded-3xl border border-border bg-gradient-to-br from-muted/50 to-muted/20 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-sm font-medium text-muted-foreground">Network pulse</p>
+                <span className="flex items-center gap-1.5 text-xs text-green-600">
+                  <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                  Live
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                {heroStats.map(({ id, label, value, icon: Icon, color }) => (
+                  <div key={id} className="relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-sm transition-all hover:shadow-md">
+                    <div className="absolute -right-2 -top-2 h-16 w-16 rounded-full bg-gradient-to-br from-primary/10 to-transparent blur-xl" />
+                    <Icon className={`relative h-6 w-6 ${color}`} />
+                    <p className="relative mt-3 text-3xl font-bold text-foreground tracking-tight">{value}</p>
+                    <span className="relative mt-1 block text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>
                   </div>
                 ))}
-              </div>
-              <div className="rounded-2xl border border-border bg-card p-4 text-sm leading-relaxed text-muted-foreground">
-                <p className="text-foreground">Push rule-based moderations directly from this dashboard.</p>
-                <p>Server live at {LIVE_SERVICE_HOST}, CDN playback at {LIVE_CDN_BASE_URL}.</p>
               </div>
             </div>
           </div>
@@ -353,7 +492,7 @@ const LiveStreams = () => {
                 <div className="col-span-full rounded-2xl border border-border bg-card p-10 text-center">
                   <p className="text-lg font-semibold text-foreground">No streams currently live</p>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Be the first to go live by clicking "Go Live Now", or check back later.
+                    Be the first to go live by clicking "Go Live", or check back later.
                   </p>
                 </div>
               )}
@@ -398,7 +537,7 @@ const LiveStreams = () => {
 
                     <div>
                       <h3 className="text-lg font-semibold text-foreground">{stream.title}</h3>
-                      <p className="mt-1 text-sm text-muted-foreground">{stream.description}</p>
+                      <p className="mt-1 text-sm text-muted-foreground line-clamp-2">{stream.description}</p>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -408,10 +547,7 @@ const LiveStreams = () => {
                       </span>
                       <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1">
                         <ClockIcon className="h-4 w-4" />
-                        Live for {stream.liveForLabel}
-                      </span>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1">
-                        {stream.location}
+                        {stream.liveForLabel}
                       </span>
                     </div>
 
@@ -436,7 +572,7 @@ const LiveStreams = () => {
             </div>
           </section>
 
-          {/* Spotlight & Upcoming */}
+          {/* Spotlight & Scheduled */}
           <section className="grid gap-6 lg:grid-cols-[2fr_1fr]">
             <div className="rounded-3xl border border-border bg-card p-6">
               <div className="flex items-center justify-between">
@@ -458,99 +594,291 @@ const LiveStreams = () => {
                         {numberFormatter.format(stream.viewerCount)} live
                       </span>
                     </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold text-foreground">{stream.title}</p>
-                      <p className="text-xs text-muted-foreground">{stream.host} • {stream.location}</p>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-foreground truncate">{stream.title}</p>
+                      <p className="text-xs text-muted-foreground">{stream.host}</p>
                     </div>
                     <div className="text-right text-xs text-muted-foreground">
                       <p>{stream.energy}</p>
-                      <p className="font-semibold text-foreground">{stream.latency} latency</p>
+                      <p className="font-semibold text-foreground">{stream.latency}</p>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
 
+            {/* Scheduled Streams from LocalStorage */}
             <div className="rounded-3xl border border-border bg-card p-6">
-              <p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Upcoming</p>
-              <h3 className="mt-2 text-2xl font-semibold text-foreground">Scheduled Drops</h3>
-              <div className="mt-6 space-y-4">
-                {upcomingSessions.map((session) => (
-                  <div key={session.id} className="rounded-2xl border border-border bg-muted/30 p-4">
-                    <p className="text-sm font-semibold text-foreground">{session.title}</p>
-                    <p className="text-xs text-muted-foreground">{session.host}</p>
-                    <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Upcoming</p>
+                  <h3 className="mt-2 text-2xl font-semibold text-foreground">Scheduled Drops</h3>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={() => setIsScheduleModalOpen(true)}
+                >
+                  <PlusIcon className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="space-y-4">
+                {scheduledStreams.length === 0 && (
+                  <div className="rounded-2xl border border-dashed border-border p-6 text-center">
+                    <CalendarDaysIcon className="mx-auto h-8 w-8 text-muted-foreground/50" />
+                    <p className="mt-2 text-sm text-muted-foreground">No scheduled streams</p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-2"
+                      onClick={() => setIsScheduleModalOpen(true)}
+                    >
+                      Plan your first stream
+                    </Button>
+                  </div>
+                )}
+                {scheduledStreams.map((session) => (
+                  <div key={session.id} className="group rounded-2xl border border-border bg-muted/30 p-4">
+                    <div className="flex items-start justify-between">
+                      <p className="text-sm font-semibold text-foreground">{session.title}</p>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteScheduled(session.id)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                      >
+                        <TrashIcon className="h-4 w-4" />
+                      </button>
+                    </div>
+                    {session.description && (
+                      <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{session.description}</p>
+                    )}
+                    <div className="mt-3 flex items-center gap-2 text-xs">
                       <span className="inline-flex items-center gap-1 font-semibold text-foreground">
                         <ClockIcon className="h-4 w-4" />
-                        {session.start}
+                        {formatScheduledDate(session.scheduledAt)}
                       </span>
-                      <span>{session.timezone}</span>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           </section>
-
-          <p className="text-center text-sm text-muted-foreground">
-            Live data is fetched directly from {LIVE_SERVICE_HOST}. CDN playback: {LIVE_CDN_BASE_URL}.
-          </p>
-
-          {/* Create Stream Modal */}
-          <Modal
-            isOpen={isCreateModalOpen}
-            onClose={() => {
-              setIsCreateModalOpen(false);
-              resetModalState();
-            }}
-            title="Create Live Session"
-            size="lg"
-          >
-            <div className="space-y-6">
-              <form className="space-y-4" onSubmit={handleCreateStreamSubmit}>
-                <div>
-                  <label className="text-sm font-medium text-foreground">Title *</label>
-                  <input
-                    type="text"
-                    className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    placeholder="e.g., Building realtime feed"
-                    value={createForm.title}
-                    onChange={(event) => setCreateForm((prev) => ({ ...prev, title: event.target.value }))}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-foreground">Description</label>
-                  <textarea
-                    className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    rows={3}
-                    placeholder="Main content, guests, demo tools..."
-                    value={createForm.description}
-                    onChange={(event) =>
-                      setCreateForm((prev) => ({ ...prev, description: event.target.value }))
-                    }
-                  />
-                </div>
-                <div className="flex items-center justify-end gap-3">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => {
-                      resetModalState();
-                      setIsCreateModalOpen(false);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                  <Button type="submit" loading={creating}>
-                    Create Stream
-                  </Button>
-                </div>
-              </form>
-            </div>
-          </Modal>
         </div>
       </div>
+
+      {/* Create Stream Modal (Browser/OBS) */}
+      <Modal
+        isOpen={isCreateModalOpen}
+        onClose={() => {
+          setIsCreateModalOpen(false);
+          resetCreateForm();
+        }}
+        title={createForm.isOBS ? "Stream with OBS Studio" : "Go Live from Browser"}
+        size="lg"
+      >
+        <div className="space-y-6">
+          <form className="space-y-4" onSubmit={createForm.isOBS ? handleCreateOBSStream : handleCreateBrowserStream}>
+            <div>
+              <label className="text-sm font-medium text-foreground">Stream Title *</label>
+              <input
+                type="text"
+                className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                placeholder="e.g., Building realtime feed"
+                value={createForm.title}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, title: e.target.value }))}
+                required
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground">Description</label>
+              <textarea
+                className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                rows={3}
+                placeholder="What will you be streaming about?"
+                value={createForm.description}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, description: e.target.value }))}
+              />
+            </div>
+            {createForm.isOBS && (
+              <div className="rounded-xl border border-border bg-muted/30 p-4 text-sm">
+                <p className="font-medium text-foreground">💡 OBS Setup</p>
+                <p className="mt-1 text-muted-foreground">
+                  After creating, you'll receive an RTMP URL and Stream Key to use in OBS Studio.
+                </p>
+              </div>
+            )}
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setIsCreateModalOpen(false);
+                  resetCreateForm();
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" loading={creating}>
+                {createForm.isOBS ? "Get Stream Key" : "Start Streaming"}
+              </Button>
+            </div>
+          </form>
+        </div>
+      </Modal>
+
+      {/* OBS Stream Key Modal */}
+      <Modal
+        isOpen={isOBSModalOpen}
+        onClose={() => {
+          setIsOBSModalOpen(false);
+          setObsStreamData(null);
+        }}
+        title="Your OBS Stream Key"
+        size="lg"
+      >
+        {obsStreamData && (
+          <div className="space-y-6">
+            <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-4">
+              <p className="text-sm font-medium text-green-700">✓ Stream created successfully!</p>
+              <p className="mt-1 text-sm text-green-600">Copy these credentials to OBS Studio.</p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">RTMP Server URL</label>
+                <div className="mt-2 flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2">
+                  <code className="flex-1 truncate text-sm text-foreground">
+                    rtmp://{LIVE_SERVICE_HOST}:1935/live
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(`rtmp://${LIVE_SERVICE_HOST}:1935/live`, "RTMP URL")}
+                    className="rounded-lg p-2 text-muted-foreground transition hover:text-foreground hover:bg-muted"
+                  >
+                    <DocumentDuplicateIcon className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Stream Key (Secret)</label>
+                <div className="mt-2 flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2">
+                  <code className="flex-1 truncate text-sm text-foreground font-mono">
+                    {obsStreamData.id}?token={obsStreamData.stream_key}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(`${obsStreamData.id}?token=${obsStreamData.stream_key}`, "Stream Key")}
+                    className="rounded-lg p-2 text-muted-foreground transition hover:text-foreground hover:bg-muted"
+                  >
+                    <DocumentDuplicateIcon className="h-4 w-4" />
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">⚠️ Keep this key secret! Anyone with it can stream to your channel.</p>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">HLS Playback URL</label>
+                <div className="mt-2 flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2">
+                  <code className="flex-1 truncate text-sm text-foreground">
+                    {obsStreamData.hls_url || `${LIVE_CDN_BASE_URL}/live/${obsStreamData.id}.m3u8`}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(obsStreamData.hls_url || `${LIVE_CDN_BASE_URL}/live/${obsStreamData.id}.m3u8`, "HLS URL")}
+                    className="rounded-lg p-2 text-muted-foreground transition hover:text-foreground hover:bg-muted"
+                  >
+                    <DocumentDuplicateIcon className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsOBSModalOpen(false);
+                  setObsStreamData(null);
+                }}
+              >
+                Close
+              </Button>
+              <Button
+                onClick={() => {
+                  const hlsUrl = obsStreamData.hls_url || `${LIVE_CDN_BASE_URL}/live/${obsStreamData.id}.m3u8`;
+                  window.open(hlsUrl, "_blank");
+                }}
+              >
+                <PlayCircleIcon className="h-4 w-4" />
+                Watch Preview
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Schedule Stream Modal */}
+      <Modal
+        isOpen={isScheduleModalOpen}
+        onClose={() => {
+          setIsScheduleModalOpen(false);
+          setScheduleForm({ title: "", description: "", scheduledAt: "" });
+        }}
+        title="Plan a Stream"
+        size="lg"
+      >
+        <form className="space-y-4" onSubmit={handleScheduleStream}>
+          <div>
+            <label className="text-sm font-medium text-foreground">Stream Title *</label>
+            <input
+              type="text"
+              className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              placeholder="What will you be streaming?"
+              value={scheduleForm.title}
+              onChange={(e) => setScheduleForm((prev) => ({ ...prev, title: e.target.value }))}
+              required
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-foreground">Description</label>
+            <textarea
+              className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              rows={2}
+              placeholder="Brief description..."
+              value={scheduleForm.description}
+              onChange={(e) => setScheduleForm((prev) => ({ ...prev, description: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-foreground">Scheduled Date & Time *</label>
+            <input
+              type="datetime-local"
+              className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              value={scheduleForm.scheduledAt}
+              onChange={(e) => setScheduleForm((prev) => ({ ...prev, scheduledAt: e.target.value }))}
+              required
+            />
+          </div>
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setIsScheduleModalOpen(false);
+                setScheduleForm({ title: "", description: "", scheduledAt: "" });
+              }}
+            >
+              Cancel
+            </Button>
+            <Button type="submit">
+              <CalendarDaysIcon className="h-4 w-4" />
+              Schedule Stream
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };
