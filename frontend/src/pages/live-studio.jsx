@@ -25,13 +25,14 @@ const LiveStudio = () => {
   const [sessionStart, setSessionStart] = useState(null);
   const [sessionTick, setSessionTick] = useState(0);
   const [viewerCount, setViewerCount] = useState(0);
+  // eslint-disable-next-line no-unused-vars
   const [chatMessages, setChatMessages] = useState([
-    { id: 1, user: "System", message: "Chào mừng đến phiên live! 🎉", time: new Date() },
+    { id: 1, user: "System", message: "Welcome to the live session! 🎉", time: new Date() },
   ]);
 
   useEffect(() => {
     if (!streamData) {
-      toast.error("Không tìm thấy thông tin stream");
+      toast.error("Stream information not found");
       navigate("/live");
       return;
     }
@@ -47,37 +48,37 @@ const LiveStudio = () => {
     setIsStreaming(true);
     setSessionStart(new Date());
     setSessionTick(0);
-    toast.success("Đã bắt đầu phát live!");
-    
+    toast.success("You're now live!");
+
     // Simulate viewer count increase
     const viewerInterval = setInterval(() => {
       setViewerCount((prev) => prev + Math.floor(Math.random() * 3));
     }, 5000);
-    
+
     return () => clearInterval(viewerInterval);
   }, [toast]);
 
   const handleStopStream = useCallback(() => {
-    if (!window.confirm("Bạn có chắc muốn dừng phiên live?")) return;
-    
+    if (!window.confirm("Are you sure you want to stop the live stream?")) return;
+
     setIsStreaming(false);
     setSessionStart(null);
     setSessionTick(0);
-    toast.info("Đã dừng phiên live");
+    toast.info("Live stream stopped");
   }, [toast]);
 
   const handleEndSession = useCallback(() => {
-    if (!window.confirm("Kết thúc phiên và quay về trang chính?")) return;
-    
+    if (!window.confirm("End session and return to main page?")) return;
+
     setIsStreaming(false);
     navigate("/live");
-    toast.success("Đã kết thúc phiên live");
+    toast.success("Live session ended");
   }, [navigate, toast]);
 
   const handleCopyLink = useCallback(() => {
     if (!streamData?.hls_url) return;
     navigator.clipboard.writeText(streamData.hls_url);
-    toast.success("Đã copy link xem stream");
+    toast.success("Stream link copied to clipboard");
   }, [streamData, toast]);
 
   const formatTime = (seconds) => {
@@ -88,45 +89,44 @@ const LiveStudio = () => {
 
   if (!streamData) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-center">
-          <p className="text-lg font-semibold">Đang tải...</p>
+          <p className="text-lg font-semibold text-foreground">Loading...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/80 backdrop-blur-xl">
+      <header className="sticky top-0 z-50 border-b border-border bg-card/80 backdrop-blur-xl">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <Button
                 variant="ghost"
                 size="sm"
-                className="rounded-xl text-white/70 hover:text-white"
+                className="rounded-xl"
                 onClick={() => navigate("/live")}
               >
                 <ArrowLeftIcon className="h-5 w-5" />
-                Quay lại
+                Back
               </Button>
               <div>
-                <h1 className="text-xl font-bold text-white">{streamData.title}</h1>
-                <p className="text-sm text-white/50">{streamData.description || "Live Studio Control"}</p>
+                <h1 className="text-xl font-bold text-foreground">Live Studio Control</h1>
+                <p className="text-sm text-muted-foreground">{streamData.title || "Untitled Stream"}</p>
               </div>
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm text-white">
+              <div className="flex items-center gap-2 rounded-full bg-muted px-4 py-2 text-sm text-foreground">
                 <div
-                  className={`h-2.5 w-2.5 rounded-full ${
-                    isStreaming ? "animate-pulse bg-red-500" : "bg-gray-500"
-                  }`}
+                  className={`h-2.5 w-2.5 rounded-full ${isStreaming ? "animate-pulse bg-red-500" : "bg-gray-400"
+                    }`}
                 />
                 <span className="font-semibold">
-                  {isStreaming ? "ĐANG PHÁT" : "OFFLINE"}
+                  {isStreaming ? "LIVE" : "OFFLINE"}
                 </span>
               </div>
 
@@ -138,16 +138,16 @@ const LiveStudio = () => {
                   onClick={handleStopStream}
                 >
                   <StopIcon className="h-4 w-4" />
-                  Dừng phát
+                  Stop Stream
                 </Button>
               ) : (
                 <Button
                   size="sm"
-                  className="rounded-xl bg-red-500 hover:bg-red-600"
+                  className="rounded-xl bg-red-500 hover:bg-red-600 text-white"
                   onClick={handleStartStream}
                 >
                   <VideoCameraIcon className="h-4 w-4" />
-                  Bắt đầu phát
+                  Start Streaming
                 </Button>
               )}
             </div>
@@ -161,21 +161,21 @@ const LiveStudio = () => {
           {/* Left Column - Video Preview & Controls */}
           <div className="space-y-6">
             {/* Video Preview */}
-            <div className="overflow-hidden rounded-3xl border border-white/10 bg-black/40 p-4 shadow-2xl backdrop-blur">
+            <div className="overflow-hidden rounded-3xl border border-border bg-card p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <VideoCameraIcon className="h-5 w-5 text-white/70" />
-                  <span className="text-sm font-semibold uppercase tracking-wide text-white/70">
+                  <VideoCameraIcon className="h-5 w-5 text-muted-foreground" />
+                  <span className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                     Live Preview
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <SignalIcon className="h-4 w-4 text-emerald-400" />
-                  <span className="text-xs text-emerald-400">Kết nối tốt</span>
+                  <SignalIcon className="h-4 w-4 text-green-500" />
+                  <span className="text-xs text-green-600">Good Connection</span>
                 </div>
               </div>
 
-              <div className="relative aspect-video overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900 to-black">
+              <div className="relative aspect-video overflow-hidden rounded-2xl border border-border bg-muted">
                 <video
                   key={streamData.hls_url}
                   controls
@@ -185,11 +185,11 @@ const LiveStudio = () => {
                   src={streamData.hls_url}
                 />
                 {!isStreaming && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                  <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm">
                     <div className="text-center">
-                      <VideoCameraIcon className="mx-auto h-16 w-16 text-white/30" />
-                      <p className="mt-4 text-sm text-white/70">
-                        Ấn "Bắt đầu phát" để lên sóng
+                      <VideoCameraIcon className="mx-auto h-16 w-16 text-muted-foreground/50" />
+                      <p className="mt-4 text-sm text-muted-foreground">
+                        Click "Start Streaming" to go live
                       </p>
                     </div>
                   </div>
@@ -199,66 +199,66 @@ const LiveStudio = () => {
 
             {/* Stats Cards */}
             <div className="grid gap-4 sm:grid-cols-4">
-              <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-blue-500/10 to-blue-600/5 p-4 backdrop-blur">
-                <div className="flex items-center gap-2 text-blue-400">
+              <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+                <div className="flex items-center gap-2 text-blue-500">
                   <ClockIcon className="h-5 w-5" />
-                  <span className="text-xs font-semibold uppercase tracking-wide">Thời gian</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide">Duration</span>
                 </div>
-                <p className="mt-2 text-2xl font-bold text-white">
+                <p className="mt-2 text-2xl font-bold text-foreground">
                   {isStreaming && sessionStart ? formatTime(sessionTick) : "00:00"}
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-purple-500/10 to-purple-600/5 p-4 backdrop-blur">
-                <div className="flex items-center gap-2 text-purple-400">
+              <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+                <div className="flex items-center gap-2 text-purple-500">
                   <EyeIcon className="h-5 w-5" />
-                  <span className="text-xs font-semibold uppercase tracking-wide">Người xem</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide">Viewers</span>
                 </div>
-                <p className="mt-2 text-2xl font-bold text-white">{viewerCount}</p>
+                <p className="mt-2 text-2xl font-bold text-foreground">{viewerCount}</p>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 p-4 backdrop-blur">
-                <div className="flex items-center gap-2 text-emerald-400">
+              <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+                <div className="flex items-center gap-2 text-green-500">
                   <SignalIcon className="h-5 w-5" />
                   <span className="text-xs font-semibold uppercase tracking-wide">Bitrate</span>
                 </div>
-                <p className="mt-2 text-2xl font-bold text-white">Auto</p>
+                <p className="mt-2 text-2xl font-bold text-foreground">Auto</p>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-amber-500/10 to-amber-600/5 p-4 backdrop-blur">
-                <div className="flex items-center gap-2 text-amber-400">
+              <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+                <div className="flex items-center gap-2 text-amber-500">
                   <CheckCircleIcon className="h-5 w-5" />
-                  <span className="text-xs font-semibold uppercase tracking-wide">Trạng thái</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide">Status</span>
                 </div>
-                <p className="mt-2 text-base font-bold text-white">
-                  {isStreaming ? "Đang live" : "Sẵn sàng"}
+                <p className="mt-2 text-base font-bold text-foreground">
+                  {isStreaming ? "Streaming" : "Ready"}
                 </p>
               </div>
             </div>
 
             {/* Quick Actions */}
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-white/70">
-                Thao tác nhanh
+            <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+              <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Quick Actions
               </h3>
               <div className="flex flex-wrap gap-3">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="rounded-xl border-white/20 text-white hover:bg-white/10"
+                  className="rounded-xl"
                   onClick={handleCopyLink}
                 >
                   <ShareIcon className="h-4 w-4" />
-                  Chia sẻ link
+                  Share Link
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="rounded-xl border-white/20 text-white hover:bg-white/10"
-                  onClick={() => toast.info("Tính năng đang phát triển")}
+                  className="rounded-xl"
+                  onClick={() => toast.info("Feature in development")}
                 >
                   <Cog6ToothIcon className="h-4 w-4" />
-                  Cài đặt
+                  Settings
                 </Button>
                 <Button
                   variant="destructive"
@@ -266,7 +266,7 @@ const LiveStudio = () => {
                   className="ml-auto rounded-xl"
                   onClick={handleEndSession}
                 >
-                  Kết thúc phiên
+                  End Session
                 </Button>
               </div>
             </div>
@@ -275,12 +275,12 @@ const LiveStudio = () => {
           {/* Right Column - Chat & Activity */}
           <div className="space-y-6">
             {/* Chat Panel */}
-            <div className="flex h-[calc(100vh-200px)] flex-col overflow-hidden rounded-3xl border border-white/10 bg-white/5 backdrop-blur">
-              <div className="border-b border-white/10 p-4">
+            <div className="flex h-[calc(100vh-200px)] flex-col overflow-hidden rounded-3xl border border-border bg-card">
+              <div className="border-b border-border p-4">
                 <div className="flex items-center gap-2">
-                  <ChatBubbleLeftRightIcon className="h-5 w-5 text-white/70" />
-                  <h3 className="text-sm font-semibold uppercase tracking-wide text-white/70">
-                    Chat & Hoạt động
+                  <ChatBubbleLeftRightIcon className="h-5 w-5 text-muted-foreground" />
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                    Chat & Activity
                   </h3>
                 </div>
               </div>
@@ -289,42 +289,41 @@ const LiveStudio = () => {
                 {chatMessages.map((msg) => (
                   <div
                     key={msg.id}
-                    className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm"
+                    className="rounded-xl border border-border bg-muted/50 p-3 text-sm"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold text-white">{msg.user}</span>
-                      <span className="text-xs text-white/50">
-                        {new Date(msg.time).toLocaleTimeString("vi-VN", {
+                      <span className="font-semibold text-foreground">{msg.user}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(msg.time).toLocaleTimeString("en-US", {
                           hour: "2-digit",
                           minute: "2-digit",
                         })}
                       </span>
                     </div>
-                    <p className="mt-1 text-white/70">{msg.message}</p>
+                    <p className="mt-1 text-muted-foreground">{msg.message}</p>
                   </div>
                 ))}
 
                 {isStreaming && chatMessages.length === 1 && (
-                  <div className="rounded-xl border border-dashed border-white/20 bg-white/5 p-4 text-center text-sm text-white/50">
-                    Đang chờ người xem tham gia chat...
+                  <div className="rounded-xl border border-dashed border-border bg-muted/30 p-4 text-center text-sm text-muted-foreground">
+                    Waiting for viewers to join the chat...
                   </div>
                 )}
               </div>
 
-              <div className="border-t border-white/10 p-4">
+              <div className="border-t border-border p-4">
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="Gửi tin nhắn..."
-                    className="flex-1 rounded-xl border border-white/20 bg-white/5 px-4 py-2 text-sm text-white placeholder-white/40 focus:border-white/40 focus:outline-none"
-                    disabled
+                    placeholder="Send a message..."
+                    className="flex-1 rounded-xl border border-border bg-background px-4 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                   />
-                  <Button size="sm" className="rounded-xl" disabled>
-                    Gửi
+                  <Button size="sm" className="rounded-xl">
+                    Send
                   </Button>
                 </div>
-                <p className="mt-2 text-xs text-white/40">
-                  Chat tương tác sẽ được tích hợp WebSocket
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Interactive chat will be integrated with WebSocket
                 </p>
               </div>
             </div>
