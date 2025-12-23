@@ -5,6 +5,7 @@ import RequireAuth from '../layouts/RequireAuth'
 import Feed from '../pages/feed'
 import LiveStreams from '../pages/live'
 import LiveStudio from '../pages/live-studio'
+import LiveWatch from '../pages/live-watch'
 import Profile from '../pages/profile'
 import Settings from '../pages/setting'
 import Search from '../pages/search'
@@ -37,6 +38,10 @@ const routes = {
 				{
 					path: '/app/live/studio',
 					element: <LiveStudio />,
+				},
+				{
+					path: '/app/live/watch/:streamId',
+					element: <LiveWatch />,
 				},
 				{
 					path: PATHS.PROFILE,
