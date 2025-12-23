@@ -193,23 +193,10 @@ const LiveStreams = () => {
 
   const buildViewerUrl = (streamId) =>
     `${LIVE_DEMO_BASE_URL}/player.html?server=${LIVE_SERVICE_HOST}&id=${streamId}&autoplay=1`;
-  const buildPublisherUrl = (streamId, streamKey) =>
-    `${LIVE_DEMO_BASE_URL}/index.html?server=${LIVE_SERVICE_HOST}&id=${streamId}&token=${streamKey}`;
 
   const handleJoinStream = (stream) => {
     const viewerUrl = buildViewerUrl(stream.id);
     window.open(viewerUrl, "_blank", "noopener,noreferrer");
-  };
-
-  const handleCopy = async (value, label) => {
-    if (!value) return;
-    try {
-      await navigator.clipboard.writeText(value);
-      toast.success(`${label} copied to clipboard`);
-    } catch (err) {
-      console.error("Copy failed", err);
-      toast.error("Unable to copy. Please try manually");
-    }
   };
 
   const handleCreateStreamSubmit = async (event) => {
