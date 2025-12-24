@@ -3,6 +3,8 @@ const logger = require("../utils/logger");
 
 const USER_SERVICE_URL =
   process.env.USER_SERVICE_URL || "http://user-service:8001";
+const POST_SERVICE_URL =
+  process.env.POST_SERVICE_URL || "http://post-service:8003";
 
 /**
  * Get followers of a user from user-service
@@ -36,6 +38,31 @@ async function getUserFollowers(userId) {
   }
 }
 
+/**
+ * Get recent posts from a user (max 10)
+ */
+async function getUserRecentPosts(userId, limit = 10) {
+  try {
+    const url = `${POST_SERVICE_URL}/api/v1/posts`;
+    const response = await axios.get(url, {
+      params: {
+        user_id: userId,
+        limit: limit,
+        sort_by: "created_at",
+        order: "desc",
+      },
+    });
+
+    const posts = response.data?.data || [];
+    logger.info(`Found ${posts.length} recent posts for user ${userId}`);
+    return posts;
+  } catch (error) {
+    logger.error(`Error fetching posts for user ${userId}:`, error.message);
+    return [];
+  }
+}
+
 module.exports = {
   getUserFollowers,
+  getUserRecentPosts,
 };

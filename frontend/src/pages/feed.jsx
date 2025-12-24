@@ -10,6 +10,7 @@ import ConfirmDialog from "src/components/ui/ConfirmDialog";
 import { useToast } from "src/components/ui";
 import { useNotifications } from "src/contexts/NotificationsContext";
 import * as postApi from "src/api/post";
+import * as feedApi from "src/api/feed";
 import { getUserById } from "src/api/user";
 import { getCommunityById } from "src/api/community";
 
@@ -77,7 +78,7 @@ export default function Feed() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [offset, setOffset] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingPost, setEditingPost] = useState(null);
   const [deletePostId, setDeletePostId] = useState(null);
@@ -154,10 +155,10 @@ export default function Feed() {
     }
   }, []);
 
-  // Load posts function - optimized version
+  // Load posts function - use feed API for intelligent ranking
   const loadPosts = useCallback(
-    async (currentOffset = 0, append = false) => {
-      const POSTS_PER_PAGE = 4; // Giảm từ 20 xuống 10 để load nhanh hơn
+    async (currentPage = 1, append = false) => {
+      const POSTS_PER_PAGE = 4;
 
       if (append) {
         setLoadingMore(true);
@@ -166,19 +167,22 @@ export default function Feed() {
       }
 
       try {
-        const response = await postApi.getPosts({
+        // Call feed API instead of post API - posts already sorted by score
+        const response = await feedApi.getUserFeed({
+          page: currentPage,
           limit: POSTS_PER_PAGE,
-          offset: currentOffset,
         });
         const rawPosts = response.data?.data || [];
+        const pagination = response.data?.metadata?.pagination;
+
         console.log(
-          `[Feed] Loaded ${rawPosts.length} posts at offset ${currentOffset}`
+          `[Feed] Loaded ${rawPosts.length} posts from intelligent feed (page ${currentPage})`
         );
 
-        // Check if there are more posts
-        if (rawPosts.length < POSTS_PER_PAGE) {
-          setHasMore(false);
-        }
+        // Check if there are more posts based on actual returned count
+        // If we got less than limit, means no more posts
+        const hasMorePosts = rawPosts.length >= POSTS_PER_PAGE;
+        setHasMore(hasMorePosts);
 
         // Transform posts WITHOUT fetching reactions immediately (lazy load)
         const enrichedPosts = await Promise.all(
@@ -197,10 +201,10 @@ export default function Feed() {
           setPosts(enrichedPosts);
         }
 
-        setOffset(currentOffset + rawPosts.length);
+        setCurrentPage(currentPage);
       } catch (error) {
-        console.error("Failed to load posts:", error);
-        toast.error("Không thể tải bài viết");
+        console.error("Failed to load feed:", error);
+        toast.error("Không thể tải feed");
       } finally {
         setLoading(false);
         setLoadingMore(false);
@@ -211,7 +215,7 @@ export default function Feed() {
 
   // Initial load
   useEffect(() => {
-    loadPosts(0, false);
+    loadPosts(1, false);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Infinite scroll observer
@@ -219,8 +223,9 @@ export default function Feed() {
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
-          console.log("[Feed] Loading more posts, offset:", offset);
-          loadPosts(offset, true);
+          const nextPage = currentPage + 1;
+          console.log("[Feed] Loading more posts, page:", nextPage);
+          loadPosts(nextPage, true);
         }
       },
       { threshold: 0.1 }
@@ -236,7 +241,7 @@ export default function Feed() {
         observer.unobserve(currentTarget);
       }
     };
-  }, [hasMore, loadingMore, loading, offset, loadPosts]);
+  }, [hasMore, loadingMore, loading, currentPage, loadPosts]);
 
   // Open create modal if state indicates
   useEffect(() => {

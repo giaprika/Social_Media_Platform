@@ -4,7 +4,7 @@ const logger = require("../utils/logger");
 class FeedController {
   /**
    * Get user's feed
-   * GET /api/feed?page=1&limit=10
+   * GET /api/feed?page=1&limit=4
    */
   async getFeed(req, res) {
     try {
@@ -18,7 +18,7 @@ class FeedController {
       }
 
       const page = parseInt(req.query.page) || 1;
-      const limit = parseInt(req.query.limit) || 10;
+      const limit = parseInt(req.query.limit) || 4;
 
       const result = await feedService.getUserFeed(userId, page, limit);
 

@@ -3,10 +3,10 @@ name: Chat Service CI
 on:
   push:
     paths:
-      - 'chat-service/**'
+      - "chat-service/**"
   pull_request:
     paths:
-      - 'chat-service/**'
+      - "chat-service/**"
 
 jobs:
   test-and-lint:
@@ -23,7 +23,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.0'
+          go-version: "1.24.0"
           cache-dependency-path: chat-service/go.sum
 
       # 2. Tải thư viện (Bắt buộc để chạy test)

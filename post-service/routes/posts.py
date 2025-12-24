@@ -10,6 +10,7 @@ from .models import (
     Pagination, Metadata, Link
 )
 from .enumType import Visibility, ReactionType
+from pydantic import BaseModel
 
 load_dotenv()
 
@@ -23,6 +24,11 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 router = APIRouter(prefix="/posts", tags=["Posts"])
+
+
+# ============= REQUEST MODELS =============
+class PostIdsRequest(BaseModel):
+    post_ids: List[str]
 
 
 # ============= HELPER FUNCTIONS =============
@@ -148,6 +154,55 @@ async def get_posts(
             _links=build_links(),
             metadata=Metadata(
                 pagination=Pagination(limit=limit, offset=offset, total_items=total_items)
+            )
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
+# ============= POST /posts/batch - Lấy nhiều bài viết theo IDs =============
+@router.post("/batch", response_model=PostListResponse)
+async def get_posts_by_ids(
+    request: PostIdsRequest
+):
+    """Lấy danh sách bài viết theo list post IDs
+    
+    **Request Body:**
+    ```json
+    {
+        "post_ids": ["uuid1", "uuid2", "uuid3"]
+    }
+    ```
+    """
+    try:
+        if not request.post_ids or len(request.post_ids) == 0:
+            return PostListResponse(
+                status="success",
+                message="No post IDs provided",
+                data=[],
+                _links=build_links(),
+                metadata=Metadata(
+                    pagination=Pagination(limit=0, offset=0, total_items=0)
+                )
+            )
+        
+        # Limit to 100 posts per request to prevent abuse
+        post_ids = request.post_ids[:100]
+        
+        query = supabase.table(POSTS_TABLE).select("*").in_("post_id", post_ids)
+        result = query.execute()
+        
+        posts = result.data or []
+        
+        return PostListResponse(
+            status="success",
+            message=f"Retrieved {len(posts)} posts",
+            data=posts,
+            _links=build_links(),
+            metadata=Metadata(
+                pagination=Pagination(limit=len(post_ids), offset=0, total_items=len(posts))
             )
         )
     except HTTPException:
@@ -360,7 +415,22 @@ async def delete_post(
         if post.get("user_id") != user_id:
             raise HTTPException(status_code=403, detail="You don't have permission to delete this post")
         
+        # Delete media files from storage
+        media_urls = post.get("media_urls", [])
+        if media_urls:
+            await delete_files_from_storage(media_urls)
+        
         result = supabase.table(POSTS_TABLE).delete().eq("post_id", post_id).execute()
+        
+        # Publish post.deleted event to RabbitMQ
+        try:
+            from rabbitmq_producer import publish_event
+            await publish_event("post.deleted", {
+                "post_id": post_id,
+                "user_id": user_id
+            })
+        except Exception as e:
+            print(f"[Feed] Failed to publish post.deleted event: {str(e)}")
         
         return None
         
