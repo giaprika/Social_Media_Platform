@@ -74,11 +74,19 @@ export const sendMessage = async (
 	// ✨ Filter offensive content before sending
 	const normalizedContent = typeof content === 'string' ? content : ''
 	const filteredContent = await filterOffensiveContent(normalizedContent)
-	const { type, mediaUrl } = options || {}
+	const { type, mediaUrl, originalFilename } = options || {}
+
+	// For file attachments without text content, store filename in content
+	// Format: [FILE:filename.ext] - this allows frontend to display proper filename
+	let finalContent = filteredContent
+	if (mediaUrl && originalFilename && !filteredContent) {
+		// Add filename marker for all media types that need it displayed
+		finalContent = `[FILE:${originalFilename}]`
+	}
 
 	const payload = {
 		conversation_id: conversationId,
-		content: filteredContent, // Use filtered content
+		content: finalContent,
 		idempotency_key: generateUUID(),
 	}
 
@@ -121,9 +129,8 @@ export const getMessages = async (
 	if (limit) params.append('limit', limit.toString())
 
 	const queryString = params.toString()
-	const url = `/v1/conversations/${conversationId}/messages${
-		queryString ? '?' + queryString : ''
-	}`
+	const url = `/v1/conversations/${conversationId}/messages${queryString ? '?' + queryString : ''
+		}`
 
 	const response = await chatApi.get(url)
 	return response.data
@@ -189,11 +196,17 @@ export const startConversation = async (
 
 	const normalizedContent = typeof content === 'string' ? content : ''
 	const filteredContent = await filterOffensiveContent(normalizedContent)
-	const { type, mediaUrl } = options || {}
+	const { type, mediaUrl, originalFilename } = options || {}
+
+	// For file attachments without text content, store filename in content
+	let finalContent = filteredContent
+	if (mediaUrl && originalFilename && !filteredContent) {
+		finalContent = `[FILE:${originalFilename}]`
+	}
 
 	const payload = {
 		conversation_id: conversationId,
-		content: filteredContent,
+		content: finalContent,
 		idempotency_key: generateUUID(),
 		receiver_ids: [recipientId], // Add recipient as participant
 	}

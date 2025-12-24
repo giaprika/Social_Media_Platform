@@ -15,6 +15,10 @@ import {
   PlusCircleIcon,
   UserGroupIcon,
   XMarkIcon,
+  DocumentIcon,
+  FilmIcon,
+  PaperClipIcon,
+  PlayIcon,
 } from '@heroicons/react/24/outline'
 import { useChat } from 'src/contexts/ChatContext'
 import useAuth from 'src/hooks/useAuth'
@@ -26,8 +30,11 @@ import { filterOffensiveContent } from 'src/utils/contentFilter'
 import { CHAT_MESSAGE_TYPES } from 'src/api/chat'
 import {
   requestChatUploadCredentials,
-  uploadImageToCloudinary,
-  validateImageFile,
+  uploadMediaToCloudinary,
+  validateMediaFile,
+  getMediaTypeFromFile,
+  getFileTypeLabel,
+  getAcceptedFileTypes,
 } from 'src/services/chatMediaUpload'
 import { downloadReportFiles, reportMessageTokens } from 'src/services/chatReportService'
 
@@ -180,6 +187,11 @@ const MessageItem = ({ message, isOwn, senderName, onReport }) => {
     ? formatDistanceToNow(new Date(createdAt), { addSuffix: true })
     : ''
   const mediaUrl = message.media_url || message.mediaUrl
+  const messageType = message.type || message.messageType || CHAT_MESSAGE_TYPES?.TEXT
+
+  // Get media metadata for original filename
+  const mediaMetadata = message.media_metadata || message.mediaMetadata || {}
+  const originalFilename = mediaMetadata.original_filename || mediaMetadata.originalFilename
 
   // Filter offensive content from message
   const [filteredContent, setFilteredContent] = useState(message.content)
@@ -197,12 +209,59 @@ const MessageItem = ({ message, isOwn, senderName, onReport }) => {
   const hasText = Boolean(filteredContent && filteredContent.trim().length > 0)
   const showSenderLabel = !isOwn && senderName
 
+  // Determine media type for rendering
+  const isImage = messageType === CHAT_MESSAGE_TYPES?.IMAGE ||
+    (mediaUrl && !messageType && mediaUrl.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i))
+  const isVideo = messageType === CHAT_MESSAGE_TYPES?.VIDEO ||
+    (mediaUrl && mediaUrl.match(/\.(mp4|webm|ogg|mov)$/i))
+  const isFile = messageType === CHAT_MESSAGE_TYPES?.FILE ||
+    (mediaUrl && !isImage && !isVideo)
+
+  // Get filename - prioritize original filename from metadata
+  const getFileName = () => {
+    // 1. Use original filename from metadata if available
+    if (originalFilename) {
+      // Add extension from format if missing
+      const format = mediaMetadata.format
+      if (format && !originalFilename.includes('.')) {
+        return `${originalFilename}.${format}`
+      }
+      return originalFilename
+    }
+
+    // 2. Parse from content if format is [FILE:filename.ext]
+    const contentText = message.content || ''
+    const fileMatch = contentText.match(/^\[FILE:(.+)\]$/)
+    if (fileMatch && fileMatch[1]) {
+      return fileMatch[1]
+    }
+
+    // 3. Fallback: try to extract from URL
+    if (mediaUrl) {
+      try {
+        const urlPath = new URL(mediaUrl).pathname
+        const fileName = decodeURIComponent(urlPath.split('/').pop() || '')
+        if (fileName && fileName.length > 0) {
+          return fileName
+        }
+      } catch {
+        // Ignore URL parsing errors
+      }
+    }
+
+    // 4. Default fallback
+    return 'Tệp đính kèm'
+  }
+
+  // Check if content is just a file marker (should not display as text bubble)
+  const isFileMarker = /^\[FILE:.+\]$/.test(message.content || '')
+
   return (
     <div
       className={clsx('flex mb-2 group', isOwn ? 'justify-end' : 'justify-start')}
     >
-      <div className={clsx('flex items-end gap-2', isOwn ? 'flex-row-reverse' : 'flex-row')}>
-        <div className={clsx('max-w-[70%] flex flex-col gap-2', isOwn ? 'items-end' : 'items-start')}>
+      <div className={clsx('flex items-end gap-2 max-w-[85%]', isOwn ? 'flex-row-reverse' : 'flex-row')}>
+        <div className={clsx('flex flex-col gap-2 min-w-0', isOwn ? 'items-end' : 'items-start')}>
           {/* Show sender name for received messages in group chats */}
           {showSenderLabel && (
             <span className="text-xs text-muted-foreground mb-1 block px-2">
@@ -210,7 +269,8 @@ const MessageItem = ({ message, isOwn, senderName, onReport }) => {
             </span>
           )}
 
-          {mediaUrl && (
+          {/* Image attachment */}
+          {mediaUrl && isImage && (
             <a
               href={mediaUrl}
               target="_blank"
@@ -226,7 +286,51 @@ const MessageItem = ({ message, isOwn, senderName, onReport }) => {
             </a>
           )}
 
-          {hasText && (
+          {/* Video attachment */}
+          {mediaUrl && isVideo && (
+            <div className="relative overflow-hidden rounded-2xl border border-border bg-background">
+              <video
+                src={mediaUrl}
+                controls
+                preload="metadata"
+                className="max-h-64 max-w-full"
+              >
+                <track kind="captions" />
+              </video>
+            </div>
+          )}
+
+          {/* File attachment */}
+          {mediaUrl && isFile && (
+            <a
+              href={mediaUrl}
+              target="_blank"
+              rel="noreferrer"
+              download
+              className={clsx(
+                'flex items-center gap-3 rounded-2xl border px-4 py-3 transition-colors w-full max-w-xs',
+                isOwn
+                  ? 'border-primary/30 bg-primary/10 hover:bg-primary/20'
+                  : 'border-border bg-muted hover:bg-muted/80'
+              )}
+            >
+              <div className={clsx(
+                'flex items-center justify-center w-10 h-10 rounded-xl flex-shrink-0',
+                isOwn ? 'bg-primary/20' : 'bg-background'
+              )}>
+                <DocumentIcon className={clsx('h-5 w-5', isOwn ? 'text-primary' : 'text-muted-foreground')} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className={clsx('text-sm font-medium truncate', isOwn ? 'text-primary' : 'text-foreground')}>
+                  {getFileName()}
+                </p>
+                <p className="text-xs text-muted-foreground">Nhấn để tải xuống</p>
+              </div>
+              <ArrowDownTrayIcon className={clsx('h-4 w-4 flex-shrink-0', isOwn ? 'text-primary' : 'text-muted-foreground')} />
+            </a>
+          )}
+
+          {hasText && !isFileMarker && (
             <div
               className={clsx(
                 'rounded-2xl px-4 py-2 inline-block text-left',
@@ -238,7 +342,7 @@ const MessageItem = ({ message, isOwn, senderName, onReport }) => {
           )}
         </div>
         {/* Time - only visible on hover */}
-        <div className="flex flex-col items-center gap-1">
+        <div className="flex flex-col items-center gap-1 flex-shrink-0 self-end pb-1">
           <span
             className={clsx(
               'text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap',
@@ -275,10 +379,12 @@ const ChatView = ({ conversation }) => {
   const { user: authUser } = useAuth()
   const [inputValue, setInputValue] = useState('')
   const [isSending, setIsSending] = useState(false)
-  const [selectedImage, setSelectedImage] = useState(null)
-  const [imagePreviewUrl, setImagePreviewUrl] = useState('')
+  const [selectedFile, setSelectedFile] = useState(null)
+  const [selectedMediaType, setSelectedMediaType] = useState(null)
+  const [filePreviewUrl, setFilePreviewUrl] = useState('')
   const [attachmentError, setAttachmentError] = useState('')
   const [uploadStatus, setUploadStatus] = useState('idle')
+  const [uploadProgress, setUploadProgress] = useState(0)
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -418,15 +524,17 @@ const ChatView = ({ conversation }) => {
   }, [openReportModal])
 
   useEffect(() => {
-    previewUrlRef.current = imagePreviewUrl
-  }, [imagePreviewUrl])
+    previewUrlRef.current = filePreviewUrl
+  }, [filePreviewUrl])
 
   const resetAttachment = useCallback(() => {
     const previousUrl = previewUrlRef.current
-    setSelectedImage(null)
-    setImagePreviewUrl('')
+    setSelectedFile(null)
+    setSelectedMediaType(null)
+    setFilePreviewUrl('')
     setAttachmentError('')
     setUploadStatus('idle')
+    setUploadProgress(0)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -438,11 +546,11 @@ const ChatView = ({ conversation }) => {
 
   useEffect(() => {
     return () => {
-      if (imagePreviewUrl) {
-        URL.revokeObjectURL(imagePreviewUrl)
+      if (filePreviewUrl) {
+        URL.revokeObjectURL(filePreviewUrl)
       }
     }
-  }, [imagePreviewUrl])
+  }, [filePreviewUrl])
 
   useEffect(() => {
     if (conversation?.id) {
@@ -484,14 +592,21 @@ const ChatView = ({ conversation }) => {
     const file = event.target.files?.[0]
     if (!file) return
     try {
-      validateImageFile(file)
-      if (imagePreviewUrl) {
-        URL.revokeObjectURL(imagePreviewUrl)
+      const { messageType } = validateMediaFile(file)
+      if (filePreviewUrl) {
+        URL.revokeObjectURL(filePreviewUrl)
       }
-      setSelectedImage(file)
-      setImagePreviewUrl(URL.createObjectURL(file))
+      setSelectedFile(file)
+      setSelectedMediaType(messageType)
+      // Create preview URL for images and videos
+      if (messageType === CHAT_MESSAGE_TYPES?.IMAGE || messageType === CHAT_MESSAGE_TYPES?.VIDEO) {
+        setFilePreviewUrl(URL.createObjectURL(file))
+      } else {
+        setFilePreviewUrl('')
+      }
       setAttachmentError('')
       setUploadStatus('idle')
+      setUploadProgress(0)
     } catch (error) {
       setAttachmentError(error.message)
       event.target.value = ''
@@ -502,7 +617,7 @@ const ChatView = ({ conversation }) => {
     e.preventDefault()
     const rawValue = inputValue
     const content = rawValue.trim()
-    const hasAttachment = Boolean(selectedImage)
+    const hasAttachment = Boolean(selectedFile)
     if ((!content && !hasAttachment) || isSending) return
 
     // Get recipient ID from various sources
@@ -513,8 +628,7 @@ const ChatView = ({ conversation }) => {
       isNew: conversation.isNew,
       conversationId: conversation.id,
       recipientId: recipientId,
-      recipientSource: conversation.recipient?.id ? 'recipient' : otherParticipant?.id ? 'otherParticipant' : 'none',
-      conversationData: conversation,
+      fileType: selectedMediaType,
     })
 
     setIsSending(true)
@@ -524,26 +638,39 @@ const ChatView = ({ conversation }) => {
     try {
       const messageOptions = {}
 
-      if (selectedImage) {
-        validateImageFile(selectedImage)
+      if (selectedFile) {
+        const { messageType } = validateMediaFile(selectedFile)
         setUploadStatus('credentials')
         const credentials = await requestChatUploadCredentials()
         setUploadStatus('uploading')
-        const uploadResult = await uploadImageToCloudinary(selectedImage, credentials)
+
+        // Upload with progress tracking for videos
+        const { uploadResult } = await uploadMediaToCloudinary(
+          selectedFile,
+          credentials,
+          (progress) => setUploadProgress(progress)
+        )
+
         setUploadStatus('ready')
         const mediaUrl = uploadResult.secure_url || uploadResult.url
         if (!mediaUrl) {
-          throw new Error('Không nhận được URL ảnh sau khi tải lên')
+          throw new Error('Không nhận được URL sau khi tải lên')
         }
-        messageOptions.type = CHAT_MESSAGE_TYPES?.IMAGE || 'MESSAGE_TYPE_IMAGE'
+        messageOptions.type = messageType
         messageOptions.mediaUrl = mediaUrl
+
+        // Store original filename in content for files (since backend doesn't support metadata)
+        // Format: [FILE:original_filename.ext] or just the filename for display
+        messageOptions.originalFilename = selectedFile.name
+
         messageOptions.mediaMetadata = {
           width: uploadResult.width,
           height: uploadResult.height,
           bytes: uploadResult.bytes,
           format: uploadResult.format,
           resource_type: uploadResult.resource_type,
-          original_filename: uploadResult.original_filename,
+          original_filename: selectedFile.name, // Use actual file name, not Cloudinary's
+          duration: uploadResult.duration,
         }
       }
 
@@ -563,16 +690,17 @@ const ChatView = ({ conversation }) => {
         await sendMessage(conversation.id, content, recipientId, messageOptions)
       }
 
-      if (selectedImage) {
+      if (selectedFile) {
         resetAttachment()
       }
     } catch (error) {
       console.error('[ChatPanel] Failed to send message:', error)
       setInputValue(rawValue) // Restore input on error
-      setAttachmentError(error.message || 'Failed to send message')
+      setAttachmentError(error.message || 'Gửi tin nhắn thất bại')
     } finally {
       setIsSending(false)
       setUploadStatus('idle')
+      setUploadProgress(0)
     }
   }
 
@@ -679,33 +807,59 @@ const ChatView = ({ conversation }) => {
 
       {/* Input & Attachments */}
       <div className="border-t border-border p-3">
-        {selectedImage && (
+        {selectedFile && (
           <div className="mb-3 flex items-center gap-3 rounded-2xl border border-border bg-muted/40 p-2.5">
-            <div className="relative h-12 w-12 overflow-hidden rounded-xl border border-border">
-              <img
-                src={imagePreviewUrl}
-                alt="Selected attachment preview"
-                className="h-full w-full object-cover"
-              />
+            {/* Preview based on file type */}
+            <div className="relative h-12 w-12 overflow-hidden rounded-xl border border-border flex items-center justify-center bg-background">
+              {selectedMediaType === CHAT_MESSAGE_TYPES?.IMAGE && filePreviewUrl ? (
+                <img
+                  src={filePreviewUrl}
+                  alt="Selected attachment preview"
+                  className="h-full w-full object-cover"
+                />
+              ) : selectedMediaType === CHAT_MESSAGE_TYPES?.VIDEO ? (
+                <div className="flex items-center justify-center h-full w-full bg-primary/10">
+                  <FilmIcon className="h-6 w-6 text-primary" />
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-full w-full bg-muted">
+                  <DocumentIcon className="h-6 w-6 text-muted-foreground" />
+                </div>
+              )}
             </div>
-            <div className="flex-1 text-xs">
-              <p className="font-medium text-foreground truncate">{selectedImage.name}</p>
-              <p className="text-muted-foreground">{formatFileSize(selectedImage.size)}</p>
+            <div className="flex-1 text-xs min-w-0">
+              <p className="font-medium text-foreground truncate">{selectedFile.name}</p>
+              <p className="text-muted-foreground">
+                {formatFileSize(selectedFile.size)} • {getFileTypeLabel(selectedMediaType)}
+              </p>
               {uploadStatus !== 'idle' && (
-                <p className="text-[11px] text-primary mt-0.5">
-                  {uploadStatus === 'credentials'
-                    ? 'Requesting upload token...'
-                    : uploadStatus === 'uploading'
-                      ? 'Uploading photo...'
-                      : 'Upload ready'}
-                </p>
+                <div className="mt-1">
+                  <p className="text-[11px] text-primary">
+                    {uploadStatus === 'credentials'
+                      ? 'Đang lấy token...'
+                      : uploadStatus === 'uploading'
+                        ? selectedMediaType === CHAT_MESSAGE_TYPES?.VIDEO
+                          ? `Đang tải video... ${uploadProgress}%`
+                          : 'Đang tải lên...'
+                        : 'Sẵn sàng gửi'}
+                  </p>
+                  {uploadStatus === 'uploading' && selectedMediaType === CHAT_MESSAGE_TYPES?.VIDEO && (
+                    <div className="w-full h-1 bg-muted rounded-full mt-1 overflow-hidden">
+                      <div
+                        className="h-full bg-primary transition-all duration-300"
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
               )}
             </div>
             <button
               type="button"
               onClick={resetAttachment}
               className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted"
-              aria-label="Remove image"
+              aria-label="Xóa file"
+              disabled={isSending}
             >
               <XMarkIcon className="h-4 w-4" />
             </button>
@@ -720,7 +874,7 @@ const ChatView = ({ conversation }) => {
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept={getAcceptedFileTypes()}
             onChange={handleAttachmentChange}
             className="hidden"
           />
@@ -728,23 +882,24 @@ const ChatView = ({ conversation }) => {
             type="button"
             onClick={() => fileInputRef.current?.click()}
             className="rounded-full bg-muted p-2 text-muted-foreground transition-colors hover:text-foreground focus:outline-none disabled:opacity-50"
-            aria-label="Add image"
+            aria-label="Đính kèm file"
+            title="Gửi ảnh, video hoặc tệp đính kèm"
             disabled={isSending}
           >
-            <PhotoIcon className="h-5 w-5" />
+            <PaperClipIcon className="h-5 w-5" />
           </button>
           <input
             ref={inputRef}
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Type a message..."
+            placeholder="Nhập tin nhắn..."
             disabled={isSending}
             className="flex-1 rounded-full bg-muted px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
           />
           <button
             type="submit"
-            disabled={(!inputValue.trim() && !selectedImage) || isSending}
+            disabled={(!inputValue.trim() && !selectedFile) || isSending}
             className="rounded-full bg-primary p-2 text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             <PaperAirplaneIcon className="h-4 w-4" />
