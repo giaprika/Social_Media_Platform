@@ -15,6 +15,7 @@ const config = {
   aiServiceUrl: process.env.AI_SERVICE_URL,
   postServiceUrl: process.env.POST_SERVICE_URL,
   feedServiceUrl: process.env.FEED_SERVICE_URL,
+  notificationServiceUrl: process.env.NOTIFICATION_SERVICE_URL,
 
   // Rate limiting
   rateLimit: {

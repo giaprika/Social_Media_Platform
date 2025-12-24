@@ -9,20 +9,21 @@ const INTERNAL_SECRET =
 
 export class NotificationService {
   static async createNotification(notificationData) {
-    const { user_id, title_template, body_template, link_url } =
+    const { user_id, title_template, body_template, link_url, meta_data } =
       notificationData;
 
     const createdNotification = await NotificationRepository.createNotification(
       user_id,
       title_template,
       body_template,
-      link_url
+      link_url,
+      meta_data
     );
     return createdNotification;
   }
 
   static async createNotificationToMultipleUsers(notificationData) {
-    const { user_ids, title_template, body_template, link_url } =
+    const { user_ids, title_template, body_template, link_url, meta_data } =
       notificationData;
     const createdNotifications =
       await NotificationRepository.createNotificationToMultipleUsers(
@@ -34,16 +35,23 @@ export class NotificationService {
 
     // Emit realtime qua gateway
     try {
+      const payload = {
+        title: title_template,
+        body: body_template,
+        link: link_url,
+        createdAt: new Date().toISOString(),
+      };
+
+      // Only include metadata if it exists
+      if (meta_data) {
+        payload.metadata = meta_data;
+      }
+
       await axios.post(
         `${GATEWAY_URL}/internal/emit-notification`,
         {
           user_ids,
-          payload: {
-            title: title_template,
-            body: body_template,
-            link: link_url,
-            createdAt: new Date().toISOString(),
-          },
+          payload,
         },
         {
           headers: {

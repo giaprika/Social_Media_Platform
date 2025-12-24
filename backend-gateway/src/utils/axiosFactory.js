@@ -124,10 +124,20 @@ const feedServiceInstance = createAxiosInstance({
   serviceName: "feed",
 });
 
+const notificationInstance = createAxiosInstance({
+  baseURL:
+    (config.notificationServiceUrl ||
+      config.services.notifications.target ||
+      "http://localhost:8005") + "/notifications",
+  timeout: config.services.notifications.timeout,
+  serviceName: "notifications",
+});
+
 // Export factory function để tạo custom instances
 export {
   createAxiosInstance,
   userServiceInstance,
   postServiceInstance,
   feedServiceInstance,
+  notificationInstance,
 };
