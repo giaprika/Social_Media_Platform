@@ -393,20 +393,18 @@ const ChatVideoPlayer = ({ src, className }) => {
         {/* Controls row */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {/* Play/Pause button - only in fullscreen */}
-            {isFullscreen && (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); togglePlay(); }}
-                className="text-white hover:text-white/80 transition-colors"
-              >
-                {isPlaying ? (
-                  <PauseIcon className="w-6 h-6" />
-                ) : (
-                  <PlayIcon className="w-6 h-6" />
-                )}
-              </button>
-            )}
+            {/* Play/Pause button */}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); togglePlay(); }}
+              className="text-white hover:text-white/80 transition-colors"
+            >
+              {isPlaying ? (
+                <PauseIcon className={clsx(isFullscreen ? 'w-6 h-6' : 'w-5 h-5')} />
+              ) : (
+                <PlayIcon className={clsx(isFullscreen ? 'w-6 h-6' : 'w-5 h-5')} />
+              )}
+            </button>
 
             {/* Mute button - always visible */}
             <button
@@ -421,44 +419,43 @@ const ChatVideoPlayer = ({ src, className }) => {
               )}
             </button>
 
-            {/* Time display - only in fullscreen */}
-            {isFullscreen && (
-              <span className="text-white text-sm font-medium">
-                {formatTime(currentTime)} / {formatTime(duration)}
-              </span>
-            )}
+            {/* Time display */}
+            <span className={clsx('text-white font-medium', isFullscreen ? 'text-sm' : 'text-xs')}>
+              {formatTime(currentTime)} / {formatTime(duration)}
+            </span>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Playback speed - only in fullscreen */}
-            {isFullscreen && (
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setShowSpeedMenu(!showSpeedMenu); }}
-                  className="text-white hover:text-white/80 transition-colors px-2 py-1 text-sm font-medium rounded hover:bg-white/10"
-                >
-                  {playbackSpeed}x
-                </button>
-                {showSpeedMenu && (
-                  <div className="absolute bottom-full right-0 mb-2 bg-gray-900/95 rounded-lg py-1 shadow-xl border border-white/10">
-                    {speedOptions.map((speed) => (
-                      <button
-                        key={speed}
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); changeSpeed(speed); }}
-                        className={clsx(
-                          'block w-full px-4 py-1.5 text-sm text-left hover:bg-white/10 transition-colors',
-                          playbackSpeed === speed ? 'text-blue-400' : 'text-white'
-                        )}
-                      >
-                        {speed}x
-                      </button>
-                    ))}
-                  </div>
+            {/* Playback speed */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setShowSpeedMenu(!showSpeedMenu); }}
+                className={clsx(
+                  'text-white hover:text-white/80 transition-colors font-medium rounded hover:bg-white/10',
+                  isFullscreen ? 'px-2 py-1 text-sm' : 'px-1.5 py-0.5 text-xs'
                 )}
-              </div>
-            )}
+              >
+                {playbackSpeed}x
+              </button>
+              {showSpeedMenu && (
+                <div className="absolute bottom-full right-0 mb-2 bg-gray-900/95 rounded-lg py-1 shadow-xl border border-white/10">
+                  {speedOptions.map((speed) => (
+                    <button
+                      key={speed}
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); changeSpeed(speed); }}
+                      className={clsx(
+                        'block w-full px-4 py-1.5 text-sm text-left hover:bg-white/10 transition-colors',
+                        playbackSpeed === speed ? 'text-blue-400' : 'text-white'
+                      )}
+                    >
+                      {speed}x
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Download button - only in fullscreen */}
             {isFullscreen && (
