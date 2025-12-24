@@ -3,8 +3,16 @@ const { pool } = require("../config/database");
 class FeedRepository {
   /**
    * Create feed items for multiple users (fanout)
+   * Score is automatically calculated by database trigger
    */
-  async createFeedItems(userIds, postId, authorId) {
+  async createFeedItems(
+    userIds,
+    postId,
+    authorId,
+    likes = 0,
+    comments = 0,
+    postCreatedAt = null
+  ) {
     const client = await pool.connect();
     try {
       // Filter out author from receiving their own post
@@ -17,14 +25,24 @@ class FeedRepository {
       const values = recipientIds
         .map(
           (userId, index) =>
-            `($${index * 2 + 1}, $${index * 2 + 2}, 0, CURRENT_TIMESTAMP, NULL)`
+            `($${index * 5 + 1}, $${index * 5 + 2}, $${index * 5 + 3}, $${
+              index * 5 + 4
+            }, $${index * 5 + 5})`
         )
         .join(",");
 
-      const params = recipientIds.flatMap((userId) => [userId, postId]);
+      const createdAt = postCreatedAt || new Date();
+
+      const params = recipientIds.flatMap((userId) => [
+        userId,
+        postId,
+        likes,
+        comments,
+        createdAt,
+      ]);
 
       const query = `
-        INSERT INTO feed_items (user_id, post_id, score, created_at, viewed_at)
+        INSERT INTO feed_items (user_id, post_id, likes, comments, post_created_at)
         VALUES ${values}
         ON CONFLICT (user_id, post_id) DO NOTHING
         RETURNING *
@@ -38,19 +56,52 @@ class FeedRepository {
   }
 
   /**
-   * Update score for a specific post across all feeds
-   * Recalculates score based on engagement and age of each feed item
+   * Create feed item with engagement data for a single user
+   * Score is automatically calculated by database trigger
+   */
+  async createFeedItemWithScore(
+    userId,
+    postId,
+    authorId,
+    likes = 0,
+    comments = 0,
+    postCreatedAt = null
+  ) {
+    // Don't create feed item if user is the author
+    if (userId === authorId) {
+      return null;
+    }
+
+    const createdAt = postCreatedAt || new Date();
+
+    const query = `
+      INSERT INTO feed_items (user_id, post_id, likes, comments, post_created_at)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (user_id, post_id) DO UPDATE SET
+        likes = EXCLUDED.likes,
+        comments = EXCLUDED.comments,
+        post_created_at = EXCLUDED.post_created_at
+      RETURNING *
+    `;
+
+    const result = await pool.query(query, [
+      userId,
+      postId,
+      likes,
+      comments,
+      createdAt,
+    ]);
+    return result.rows[0];
+  }
+
+  /**
+   * Update engagement data for a specific post across all feeds
+   * Score is automatically recalculated by database trigger
    */
   async updateScoreByPostId(postId, likes, comments) {
-    // Use SQL to calculate score dynamically for each feed_item
-    // Formula: (likes * 2 + comments * 5) * e^(-0.1 * age_in_days) * view_penalty
     const query = `
       UPDATE feed_items 
-      SET score = (
-        ($1 * 2 + $2 * 5) * 
-        EXP(-0.1 * EXTRACT(EPOCH FROM (NOW() - created_at)) / 86400) *
-        CASE WHEN viewed_at IS NULL THEN 1 ELSE 0.1 END
-      )
+      SET likes = $1, comments = $2
       WHERE post_id = $3
       RETURNING *
     `;
@@ -76,6 +127,7 @@ class FeedRepository {
 
   /**
    * Mark feed items as viewed
+   * Score is automatically recalculated by database trigger with view penalty
    */
   async markAsViewed(feedItemIds) {
     if (feedItemIds.length === 0) return [];
@@ -86,7 +138,7 @@ class FeedRepository {
 
     const query = `
       UPDATE feed_items 
-      SET viewed_at = CURRENT_TIMESTAMP 
+      SET viewed_at = CURRENT_TIMESTAMP
       WHERE id IN (${placeholders}) AND viewed_at IS NULL
       RETURNING *
     `;
