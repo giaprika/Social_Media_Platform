@@ -19,7 +19,11 @@ import {
   FilmIcon,
   PaperClipIcon,
   PlayIcon,
+  PauseIcon,
+  SpeakerWaveIcon,
+  SpeakerXMarkIcon,
 } from '@heroicons/react/24/outline'
+import { PlayIcon as PlayIconSolid } from '@heroicons/react/24/solid'
 import { useChat } from 'src/contexts/ChatContext'
 import useAuth from 'src/hooks/useAuth'
 import { formatDistanceToNow } from 'date-fns'
@@ -178,6 +182,314 @@ const ConversationItem = ({ conversation, isActive, onClick, currentUserId, unre
     </button>
   )
 }
+
+// Custom Video Player Component với UI đẹp
+const ChatVideoPlayer = ({ src, className }) => {
+  const containerRef = useRef(null)
+  const videoRef = useRef(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [isMuted, setIsMuted] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [showControls, setShowControls] = useState(true)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [playbackSpeed, setPlaybackSpeed] = useState(1)
+  const [showSpeedMenu, setShowSpeedMenu] = useState(false)
+  const hideControlsTimeout = useRef(null)
+
+  const speedOptions = [0.5, 0.75, 1, 1.25, 1.5, 2]
+
+  const formatTime = (seconds) => {
+    if (isNaN(seconds)) return '0:00'
+    const mins = Math.floor(seconds / 60)
+    const secs = Math.floor(seconds % 60)
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
+  const togglePlay = () => {
+    if (videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.pause()
+      } else {
+        videoRef.current.play()
+      }
+    }
+  }
+
+  const toggleMute = (e) => {
+    e.stopPropagation()
+    if (videoRef.current) {
+      videoRef.current.muted = !isMuted
+      setIsMuted(!isMuted)
+    }
+  }
+
+  const handleTimeUpdate = () => {
+    if (videoRef.current) {
+      const current = videoRef.current.currentTime
+      const total = videoRef.current.duration
+      setProgress((current / total) * 100)
+      setCurrentTime(current)
+    }
+  }
+
+  const handleLoadedMetadata = () => {
+    if (videoRef.current) {
+      setDuration(videoRef.current.duration)
+    }
+  }
+
+  const handleSeek = (e) => {
+    e.stopPropagation()
+    const rect = e.currentTarget.getBoundingClientRect()
+    const clickX = e.clientX - rect.left
+    const width = rect.width
+    const percent = clickX / width
+    if (videoRef.current) {
+      videoRef.current.currentTime = percent * videoRef.current.duration
+    }
+  }
+
+  const handleMouseEnter = () => {
+    setShowControls(true)
+    if (hideControlsTimeout.current) {
+      clearTimeout(hideControlsTimeout.current)
+    }
+  }
+
+  const handleMouseLeave = () => {
+    setShowSpeedMenu(false)
+    if (isPlaying) {
+      hideControlsTimeout.current = setTimeout(() => {
+        setShowControls(false)
+      }, 2000)
+    }
+  }
+
+  const handleDownload = (e) => {
+    e.stopPropagation()
+    const link = document.createElement('a')
+    link.href = src
+    link.download = 'video.mp4'
+    link.target = '_blank'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  const toggleFullscreen = (e) => {
+    e.stopPropagation()
+    if (!containerRef.current) return
+
+    if (!isFullscreen) {
+      if (containerRef.current.requestFullscreen) {
+        containerRef.current.requestFullscreen()
+      } else if (containerRef.current.webkitRequestFullscreen) {
+        containerRef.current.webkitRequestFullscreen()
+      } else if (containerRef.current.msRequestFullscreen) {
+        containerRef.current.msRequestFullscreen()
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen()
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen()
+      } else if (document.msExitFullscreen) {
+        document.msExitFullscreen()
+      }
+    }
+  }
+
+  const changeSpeed = (speed) => {
+    if (videoRef.current) {
+      videoRef.current.playbackRate = speed
+      setPlaybackSpeed(speed)
+    }
+    setShowSpeedMenu(false)
+  }
+
+  // Listen for fullscreen changes
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+    }
+  }, [])
+
+  return (
+    <div
+      ref={containerRef}
+      className={clsx(
+        'relative group overflow-hidden rounded-2xl bg-black cursor-pointer',
+        isFullscreen ? 'w-screen h-screen rounded-none' : '',
+        className
+      )}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onClick={togglePlay}
+    >
+      <video
+        ref={videoRef}
+        src={src}
+        preload="metadata"
+        className={clsx(
+          'object-contain',
+          isFullscreen ? 'w-full h-full' : 'max-h-72 max-w-xs w-full'
+        )}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onEnded={() => setIsPlaying(false)}
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
+      >
+        <track kind="captions" />
+      </video>
+
+      {/* Play overlay - shows when paused */}
+      {!isPlaying && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity">
+          <div className={clsx(
+            'rounded-full bg-white/90 flex items-center justify-center shadow-lg hover:scale-110 transition-transform',
+            isFullscreen ? 'w-20 h-20' : 'w-16 h-16'
+          )}>
+            <PlayIconSolid className={clsx('text-gray-900 ml-1', isFullscreen ? 'w-10 h-10' : 'w-8 h-8')} />
+          </div>
+        </div>
+      )}
+
+      {/* Controls overlay */}
+      <div
+        className={clsx(
+          'absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent transition-opacity duration-300',
+          isFullscreen ? 'p-6' : 'p-3',
+          showControls || !isPlaying ? 'opacity-100' : 'opacity-0'
+        )}
+      >
+        {/* Progress bar */}
+        <div
+          className={clsx(
+            'w-full bg-white/30 rounded-full cursor-pointer hover:h-2 transition-all',
+            isFullscreen ? 'h-2 mb-4' : 'h-1.5 mb-2'
+          )}
+          onClick={handleSeek}
+        >
+          <div
+            className="h-full bg-white rounded-full relative"
+            style={{ width: `${progress}%` }}
+          >
+            <div className={clsx(
+              'absolute right-0 top-1/2 -translate-y-1/2 bg-white rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity',
+              isFullscreen ? 'w-4 h-4' : 'w-3 h-3'
+            )} />
+          </div>
+        </div>
+
+        {/* Controls row */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {/* Play/Pause button - only in fullscreen */}
+            {isFullscreen && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); togglePlay(); }}
+                className="text-white hover:text-white/80 transition-colors"
+              >
+                {isPlaying ? (
+                  <PauseIcon className="w-6 h-6" />
+                ) : (
+                  <PlayIcon className="w-6 h-6" />
+                )}
+              </button>
+            )}
+
+            {/* Mute button - always visible */}
+            <button
+              type="button"
+              onClick={toggleMute}
+              className="text-white hover:text-white/80 transition-colors p-1"
+            >
+              {isMuted ? (
+                <SpeakerXMarkIcon className={clsx(isFullscreen ? 'w-6 h-6' : 'w-5 h-5')} />
+              ) : (
+                <SpeakerWaveIcon className={clsx(isFullscreen ? 'w-6 h-6' : 'w-5 h-5')} />
+              )}
+            </button>
+
+            {/* Time display - only in fullscreen */}
+            {isFullscreen && (
+              <span className="text-white text-sm font-medium">
+                {formatTime(currentTime)} / {formatTime(duration)}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Playback speed - only in fullscreen */}
+            {isFullscreen && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setShowSpeedMenu(!showSpeedMenu); }}
+                  className="text-white hover:text-white/80 transition-colors px-2 py-1 text-sm font-medium rounded hover:bg-white/10"
+                >
+                  {playbackSpeed}x
+                </button>
+                {showSpeedMenu && (
+                  <div className="absolute bottom-full right-0 mb-2 bg-gray-900/95 rounded-lg py-1 shadow-xl border border-white/10">
+                    {speedOptions.map((speed) => (
+                      <button
+                        key={speed}
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); changeSpeed(speed); }}
+                        className={clsx(
+                          'block w-full px-4 py-1.5 text-sm text-left hover:bg-white/10 transition-colors',
+                          playbackSpeed === speed ? 'text-blue-400' : 'text-white'
+                        )}
+                      >
+                        {speed}x
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Download button - only in fullscreen */}
+            {isFullscreen && (
+              <button
+                type="button"
+                onClick={handleDownload}
+                className="text-white hover:text-white/80 transition-colors p-1"
+              >
+                <ArrowDownTrayIcon className="w-6 h-6" />
+              </button>
+            )}
+
+            {/* Fullscreen button - always visible */}
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              className="text-white hover:text-white/80 transition-colors p-1"
+            >
+              {isFullscreen ? (
+                <ArrowsPointingInIcon className={clsx(isFullscreen ? 'w-6 h-6' : 'w-5 h-5')} />
+              ) : (
+                <ArrowsPointingOutIcon className={clsx(isFullscreen ? 'w-6 h-6' : 'w-5 h-5')} />
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 
 // Message Component
 const MessageItem = ({ message, isOwn, senderName, onReport }) => {
@@ -354,23 +666,14 @@ const MessageItem = ({ message, isOwn, senderName, onReport }) => {
                   <video
                     src={mediaUrl}
                     preload="metadata"
-                    className="max-h-64 max-w-full blur-xl opacity-30"
+                    className="max-h-72 max-w-xs w-full blur-xl opacity-30"
                   >
                     <track kind="captions" />
                   </video>
                 </div>
               </CensorOverlay>
             ) : (
-              <div className="relative overflow-hidden rounded-2xl border border-border bg-background">
-                <video
-                  src={mediaUrl}
-                  controls
-                  preload="metadata"
-                  className="max-h-64 max-w-full"
-                >
-                  <track kind="captions" />
-                </video>
-              </div>
+              <ChatVideoPlayer src={mediaUrl} />
             )
           )}
 
