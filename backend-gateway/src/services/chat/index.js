@@ -6,7 +6,7 @@ const router = express.Router()
 
 // Chat service URL
 const CHAT_SERVICE_URL =
-	process.env.CHAT_SERVICE_URL || 'http://34.158.60.36:8080'
+	process.env.CHAT_SERVICE_URL || 'http://34.143.185.208:8080'
 
 // UUID validation regex
 const UUID_REGEX =

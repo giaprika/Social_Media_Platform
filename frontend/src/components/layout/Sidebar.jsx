@@ -18,6 +18,7 @@ import {
   ShieldCheckIcon,
   Squares2X2Icon,
   UserGroupIcon,
+  VideoCameraIcon,
 } from "@heroicons/react/24/outline";
 import { PATHS } from "src/constants/paths";
 
@@ -28,7 +29,7 @@ const navSections = [
     items: [
       { id: "home", label: "Home", to: PATHS.FEED, icon: HomeIcon },
       { id: "popular", label: "Popular", to: PATHS.FEED, icon: FireIcon },
-      { id: "answers", label: "Answers", to: PATHS.FEED, icon: QuestionMarkCircleIcon, badge: "Beta" },
+      { id: "live", label: "Live Streams", to: PATHS.LIVE, icon: VideoCameraIcon },
       { id: "explore", label: "Explore", to: PATHS.FEED, icon: GlobeAltIcon },
       { id: "all", label: "All", to: PATHS.FEED, icon: Squares2X2Icon },
     ],

@@ -2,13 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   ArrowTopRightOnSquareIcon,
+  ArrowDownTrayIcon,
   ArrowsPointingOutIcon,
   ArrowsPointingInIcon,
   ChatBubbleOvalLeftEllipsisIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  FlagIcon,
   EnvelopeOpenIcon,
   PaperAirplaneIcon,
+  PhotoIcon,
   PlusCircleIcon,
   UserGroupIcon,
   XMarkIcon,
@@ -19,6 +22,14 @@ import { formatDistanceToNow } from 'date-fns'
 import * as userApi from 'src/api/user'
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
 import Avatar from 'src/components/ui/Avatar'
+import { filterOffensiveContent } from 'src/utils/contentFilter'
+import { CHAT_MESSAGE_TYPES } from 'src/api/chat'
+import {
+  requestChatUploadCredentials,
+  uploadImageToCloudinary,
+  validateImageFile,
+} from 'src/services/chatMediaUpload'
+import { downloadReportFiles, reportMessageTokens } from 'src/services/chatReportService'
 
 const filterOptions = [
   { id: 'channels', label: 'Chat channels' },
@@ -27,14 +38,42 @@ const filterOptions = [
   { id: 'modmail', label: 'Mod mail' },
 ]
 
+const MEDIA_PREVIEW_LABELS = {
+  [CHAT_MESSAGE_TYPES?.IMAGE ?? 'MESSAGE_TYPE_IMAGE']: 'Photo',
+  [CHAT_MESSAGE_TYPES?.VIDEO ?? 'MESSAGE_TYPE_VIDEO']: 'Video',
+  [CHAT_MESSAGE_TYPES?.FILE ?? 'MESSAGE_TYPE_FILE']: 'Attachment',
+}
+
+const getMediaPreviewLabel = (type, hasMedia = false) => {
+  if (type && MEDIA_PREVIEW_LABELS[type]) {
+    return MEDIA_PREVIEW_LABELS[type]
+  }
+  if (hasMedia) {
+    return 'Attachment'
+  }
+  return ''
+}
+
+const formatFileSize = (bytes) => {
+  if (!Number.isFinite(bytes)) return ''
+  const units = ['B', 'KB', 'MB', 'GB']
+  let size = bytes
+  let unitIndex = 0
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024
+    unitIndex += 1
+  }
+  return `${size % 1 === 0 ? size : size.toFixed(1)} ${units[unitIndex]}`
+}
+
 // Conversation List Item Component
-const ConversationItem = ({ conversation, isActive, onClick, currentUserId }) => {
+const ConversationItem = ({ conversation, isActive, onClick, currentUserId, unreadCount = 0 }) => {
   // Support both camelCase (from API) and snake_case (normalized)
   const lastMessageAt = conversation.last_message_at || conversation.lastMessageAt
   const lastMessageContent = conversation.last_message_content || conversation.lastMessageContent
   const lastMessageSenderId = conversation.last_message_sender_id || conversation.lastMessageSenderId
-  const unreadCount = conversation.unread_count ?? conversation.unreadCount ?? 0
-
+  const lastMessageType = conversation.last_message_type || conversation.lastMessageType
+  const lastMessageMediaUrl = conversation.last_message_media_url || conversation.lastMessageMediaUrl
   const timeAgo = lastMessageAt
     ? formatDistanceToNow(new Date(lastMessageAt), {
       addSuffix: true,
@@ -56,16 +95,39 @@ const ConversationItem = ({ conversation, isActive, onClick, currentUserId }) =>
   const isDirectChat = conversation.participants?.length === 2 || conversation.recipient
 
   // Check if last message was sent by current user
-  const isLastMessageOwn = lastMessageSenderId && 
+  const isLastMessageOwn = lastMessageSenderId &&
     String(lastMessageSenderId).toLowerCase() === String(currentUserId).toLowerCase()
 
-  // Only show unread count for incoming messages (not messages we sent)
-  const showUnreadBadge = unreadCount > 0 && !isLastMessageOwn
-
-  // Format preview with "You: " prefix if user sent the last message
-  const messagePreview = lastMessageContent
+  const mediaPreviewLabel = getMediaPreviewLabel(lastMessageType, Boolean(lastMessageMediaUrl))
+  const initialPreview = lastMessageContent
     ? (isLastMessageOwn ? `You: ${lastMessageContent}` : lastMessageContent)
-    : 'No messages yet'
+    : mediaPreviewLabel
+      ? (isLastMessageOwn ? `You: ${mediaPreviewLabel}` : mediaPreviewLabel)
+      : 'No messages yet'
+
+  // Only show unread count for incoming messages (not messages we sent)
+  const displayUnread = Number.isFinite(unreadCount) ? unreadCount : 0
+  const showUnreadBadge = displayUnread > 0 && !isLastMessageOwn && !isActive
+
+  // Filter offensive content from message preview
+  const [filteredPreview, setFilteredPreview] = useState(initialPreview)
+
+  useEffect(() => {
+    const filterPreview = async () => {
+      if (!lastMessageContent?.trim() && mediaPreviewLabel) {
+        setFilteredPreview(isLastMessageOwn ? `You: ${mediaPreviewLabel}` : mediaPreviewLabel)
+        return
+      }
+
+      if (lastMessageContent) {
+        const filtered = await filterOffensiveContent(lastMessageContent)
+        setFilteredPreview(isLastMessageOwn ? `You: ${filtered}` : filtered)
+      } else {
+        setFilteredPreview(mediaPreviewLabel || 'No messages yet')
+      }
+    }
+    filterPreview()
+  }, [lastMessageContent, isLastMessageOwn, mediaPreviewLabel])
 
   return (
     <button
@@ -98,12 +160,12 @@ const ConversationItem = ({ conversation, isActive, onClick, currentUserId }) =>
           <span className="text-xs text-muted-foreground">{timeAgo}</span>
         </div>
         <p className="text-xs text-muted-foreground truncate mt-0.5">
-          {messagePreview}
+          {filteredPreview}
         </p>
       </div>
       {showUnreadBadge && (
         <span className="flex-shrink-0 h-5 min-w-5 px-1.5 rounded-full bg-primary text-primary-foreground text-xs font-medium flex items-center justify-center">
-          {unreadCount}
+          {displayUnread}
         </span>
       )}
     </button>
@@ -111,42 +173,90 @@ const ConversationItem = ({ conversation, isActive, onClick, currentUserId }) =>
 }
 
 // Message Component
-const MessageItem = ({ message, isOwn, senderName }) => {
+const MessageItem = ({ message, isOwn, senderName, onReport }) => {
   // Support both camelCase (from API) and snake_case (legacy)
   const createdAt = message.createdAt || message.created_at
   const timeAgo = createdAt
     ? formatDistanceToNow(new Date(createdAt), { addSuffix: true })
     : ''
+  const mediaUrl = message.media_url || message.mediaUrl
+
+  // Filter offensive content from message
+  const [filteredContent, setFilteredContent] = useState(message.content)
+
+  useEffect(() => {
+    const filterContent = async () => {
+      if (message.content) {
+        const filtered = await filterOffensiveContent(message.content)
+        setFilteredContent(filtered)
+      }
+    }
+    filterContent()
+  }, [message.content])
+
+  const hasText = Boolean(filteredContent && filteredContent.trim().length > 0)
+  const showSenderLabel = !isOwn && senderName
 
   return (
     <div
       className={clsx('flex mb-2 group', isOwn ? 'justify-end' : 'justify-start')}
     >
       <div className={clsx('flex items-end gap-2', isOwn ? 'flex-row-reverse' : 'flex-row')}>
-        <div className={clsx('max-w-[70%]')}>
+        <div className={clsx('max-w-[70%] flex flex-col gap-2', isOwn ? 'items-end' : 'items-start')}>
           {/* Show sender name for received messages in group chats */}
-          {!isOwn && senderName && (
+          {showSenderLabel && (
             <span className="text-xs text-muted-foreground mb-1 block px-2">
               {senderName}
             </span>
           )}
-          <div
-            className={clsx(
-              'rounded-2xl px-4 py-2 inline-block',
-              isOwn ? 'bg-primary text-primary-foreground' : 'bg-muted'
-            )}
-          >
-            <p className="text-sm break-words">{message.content}</p>
-          </div>
+
+          {mediaUrl && (
+            <a
+              href={mediaUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="block overflow-hidden rounded-2xl border border-border bg-background"
+            >
+              <img
+                src={mediaUrl}
+                alt={hasText ? 'Chat attachment' : 'Photo attachment'}
+                className="max-h-64 w-full object-cover"
+                loading="lazy"
+              />
+            </a>
+          )}
+
+          {hasText && (
+            <div
+              className={clsx(
+                'rounded-2xl px-4 py-2 inline-block text-left',
+                isOwn ? 'bg-primary text-primary-foreground' : 'bg-muted'
+              )}
+            >
+              <p className="text-sm break-words">{filteredContent}</p>
+            </div>
+          )}
         </div>
         {/* Time - only visible on hover */}
-        <span
-          className={clsx(
-            'text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap',
+        <div className="flex flex-col items-center gap-1">
+          <span
+            className={clsx(
+              'text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap',
+            )}
+          >
+            {timeAgo}
+          </span>
+          {!isOwn && onReport && (
+            <button
+              type="button"
+              onClick={() => onReport(message)}
+              className="rounded-full p-1 text-muted-foreground opacity-0 group-hover:opacity-100 transition-all hover:bg-muted"
+              title="Report tin nhắn"
+            >
+              <FlagIcon className="h-3.5 w-3.5" />
+            </button>
           )}
-        >
-          {timeAgo}
-        </span>
+        </div>
       </div>
     </div>
   )
@@ -165,10 +275,181 @@ const ChatView = ({ conversation }) => {
   const { user: authUser } = useAuth()
   const [inputValue, setInputValue] = useState('')
   const [isSending, setIsSending] = useState(false)
+  const [selectedImage, setSelectedImage] = useState(null)
+  const [imagePreviewUrl, setImagePreviewUrl] = useState('')
+  const [attachmentError, setAttachmentError] = useState('')
+  const [uploadStatus, setUploadStatus] = useState('idle')
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
+  const fileInputRef = useRef(null)
+  const previewUrlRef = useRef('')
+  const [reportModal, setReportModal] = useState({ isOpen: false, message: null })
+  const [selectedReportTokens, setSelectedReportTokens] = useState([])
+  const [reportFeedback, setReportFeedback] = useState({ type: '', message: '' })
+  const [isReportSubmitting, setIsReportSubmitting] = useState(false)
 
   const currentUserId = authUser?.id
+
+  const buildTokenOptions = useCallback((text) => {
+    if (!text || typeof text !== 'string') return []
+
+    const tokens = []
+    const seen = new Set()
+
+    const addToken = (segment) => {
+      const trimmed = segment.trim()
+      if (!trimmed) return
+      const value = trimmed.toLowerCase()
+      if (seen.has(value)) return
+      seen.add(value)
+      tokens.push({ label: trimmed, value })
+    }
+
+    const rawSegments = text
+      .split(/\s+/u)
+      .map((segment) => segment.trim())
+      .filter((segment) => segment.length > 0)
+
+    rawSegments.forEach((segment) => {
+      addToken(segment)
+
+      const hasSpecial = /[^0-9A-Za-zÀ-ỹà-ỹ]/u.test(segment)
+      if (hasSpecial) {
+        return
+      }
+
+      segment
+        .split(/[^0-9A-Za-zÀ-ỹà-ỹ]+/u)
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0)
+        .forEach((part) => addToken(part))
+    })
+
+    return tokens
+  }, [])
+
+  const reportTokenOptions = useMemo(() => {
+    if (!reportModal.message?.content) return []
+    return buildTokenOptions(reportModal.message.content)
+  }, [reportModal.message?.content, buildTokenOptions])
+
+  const canSubmitReport = reportTokenOptions.length > 0 && selectedReportTokens.length > 0
+
+  const closeReportModal = useCallback(() => {
+    setReportModal({ isOpen: false, message: null })
+    setSelectedReportTokens([])
+    setReportFeedback({ type: '', message: '' })
+    setIsReportSubmitting(false)
+  }, [])
+
+  const openReportModal = useCallback((message) => {
+    if (!currentUserId) {
+      if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+        window.alert('Bạn cần đăng nhập để report tin nhắn.')
+      }
+      return
+    }
+    setReportModal({ isOpen: true, message })
+    setSelectedReportTokens([])
+    setReportFeedback({ type: '', message: '' })
+  }, [currentUserId])
+
+  const toggleReportToken = (value) => {
+    setSelectedReportTokens((prev) =>
+      prev.includes(value) ? prev.filter((token) => token !== value) : [...prev, value]
+    )
+  }
+
+  const handleSubmitReport = async () => {
+    if (!reportModal.message) {
+      setReportFeedback({ type: 'error', message: 'Không tìm thấy tin nhắn để report.' })
+      return
+    }
+
+    if (!currentUserId) {
+      setReportFeedback({ type: 'error', message: 'Bạn cần đăng nhập để report tin nhắn.' })
+      return
+    }
+
+    if (selectedReportTokens.length === 0) {
+      setReportFeedback({ type: 'error', message: 'Hãy chọn ít nhất một từ để report.' })
+      return
+    }
+
+    try {
+      setIsReportSubmitting(true)
+      setReportFeedback({ type: '', message: '' })
+      const result = await reportMessageTokens({
+        reporterId: currentUserId,
+        messageId: reportModal.message.id,
+        conversationId:
+          reportModal.message.conversation_id ||
+          reportModal.message.conversationId ||
+          conversation.id,
+        tokens: selectedReportTokens,
+      })
+
+      if (result.addedWords?.length) {
+        setReportFeedback({
+          type: 'success',
+        })
+      } else {
+        setReportFeedback({
+          type: 'success',
+        })
+      }
+
+      setSelectedReportTokens([])
+      setTimeout(() => {
+        closeReportModal()
+      }, 1200)
+    } catch (error) {
+      setReportFeedback({
+        type: 'error',
+        message: error?.message || 'Không thể gửi report, vui lòng thử lại sau.',
+      })
+    } finally {
+      setIsReportSubmitting(false)
+    }
+  }
+
+  const handleReportMessage = useCallback((message) => {
+    openReportModal(message)
+  }, [openReportModal])
+
+  useEffect(() => {
+    previewUrlRef.current = imagePreviewUrl
+  }, [imagePreviewUrl])
+
+  const resetAttachment = useCallback(() => {
+    const previousUrl = previewUrlRef.current
+    setSelectedImage(null)
+    setImagePreviewUrl('')
+    setAttachmentError('')
+    setUploadStatus('idle')
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+    if (previousUrl) {
+      previewUrlRef.current = ''
+      requestAnimationFrame(() => URL.revokeObjectURL(previousUrl))
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrl) {
+        URL.revokeObjectURL(imagePreviewUrl)
+      }
+    }
+  }, [imagePreviewUrl])
+
+  useEffect(() => {
+    if (conversation?.id) {
+      resetAttachment()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resetAttachment intentionally stable
+  }, [conversation?.id])
 
   // Get the other participant for direct chats
   const otherParticipant = conversation.participants?.find(
@@ -199,14 +480,34 @@ const ChatView = ({ conversation }) => {
     inputRef.current?.focus()
   }, [conversation?.id])
 
+  const handleAttachmentChange = (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    try {
+      validateImageFile(file)
+      if (imagePreviewUrl) {
+        URL.revokeObjectURL(imagePreviewUrl)
+      }
+      setSelectedImage(file)
+      setImagePreviewUrl(URL.createObjectURL(file))
+      setAttachmentError('')
+      setUploadStatus('idle')
+    } catch (error) {
+      setAttachmentError(error.message)
+      event.target.value = ''
+    }
+  }
+
   const handleSend = async (e) => {
     e.preventDefault()
-    const content = inputValue.trim()
-    if (!content || isSending) return
+    const rawValue = inputValue
+    const content = rawValue.trim()
+    const hasAttachment = Boolean(selectedImage)
+    if ((!content && !hasAttachment) || isSending) return
 
     // Get recipient ID from various sources
     const recipientId = conversation.recipient?.id || otherParticipant?.id
-    
+
     console.log('[ChatPanel] handleSend:', {
       content,
       isNew: conversation.isNew,
@@ -218,27 +519,60 @@ const ChatView = ({ conversation }) => {
 
     setIsSending(true)
     setInputValue('')
+    setAttachmentError('')
 
     try {
+      const messageOptions = {}
+
+      if (selectedImage) {
+        validateImageFile(selectedImage)
+        setUploadStatus('credentials')
+        const credentials = await requestChatUploadCredentials()
+        setUploadStatus('uploading')
+        const uploadResult = await uploadImageToCloudinary(selectedImage, credentials)
+        setUploadStatus('ready')
+        const mediaUrl = uploadResult.secure_url || uploadResult.url
+        if (!mediaUrl) {
+          throw new Error('Không nhận được URL ảnh sau khi tải lên')
+        }
+        messageOptions.type = CHAT_MESSAGE_TYPES?.IMAGE || 'MESSAGE_TYPE_IMAGE'
+        messageOptions.mediaUrl = mediaUrl
+        messageOptions.mediaMetadata = {
+          width: uploadResult.width,
+          height: uploadResult.height,
+          bytes: uploadResult.bytes,
+          format: uploadResult.format,
+          resource_type: uploadResult.resource_type,
+          original_filename: uploadResult.original_filename,
+        }
+      }
+
       if (conversation.isNew) {
         // New conversation -> use startNewConversation with recipient info
         console.log('[ChatPanel] Starting new conversation with recipient:', conversation.recipient)
         const result = await startNewConversation(
           conversation.recipient.id,
           content,
-          conversation.recipient // Pass recipient info to cache
+          conversation.recipient, // Pass recipient info to cache
+          messageOptions
         )
         console.log('[ChatPanel] New conversation result:', result)
       } else {
         // Existing conversation -> send message with recipient ID to ensure they're a participant
         console.log('[ChatPanel] Sending to existing conversation:', conversation.id, 'recipient:', recipientId)
-        await sendMessage(conversation.id, content, recipientId)
+        await sendMessage(conversation.id, content, recipientId, messageOptions)
+      }
+
+      if (selectedImage) {
+        resetAttachment()
       }
     } catch (error) {
       console.error('[ChatPanel] Failed to send message:', error)
-      setInputValue(content) // Restore input on error
+      setInputValue(rawValue) // Restore input on error
+      setAttachmentError(error.message || 'Failed to send message')
     } finally {
       setIsSending(false)
+      setUploadStatus('idle')
     }
   }
 
@@ -263,7 +597,7 @@ const ChatView = ({ conversation }) => {
   const isDirectChat = conversation.participants?.length === 2 || conversation.recipient
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative">
       {/* Chat Header */}
       <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
         {isDirectChat ? (
@@ -317,9 +651,9 @@ const ChatView = ({ conversation }) => {
         {messages.map((message) => {
           // Support both camelCase (from API) and snake_case (legacy)
           const senderId = message.senderId || message.sender_id
-          const isOwn = currentUserId && senderId && 
+          const isOwn = currentUserId && senderId &&
             String(senderId).toLowerCase() === String(currentUserId).toLowerCase()
-          
+
           // Debug log
           if (messages.indexOf(message) === 0) {
             console.log('[ChatPanel] Message comparison:', {
@@ -329,41 +663,180 @@ const ChatView = ({ conversation }) => {
               messageKeys: Object.keys(message),
             })
           }
-          
+
           return (
             <MessageItem
               key={message.id}
               message={message}
               isOwn={isOwn}
               senderName={!isDirectChat ? getSenderName(senderId) : null}
+              onReport={handleReportMessage}
             />
           )
         })}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      <form
-        onSubmit={handleSend}
-        className="border-t border-border p-3 flex items-center gap-2"
-      >
-        <input
-          ref={inputRef}
-          type="text"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          placeholder="Type a message..."
-          disabled={isSending}
-          className="flex-1 rounded-full bg-muted px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
-        />
-        <button
-          type="submit"
-          disabled={!inputValue.trim() || isSending}
-          className="rounded-full bg-primary p-2 text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-        >
-          <PaperAirplaneIcon className="h-4 w-4" />
-        </button>
-      </form>
+      {/* Input & Attachments */}
+      <div className="border-t border-border p-3">
+        {selectedImage && (
+          <div className="mb-3 flex items-center gap-3 rounded-2xl border border-border bg-muted/40 p-2.5">
+            <div className="relative h-12 w-12 overflow-hidden rounded-xl border border-border">
+              <img
+                src={imagePreviewUrl}
+                alt="Selected attachment preview"
+                className="h-full w-full object-cover"
+              />
+            </div>
+            <div className="flex-1 text-xs">
+              <p className="font-medium text-foreground truncate">{selectedImage.name}</p>
+              <p className="text-muted-foreground">{formatFileSize(selectedImage.size)}</p>
+              {uploadStatus !== 'idle' && (
+                <p className="text-[11px] text-primary mt-0.5">
+                  {uploadStatus === 'credentials'
+                    ? 'Requesting upload token...'
+                    : uploadStatus === 'uploading'
+                      ? 'Uploading photo...'
+                      : 'Upload ready'}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={resetAttachment}
+              className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted"
+              aria-label="Remove image"
+            >
+              <XMarkIcon className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        {attachmentError && (
+          <p className="mb-2 text-xs text-destructive">{attachmentError}</p>
+        )}
+
+        <form onSubmit={handleSend} className="flex items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleAttachmentChange}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="rounded-full bg-muted p-2 text-muted-foreground transition-colors hover:text-foreground focus:outline-none disabled:opacity-50"
+            aria-label="Add image"
+            disabled={isSending}
+          >
+            <PhotoIcon className="h-5 w-5" />
+          </button>
+          <input
+            ref={inputRef}
+            type="text"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            placeholder="Type a message..."
+            disabled={isSending}
+            className="flex-1 rounded-full bg-muted px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+          />
+          <button
+            type="submit"
+            disabled={(!inputValue.trim() && !selectedImage) || isSending}
+            className="rounded-full bg-primary p-2 text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            <PaperAirplaneIcon className="h-4 w-4" />
+          </button>
+        </form>
+      </div>
+
+      {reportModal.isOpen && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-4 shadow-2xl">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Report tin nhắn</p>
+                <p className="text-[11px] text-muted-foreground">Chọn phần nội dung độc hại để hệ thống ghi nhận.</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeReportModal}
+                className="rounded-full p-1 text-muted-foreground hover:bg-muted"
+                aria-label="Đóng report"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mb-3 rounded-xl bg-muted/40 p-3 text-sm text-foreground">
+              {reportModal.message?.content
+                ? reportModal.message.content
+                : 'Tin nhắn không có nội dung text. Hãy mô tả nội dung cần report trong ô bên dưới.'}
+            </div>
+
+            <div className="mb-4 space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground">Chọn từ/cụm từ cần report</p>
+              {reportTokenOptions.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {reportTokenOptions.map((token) => {
+                    const isActive = selectedReportTokens.includes(token.value)
+                    return (
+                      <button
+                        key={token.value}
+                        type="button"
+                        onClick={() => toggleReportToken(token.value)}
+                        className={clsx(
+                          'rounded-full border px-3 py-1 text-xs transition-all',
+                          isActive
+                            ? 'border-destructive bg-destructive text-destructive-foreground'
+                            : 'border-border bg-muted text-muted-foreground hover:border-foreground'
+                        )}
+                      >
+                        {token.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-destructive">
+                  Tin nhắn này không chứa ký tự văn bản nên không thể report.
+                </p>
+              )}
+            </div>
+
+            {reportFeedback.message && (
+              <p
+                className={clsx(
+                  'mt-2 text-xs font-semibold',
+                  reportFeedback.type === 'error' ? 'text-destructive' : 'text-emerald-600'
+                )}
+              >
+                {reportFeedback.message}
+              </p>
+            )}
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeReportModal}
+                className="rounded-full border border-border px-4 py-1.5 text-xs font-semibold text-foreground hover:bg-muted"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitReport}
+                disabled={!canSubmitReport || isReportSubmitting}
+                className="rounded-full bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+              >
+                {isReportSubmitting ? 'Đang gửi...' : 'Gửi report'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -411,7 +884,7 @@ const EmptyState = ({ isExpanded, onStartChat }) => (
 )
 
 // Conversation List Component
-const ConversationList = ({ conversations, activeId, onSelect, isLoading, currentUserId }) => {
+const ConversationList = ({ conversations, activeId, onSelect, isLoading, currentUserId, getUnreadCount }) => {
   if (isLoading && conversations.length === 0) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -440,6 +913,7 @@ const ConversationList = ({ conversations, activeId, onSelect, isLoading, curren
           isActive={activeId === conversation.id}
           onClick={() => onSelect(conversation)}
           currentUserId={currentUserId}
+          unreadCount={getUnreadCount ? getUnreadCount(conversation) : conversation.unread_count}
         />
       ))}
     </div>
@@ -564,6 +1038,16 @@ const ChatPanel = ({ isOpen, onClose }) => {
   const [isMinimized, setIsMinimized] = useState(false)
   const [isExpanded, setIsExpanded] = useState(true)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const handleExportReports = useCallback(() => {
+    try {
+      downloadReportFiles()
+    } catch (error) {
+      console.error('[ChatPanel] Failed to export report files', error)
+      if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+        window.alert('Không thể tải file report trong môi trường hiện tại.')
+      }
+    }
+  }, [])
 
   // Auth
   const { user: authUser } = useAuth()
@@ -576,6 +1060,7 @@ const ChatPanel = ({ isOpen, onClose }) => {
     isLoading,
     unreadCount,
     startNewConversation,
+    getConversationUnread,
   } = useChat()
 
   const filtersSummary = useMemo(() => {
@@ -678,12 +1163,12 @@ const ChatPanel = ({ isOpen, onClose }) => {
   // Filter conversations
   const filteredConversations = useMemo(() => {
     return conversations.filter((conv) => {
-      // Filter by unread
-      if (showUnreadOnly && !conv.unread_count) return false
+      const unreadValue = getConversationUnread ? getConversationUnread(conv) : conv.unread_count
+      if (showUnreadOnly && (!unreadValue || unreadValue === 0)) return false
       // Add more filters here if needed based on conversation type
       return true
     })
-  }, [conversations, showUnreadOnly])
+  }, [conversations, showUnreadOnly, getConversationUnread])
 
   // Floating button when closed
   if (!isOpen) {
@@ -778,6 +1263,15 @@ const ChatPanel = ({ isOpen, onClose }) => {
             title="New chat"
           >
             <PlusCircleIcon className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={handleExportReports}
+            className="rounded-full p-1.5 transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="Export report logs"
+            title="Tải file report"
+          >
+            <ArrowDownTrayIcon className="h-4 w-4" />
           </button>
           <div ref={dropdownRef} className="relative">
             <button
@@ -919,6 +1413,7 @@ const ChatPanel = ({ isOpen, onClose }) => {
               onSelect={setActiveConversation}
               isLoading={isLoading}
               currentUserId={authUser?.id}
+              getUnreadCount={getConversationUnread}
             />
           </div>
         </div>

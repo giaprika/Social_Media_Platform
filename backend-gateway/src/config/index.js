@@ -62,6 +62,14 @@ const config = {
       ],
       timeout: 5000,
     },
+    feed: {
+      target: process.env.FEED_SERVICE_URL || "http://localhost:3006",
+      pathRewrite: {
+        "^/api/service/feed": "/api/feed",
+      },
+      excludeList: [],
+      timeout: 10000,
+    },
     chat: {
       target: process.env.CHAT_SERVICE_URL || "http://34.158.60.36:8080",
       pathRewrite: {
@@ -81,14 +89,6 @@ const config = {
         "/communities/categories", // GET categories
       ],
       timeout: 5000,
-    },
-    feed: {
-      target: process.env.FEED_SERVICE_URL || "http://localhost:3006",
-      pathRewrite: {
-        "^/api/service/feed": "/api/feed",
-      },
-      excludeList: [],
-      timeout: 10000,
     },
   },
 };

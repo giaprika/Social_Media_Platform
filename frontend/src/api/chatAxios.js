@@ -3,10 +3,8 @@ import Cookies from 'universal-cookie'
 
 const cookies = new Cookies()
 
-// Chat Service - Use local backend gateway as proxy to avoid CORS issues
-// Backend gateway at localhost:8000 will proxy to chat service at 34.158.60.36:8080
-const CHAT_API_BASE =
-	process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'
+// Chat Service - Direct connection to remote chat service
+const CHAT_API_BASE = 'http://34.143.185.208:8080'
 
 const chatApi = axios.create({
 	baseURL: CHAT_API_BASE,

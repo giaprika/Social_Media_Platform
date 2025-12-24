@@ -4,7 +4,7 @@
 $ErrorActionPreference = "Stop"
 
 # $BASE_URL = "http://localhost:8080"
-$BASE_URL = "34.1.200.169:8080"
+$BASE_URL = "34.143.185.208:8080"
 $USER_A = [guid]::NewGuid().ToString()
 $USER_B = [guid]::NewGuid().ToString()
 $CONV_ID = [guid]::NewGuid().ToString()

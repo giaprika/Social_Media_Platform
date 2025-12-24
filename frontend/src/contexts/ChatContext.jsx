@@ -5,6 +5,7 @@ import {
 	useCallback,
 	useEffect,
 	useRef,
+	useMemo,
 } from 'react'
 import * as chatApi from '../api/chat'
 import * as userApi from '../api/user'
@@ -15,6 +16,9 @@ const ChatContext = createContext(null)
 
 // Local storage key for cached participant info
 const PARTICIPANTS_CACHE_KEY = 'chat_participants_cache'
+
+const normalizeId = (value) =>
+	value ? String(value).toLowerCase() : ''
 
 // Helper to get/set participant cache
 const getParticipantsCache = () => {
@@ -45,10 +49,51 @@ export function ChatProvider({ children }) {
 	const [participantsCache, setParticipantsCacheState] = useState(getParticipantsCache)
 	const unsubscribeRefs = useRef([])
 
-	// Calculate total unread count
-	const unreadCount = conversations.reduce(
-		(sum, conv) => sum + (conv.unread_count || 0),
-		0
+	const getConversationUnread = useCallback(
+		(conv) => {
+			if (!conv) return 0
+			const baseUnread =
+				typeof conv.unread_count === 'number'
+					? conv.unread_count
+					: typeof conv.unreadCount === 'number'
+					?
+						conv.unreadCount
+					: 0
+
+			if (!baseUnread) return 0
+
+			if (activeConversation?.id && conv.id === activeConversation.id) {
+				return 0
+			}
+
+			const lastSenderRaw =
+				conv.last_message_sender_id ??
+				conv.lastMessageSenderId ??
+				(typeof conv.last_message_sender === 'object'
+					? conv.last_message_sender?.id
+					: conv.last_message_sender) ??
+				(typeof conv.lastMessageSender === 'object'
+					? conv.lastMessageSender?.id
+					: conv.lastMessageSender)
+
+			if (
+				lastSenderRaw &&
+				user?.id &&
+				normalizeId(lastSenderRaw) === normalizeId(user.id)
+			) {
+				return 0
+			}
+
+			return baseUnread
+		},
+		[activeConversation?.id, user?.id]
+	)
+
+	// Calculate total unread count (adjusted)
+	const unreadCount = useMemo(
+		() =>
+			conversations.reduce((sum, conv) => sum + getConversationUnread(conv), 0),
+		[conversations, getConversationUnread]
 	)
 
 	// Normalize conversation field names (API returns camelCase)
@@ -57,6 +102,9 @@ export function ChatProvider({ children }) {
 		last_message_content: conv.lastMessageContent || conv.last_message_content,
 		last_message_at: conv.lastMessageAt || conv.last_message_at,
 		last_message_sender_id: conv.lastMessageSenderId || conv.last_message_sender_id,
+		last_message_type: conv.lastMessageType || conv.last_message_type,
+		last_message_media_url:
+			conv.lastMessageMediaUrl || conv.last_message_media_url,
 		unread_count: conv.unreadCount ?? conv.unread_count ?? 0,
 		// Preserve enriched data
 		participants: conv.participants,
@@ -92,7 +140,26 @@ export function ChatProvider({ children }) {
 			// Enrich with cached participant info
 			const enriched = enrichConversations(rawConversations)
 			console.log('[ChatContext] Enriched conversations:', enriched)
-			setConversations(enriched)
+			setConversations((prev) => {
+				if (!prev || prev.length === 0) {
+					return enriched
+				}
+				const prevMap = new Map(prev.map((conv) => [conv.id, conv]))
+				return enriched.map((conv) => {
+					const existing = prevMap.get(conv.id)
+					if (!existing) {
+						return conv
+					}
+					return {
+						...existing,
+						...conv,
+						last_message_type:
+							conv.last_message_type ?? existing.last_message_type ?? null,
+						last_message_media_url:
+							conv.last_message_media_url ?? existing.last_message_media_url ?? null,
+					}
+				})
+			})
 		} catch (err) {
 			console.error('Failed to load conversations:', err)
 			setError(err.message || 'Failed to load conversations')
@@ -145,6 +212,9 @@ export function ChatProvider({ children }) {
 				sender_id: msg.senderId || msg.sender_id,
 				content: msg.content,
 				created_at: msg.createdAt || msg.created_at,
+				type: msg.type || msg.message_type,
+				media_url: msg.mediaUrl || msg.media_url,
+				media_metadata: msg.mediaMetadata || msg.media_metadata,
 			})
 
 			if (options.beforeTimestamp) {
@@ -171,7 +241,9 @@ export function ChatProvider({ children }) {
 					
 					// Merge: keep all unique messages, sorted by created_at
 					msgs.forEach(m => {
-						if (!existingMap.has(m.id)) {
+						if (existingMap.has(m.id)) {
+							existingMap.set(m.id, { ...existingMap.get(m.id), ...m })
+						} else {
 							existingMap.set(m.id, m)
 						}
 					})
@@ -247,12 +319,21 @@ export function ChatProvider({ children }) {
 						}
 					}
 
-					// Update last message sender info
+					// Update last message info
 					const lastMsg = msgs[msgs.length - 1]
 					setConversations((prev) =>
 						prev.map((conv) =>
 							conv.id === conversationId
-								? { ...conv, last_message_sender_id: lastMsg.sender_id }
+								? {
+									...conv,
+									last_message_sender_id: lastMsg.sender_id,
+									last_message_content: lastMsg.content,
+									last_message_at: lastMsg.created_at,
+									last_message_type:
+										lastMsg.type ?? conv.last_message_type ?? null,
+									last_message_media_url:
+										lastMsg.media_url ?? conv.last_message_media_url ?? null,
+								}
 								: conv
 						)
 					)
@@ -271,7 +352,12 @@ export function ChatProvider({ children }) {
 
 	// Send a message
 	const sendMessage = useCallback(
-		async (conversationId, content, recipientId = null) => {
+		async (
+			conversationId,
+			content,
+			recipientId = null,
+			messageOptions = {}
+		) => {
 			try {
 				setError(null)
 				
@@ -291,11 +377,31 @@ export function ChatProvider({ children }) {
 				// Always include receiver_ids to ensure recipient is added as participant
 				const receiverIds = finalRecipientId ? [finalRecipientId] : null
 				console.log('[ChatContext] Sending message with receiverIds:', receiverIds)
-				const response = await chatApi.sendMessage(conversationId, content, receiverIds)
+				const response = await chatApi.sendMessage(
+					conversationId,
+					content,
+					receiverIds,
+					messageOptions
+				)
 				
 				// API returns messageId (camelCase), normalize to message_id
 				const messageId = response.messageId || response.message_id
 				console.log('[ChatContext] Message sent, ID:', messageId)
+				const resolvedType =
+					messageOptions?.type ||
+					response.type ||
+					chatApi.CHAT_MESSAGE_TYPES?.TEXT ||
+					'MESSAGE_TYPE_TEXT'
+				const resolvedMediaUrl =
+					messageOptions?.mediaUrl ||
+					response.mediaUrl ||
+					response.media_url ||
+					null
+				const resolvedMediaMetadata =
+					messageOptions?.mediaMetadata ||
+					response.mediaMetadata ||
+					response.media_metadata ||
+					null
 
 				// Optimistically add message to state (avoid duplicates)
 				const newMessage = {
@@ -304,6 +410,9 @@ export function ChatProvider({ children }) {
 					sender_id: user?.id,
 					content: content,
 					created_at: new Date().toISOString(),
+					type: resolvedType,
+					media_url: resolvedMediaUrl,
+					media_metadata: resolvedMediaMetadata,
 				}
 				setMessages((prev) => {
 					// Check if message already exists
@@ -315,14 +424,17 @@ export function ChatProvider({ children }) {
 				})
 
 				// Optimistically update conversation with last message info
+				const lastMessageAt = new Date().toISOString()
 				setConversations((prev) =>
 					prev.map((conv) =>
 						conv.id === conversationId
 							? {
 								...conv,
 								last_message_content: content,
-								last_message_at: new Date().toISOString(),
+								last_message_at: lastMessageAt,
 								last_message_sender_id: user?.id,
+								last_message_type: resolvedType,
+								last_message_media_url: resolvedMediaUrl,
 							}
 							: conv
 					)
@@ -379,7 +491,12 @@ export function ChatProvider({ children }) {
 
 	// Start a new conversation
 	const startNewConversation = useCallback(
-		async (recipientId, content, recipientInfo = null) => {
+		async (
+			recipientId,
+			content,
+			recipientInfo = null,
+			messageOptions = {}
+		) => {
 			try {
 				if (!user?.id) {
 					console.error('[ChatContext] User not authenticated, user:', user)
@@ -394,11 +511,31 @@ export function ChatProvider({ children }) {
 				})
 				
 				// Pass current user ID to create deterministic conversation ID
-				const result = await chatApi.startConversation(user.id, recipientId, content)
+				const result = await chatApi.startConversation(
+					user.id,
+					recipientId,
+					content,
+					messageOptions
+				)
 				
 				// Normalize response - API returns messageId (camelCase)
 				const messageId = result.messageId || result.message_id
 				console.log('[ChatContext] startNewConversation result:', result, 'messageId:', messageId)
+				const resolvedType =
+					messageOptions?.type ||
+					result.type ||
+					chatApi.CHAT_MESSAGE_TYPES?.TEXT ||
+					'MESSAGE_TYPE_TEXT'
+				const resolvedMediaUrl =
+					messageOptions?.mediaUrl ||
+					result.mediaUrl ||
+					result.media_url ||
+					null
+				const resolvedMediaMetadata =
+					messageOptions?.mediaMetadata ||
+					result.mediaMetadata ||
+					result.media_metadata ||
+					null
 
 				// Cache participant info for this conversation
 				if (recipientInfo || activeConversation?.recipient) {
@@ -419,12 +556,28 @@ export function ChatProvider({ children }) {
 				const convResponse = await chatApi.getConversations()
 				const rawConversations = convResponse.conversations || []
 				const enriched = enrichConversations(rawConversations)
-				setConversations(enriched)
+				const enrichedWithMedia = enriched.map((conv) =>
+					conv.id === result.conversation_id
+						? {
+							...conv,
+							last_message_type: conv.last_message_type || resolvedType,
+							last_message_media_url:
+								conv.last_message_media_url || resolvedMediaUrl,
+						}
+						: conv
+				)
+				setConversations(enrichedWithMedia)
 
 				// Find the conversation with the returned ID
-				let newConv = enriched.find(c => c.id === result.conversation_id)
+				let newConv = enrichedWithMedia.find(c => c.id === result.conversation_id)
 
 				if (newConv) {
+					if (!newConv.last_message_type && resolvedType) {
+						newConv = { ...newConv, last_message_type: resolvedType }
+					}
+					if (!newConv.last_message_media_url && resolvedMediaUrl) {
+						newConv = { ...newConv, last_message_media_url: resolvedMediaUrl }
+					}
 					// Ensure recipient info is preserved
 					if (!newConv.recipient && (recipientInfo || activeConversation?.recipient)) {
 						newConv = {
@@ -446,6 +599,9 @@ export function ChatProvider({ children }) {
 						sender_id: user?.id,
 						content: content,
 						created_at: new Date().toISOString(),
+						type: resolvedType,
+						media_url: resolvedMediaUrl,
+						media_metadata: resolvedMediaMetadata,
 					}
 					setMessages((prev) => {
 						if (prev.some(m => m.id === messageId)) {
@@ -466,6 +622,8 @@ export function ChatProvider({ children }) {
 					id: result.conversation_id,
 					last_message_content: content,
 					last_message_at: new Date().toISOString(),
+					last_message_type: resolvedType,
+					last_message_media_url: resolvedMediaUrl,
 					unread_count: 0,
 					recipient: recipientInfo || activeConversation?.recipient,
 					participants: [
@@ -481,6 +639,9 @@ export function ChatProvider({ children }) {
 					sender_id: user?.id,
 					content: content,
 					created_at: new Date().toISOString(),
+					type: resolvedType,
+					media_url: resolvedMediaUrl,
+					media_metadata: resolvedMediaMetadata,
 				}
 				setMessages((prev) => {
 					if (prev.some(m => m.id === messageId)) {
@@ -541,6 +702,12 @@ export function ChatProvider({ children }) {
 								sender_id: data.sender_id,
 								content: data.content,
 								created_at: data.created_at,
+								type:
+									data.type ||
+									chatApi.CHAT_MESSAGE_TYPES?.TEXT ||
+									'MESSAGE_TYPE_TEXT',
+								media_url: data.media_url || null,
+								media_metadata: data.media_metadata || null,
 							},
 						]
 					})
@@ -623,6 +790,7 @@ export function ChatProvider({ children }) {
 		markAsRead,
 		startNewConversation,
 		clearError,
+		getConversationUnread,
 
 		// WebSocket
 		isWebSocketConnected: () => chatWebSocket.isConnected(),

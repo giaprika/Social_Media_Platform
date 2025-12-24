@@ -1,7 +1,7 @@
 import Cookies from 'universal-cookie'
 
 const CHAT_WS_URL =
-	process.env.REACT_APP_CHAT_WS_URL || 'ws://34.158.60.36:8081'
+	process.env.REACT_APP_CHAT_WS_URL || 'ws://34.143.185.208:8081'
 
 // Feature flag to enable/disable WebSocket
 // WebSocket disabled - chat service doesn't support it yet, using HTTP polling

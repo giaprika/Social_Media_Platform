@@ -3,6 +3,10 @@ import { PATHS } from 'src/constants/paths'
 import DefaultLayout from '../layouts/DefaultLayout'
 import RequireAuth from '../layouts/RequireAuth'
 import Feed from '../pages/feed'
+import LiveStreams from '../pages/live'
+import LiveStudio from '../pages/live-studio'
+import LiveStudioOBS from '../pages/live-studio-obs'
+import LiveWatch from '../pages/live-watch'
 import Profile from '../pages/profile'
 import Settings from '../pages/setting'
 import Search from '../pages/search'
@@ -27,6 +31,22 @@ const routes = {
 				{
 					path: PATHS.FEED,
 					element: <Feed />,
+				},
+				{
+					path: PATHS.LIVE,
+					element: <LiveStreams />,
+				},
+				{
+					path: '/app/live/studio',
+					element: <LiveStudio />,
+				},
+				{
+					path: '/app/live/studio-obs',
+					element: <LiveStudioOBS />,
+				},
+				{
+					path: '/app/live/watch/:streamId',
+					element: <LiveWatch />,
 				},
 				{
 					path: PATHS.PROFILE,
@@ -99,4 +119,3 @@ const routes = {
 }
 
 export default routes
-
