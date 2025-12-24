@@ -135,6 +135,7 @@ services:
       NOTIFICATION_SERVICE_URL: http://notification-service:8002
       POST_SERVICE_URL: http://post-service:8003
       COMMUNITY_SERVICE_URL: http://community-service:8004
+      FEED_SERVICE_URL: http://feed-service:3006
       AI_SERVICE_URL: http://ai-service:9000
       CORS_ORIGIN: http://localhost:3000
       INTERNAL_SECRET: your-super-secret-key-for-internal-services
@@ -145,11 +146,11 @@ services:
       - notification-service
       - community-service
       - post-service
+      - feed-service
       - ai-service
     networks:
       - social-network
     restart: unless-stopped
-
 
   user-service:
     build:

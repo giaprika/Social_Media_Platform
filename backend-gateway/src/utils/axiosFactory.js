@@ -2,6 +2,8 @@ import axios from "axios";
 import logger from "./logger.js";
 import config from "../config/index.js";
 import requestContext from "../middleware/context.js";
+import { create } from "domain";
+import { time } from "console";
 
 // Tạo instance Axios với cấu hình chung
 const createAxiosInstance = (options = {}) => {
@@ -96,10 +98,36 @@ const createAxiosInstance = (options = {}) => {
 };
 
 const userServiceInstance = createAxiosInstance({
-  baseURL: (config.userServiceUrl || config.services.users.target || "http://localhost:8001") + "/users",
+  baseURL:
+    (config.userServiceUrl ||
+      config.services.users.target ||
+      "http://localhost:8001") + "/users",
   timeout: config.services.users.timeout,
   serviceName: "users",
 });
 
+const postServiceInstance = createAxiosInstance({
+  baseURL:
+    (config.postServiceUrl ||
+      config.services.posts.target ||
+      "http://localhost:8003") + "/api/v1",
+  timeout: config.services.posts.timeout,
+  serviceName: "posts",
+});
+
+const feedServiceInstance = createAxiosInstance({
+  baseURL:
+    (config.feedServiceUrl ||
+      config.services.feed.target ||
+      "http://localhost:3006") + "/api/feed",
+  timeout: config.services.feed.timeout,
+  serviceName: "feed",
+});
+
 // Export factory function để tạo custom instances
-export { createAxiosInstance, userServiceInstance };
+export {
+  createAxiosInstance,
+  userServiceInstance,
+  postServiceInstance,
+  feedServiceInstance,
+};
