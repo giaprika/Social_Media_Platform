@@ -3,9 +3,6 @@ import axios from 'axios'
 import Cookies from 'universal-cookie'
 import { filterOffensiveContent } from '../utils/contentFilter'
 
-// API paths - direct to chat service (no gateway prefix)
-const CHAT_PATH = ''
-
 // Gateway URL for AI moderation (backend-gateway)
 const GATEWAY_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
 
@@ -275,7 +272,7 @@ export const moderateChatMedia = async (mediaUrl, mediaType) => {
 	}
 }
 
-export default {
+const chatApiModule = {
 	sendMessage,
 	getMessages,
 	getConversations,
@@ -289,3 +286,4 @@ export default {
 	CHAT_MESSAGE_TYPES,
 }
 
+export default chatApiModule

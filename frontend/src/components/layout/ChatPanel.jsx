@@ -11,7 +11,6 @@ import {
   FlagIcon,
   EnvelopeOpenIcon,
   PaperAirplaneIcon,
-  PhotoIcon,
   PlusCircleIcon,
   UserGroupIcon,
   XMarkIcon,
@@ -36,7 +35,6 @@ import {
   requestChatUploadCredentials,
   uploadMediaToCloudinary,
   validateMediaFile,
-  getMediaTypeFromFile,
   getFileTypeLabel,
   getAcceptedFileTypes,
 } from 'src/services/chatMediaUpload'
@@ -767,7 +765,6 @@ const ChatView = ({ conversation }) => {
     messages,
     sendMessage,
     startNewConversation,
-    setActiveConversation,
     isLoading,
     loadMessages,
   } = useChat()
@@ -898,7 +895,7 @@ const ChatView = ({ conversation }) => {
     try {
       setIsReportSubmitting(true)
       setReportFeedback({ type: '', message: '' })
-      const result = await reportMessageTokens({
+      await reportMessageTokens({
         reporterId: currentUserId,
         messageId: reportModal.message.id,
         conversationId:
@@ -1679,22 +1676,9 @@ const ChatPanel = ({ isOpen, onClose }) => {
     setActiveConversation,
     isLoading,
     unreadCount,
-    startNewConversation,
     getConversationUnread,
   } = useChat()
 
-  const filtersSummary = useMemo(() => {
-    if (selectedFilters.size === filterOptions.length && !showUnreadOnly) {
-      return 'All conversations'
-    }
-
-    const enabled = filterOptions
-      .filter((option) => selectedFilters.has(option.id))
-      .map((option) => option.label)
-
-    const summary = enabled.length ? enabled.join(', ') : 'No filters'
-    return showUnreadOnly ? `${summary} • Unread` : summary
-  }, [selectedFilters, showUnreadOnly])
 
   const toggleFilter = (id) => {
     setSelectedFilters((prev) => {
