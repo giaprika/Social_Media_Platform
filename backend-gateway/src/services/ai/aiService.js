@@ -8,7 +8,7 @@ const APP_NAME = process.env.APP_NAME || "content_moderation_agent";
 
 const client = axios.create({
   baseURL: AI_BASE,
-  timeout: parseInt(process.env.AI_SERVICE_TIMEOUT || "20000", 10),
+  timeout: parseInt(process.env.AI_SERVICE_TIMEOUT || "30000", 10),
   headers: {
     "Content-Type": "application/json",
   },
