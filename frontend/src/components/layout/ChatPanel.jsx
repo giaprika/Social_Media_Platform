@@ -392,12 +392,10 @@ const ChatView = ({ conversation }) => {
       if (result.addedWords?.length) {
         setReportFeedback({
           type: 'success',
-          message: `Đã cập nhật file report và thêm vào offensive_words.txt: ${result.addedWords.join(', ')}`,
         })
       } else {
         setReportFeedback({
           type: 'success',
-          message: 'Đã ghi nhận report và tải lại reported_messages.txt / reported_word_counts.txt.',
         })
       }
 

@@ -4,9 +4,8 @@ import {
 } from 'src/utils/contentFilter'
 
 const REPORT_THRESHOLD = 3
-const REPORT_LOG_FILENAME = 'reported_messages.txt'
-const REPORT_COUNT_FILENAME = 'reported_word_counts.txt'
-const OFFENSIVE_WORDS_FILENAME = 'offensive_words.txt'
+const STORAGE_KEY_REPORTS = 'chat_report_logs'
+const STORAGE_KEY_WORD_COUNTS = 'chat_report_word_counts'
 
 const isBrowser =
 	typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -14,6 +13,37 @@ const isBrowser =
 let reportEntries = []
 let wordCounts = {}
 let baseOffensiveWordsCache = null
+
+// Load from localStorage on init
+const loadFromStorage = () => {
+	if (!isBrowser) return
+	try {
+		const storedReports = localStorage.getItem(STORAGE_KEY_REPORTS)
+		if (storedReports) {
+			reportEntries = JSON.parse(storedReports)
+		}
+		const storedCounts = localStorage.getItem(STORAGE_KEY_WORD_COUNTS)
+		if (storedCounts) {
+			wordCounts = JSON.parse(storedCounts)
+		}
+	} catch (error) {
+		console.warn('[ChatReportService] Failed to load from storage:', error)
+	}
+}
+
+// Save to localStorage
+const saveToStorage = () => {
+	if (!isBrowser) return
+	try {
+		localStorage.setItem(STORAGE_KEY_REPORTS, JSON.stringify(reportEntries))
+		localStorage.setItem(STORAGE_KEY_WORD_COUNTS, JSON.stringify(wordCounts))
+	} catch (error) {
+		console.warn('[ChatReportService] Failed to save to storage:', error)
+	}
+}
+
+// Initialize on load
+loadFromStorage()
 
 const loadBaseOffensiveWords = async () => {
 	if (baseOffensiveWordsCache) return baseOffensiveWordsCache
@@ -49,19 +79,11 @@ const sanitizeTokens = (tokens = []) => {
 
 const appendLogEntry = (entry) => {
 	reportEntries.push(entry)
-}
-
-const triggerDownload = (filename, content) => {
-	if (!isBrowser) return
-	const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
-	const url = URL.createObjectURL(blob)
-	const link = document.createElement('a')
-	link.href = url
-	link.download = filename
-	document.body.appendChild(link)
-	link.click()
-	document.body.removeChild(link)
-	URL.revokeObjectURL(url)
+	// Limit to last 500 entries
+	if (reportEntries.length > 500) {
+		reportEntries = reportEntries.slice(-500)
+	}
+	saveToStorage()
 }
 
 const mergeOffensiveWordList = async () => {
@@ -71,16 +93,6 @@ const mergeOffensiveWordList = async () => {
 	return Array.from(merged)
 		.filter((word) => word.length > 0)
 		.sort()
-}
-
-const downloadOffensiveWordsFile = async () => {
-	const content = (await mergeOffensiveWordList()).join('\n')
-	if (!content.length) return
-	triggerDownload(OFFENSIVE_WORDS_FILENAME, content)
-	baseOffensiveWordsCache = content
-		.split('\n')
-		.map((line) => line.trim().toLowerCase())
-		.filter((line) => line.length > 0)
 }
 
 const updateWordCounts = async (tokens) => {
@@ -97,9 +109,10 @@ const updateWordCounts = async (tokens) => {
 
 	if (promoted.length > 0) {
 		await appendCustomOffensiveWords(promoted)
-		await downloadOffensiveWordsFile()
+		console.log('[ChatReportService] Words added to filter list:', promoted)
 	}
 
+	saveToStorage()
 	return { promoted }
 }
 
@@ -109,9 +122,8 @@ const formatLogLines = () => {
 	}
 	return reportEntries
 		.map((entry) => {
-			return `[${entry.timestamp}] convo:${entry.conversationId || 'n/a'} msg:${
-				entry.messageId
-			} người báo cáo:${entry.reporterId} | các từ: ${entry.tokens.join(', ')}`
+			return `[${entry.timestamp}] convo:${entry.conversationId || 'n/a'} msg:${entry.messageId
+				} người báo cáo:${entry.reporterId} | các từ: ${entry.tokens.join(', ')}`
 		})
 		.join('\n')
 }
@@ -124,10 +136,18 @@ const formatCounts = () => {
 	return entries.map(([word, count]) => `${word}=${count}`).join('\n')
 }
 
-const persistReportFiles = () => {
+// Download functions - only called manually
+const triggerDownload = (filename, content) => {
 	if (!isBrowser) return
-	triggerDownload(REPORT_LOG_FILENAME, formatLogLines())
-	triggerDownload(REPORT_COUNT_FILENAME, formatCounts())
+	const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+	const url = URL.createObjectURL(blob)
+	const link = document.createElement('a')
+	link.href = url
+	link.download = filename
+	document.body.appendChild(link)
+	link.click()
+	document.body.removeChild(link)
+	URL.revokeObjectURL(url)
 }
 
 export const reportMessageTokens = async ({
@@ -165,7 +185,13 @@ export const reportMessageTokens = async ({
 
 	const { promoted } = await updateWordCounts(normalizedTokens)
 
-	persistReportFiles()
+	// Log to console instead of downloading files
+	console.log('[ChatReportService] Report submitted:', {
+		messageId,
+		tokens: normalizedTokens,
+		promotedWords: promoted,
+		totalReports: reportEntries.length
+	})
 
 	return {
 		tokens: normalizedTokens,
@@ -173,13 +199,35 @@ export const reportMessageTokens = async ({
 	}
 }
 
+// Manual export function - only call this when user explicitly wants to download
 export const downloadReportFiles = () => {
 	if (!isBrowser) {
 		throw new Error('Chức năng export chỉ dùng được trên trình duyệt')
 	}
-	persistReportFiles()
+	triggerDownload('reported_messages.txt', formatLogLines())
+	triggerDownload('reported_word_counts.txt', formatCounts())
+}
+
+// Export merged offensive words (manual action only)
+export const downloadOffensiveWordsList = async () => {
+	if (!isBrowser) {
+		throw new Error('Chức năng export chỉ dùng được trên trình duyệt')
+	}
+	const content = (await mergeOffensiveWordList()).join('\n')
+	if (!content.length) return
+	triggerDownload('offensive_words.txt', content)
 }
 
 export const getPendingWordCounts = () => {
 	return { ...wordCounts }
+}
+
+export const getReportEntries = () => {
+	return [...reportEntries]
+}
+
+export const clearReports = () => {
+	reportEntries = []
+	wordCounts = {}
+	saveToStorage()
 }
