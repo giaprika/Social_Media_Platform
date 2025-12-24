@@ -1,5 +1,4 @@
 import dotenv from "dotenv";
-import feedService from "../services/feed/feedService";
 dotenv.config();
 
 const config = {
