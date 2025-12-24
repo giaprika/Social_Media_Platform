@@ -6,13 +6,33 @@ import {
 const REPORT_THRESHOLD = 3
 const STORAGE_KEY_REPORTS = 'chat_report_logs'
 const STORAGE_KEY_WORD_COUNTS = 'chat_report_word_counts'
+const STORAGE_KEY_REPORTED_MESSAGES = 'chat_reported_message_ids'
 
 const isBrowser =
 	typeof window !== 'undefined' && typeof document !== 'undefined'
 
 let reportEntries = []
 let wordCounts = {}
+let reportedMessageIds = new Set() // Track all reported message IDs
 let baseOffensiveWordsCache = null
+
+// Event listeners for report updates (allows components to react immediately)
+const reportListeners = new Set()
+
+export const subscribeToReportUpdates = (callback) => {
+	reportListeners.add(callback)
+	return () => reportListeners.delete(callback) // Unsubscribe function
+}
+
+const notifyReportListeners = (messageId) => {
+	reportListeners.forEach(callback => {
+		try {
+			callback(messageId)
+		} catch (e) {
+			console.error('[ChatReportService] Listener error:', e)
+		}
+	})
+}
 
 // Load from localStorage on init
 const loadFromStorage = () => {
@@ -26,6 +46,10 @@ const loadFromStorage = () => {
 		if (storedCounts) {
 			wordCounts = JSON.parse(storedCounts)
 		}
+		const storedReportedMessages = localStorage.getItem(STORAGE_KEY_REPORTED_MESSAGES)
+		if (storedReportedMessages) {
+			reportedMessageIds = new Set(JSON.parse(storedReportedMessages))
+		}
 	} catch (error) {
 		console.warn('[ChatReportService] Failed to load from storage:', error)
 	}
@@ -37,6 +61,7 @@ const saveToStorage = () => {
 	try {
 		localStorage.setItem(STORAGE_KEY_REPORTS, JSON.stringify(reportEntries))
 		localStorage.setItem(STORAGE_KEY_WORD_COUNTS, JSON.stringify(wordCounts))
+		localStorage.setItem(STORAGE_KEY_REPORTED_MESSAGES, JSON.stringify([...reportedMessageIds]))
 	} catch (error) {
 		console.warn('[ChatReportService] Failed to save to storage:', error)
 	}
@@ -183,6 +208,13 @@ export const reportMessageTokens = async ({
 
 	appendLogEntry(entry)
 
+	// Track this message as reported (for censoring media)
+	reportedMessageIds.add(messageId)
+	saveToStorage()
+
+	// Notify listeners to update UI immediately
+	notifyReportListeners(messageId)
+
 	const { promoted } = await updateWordCounts(normalizedTokens)
 
 	// Log to console instead of downloading files
@@ -196,6 +228,8 @@ export const reportMessageTokens = async ({
 	return {
 		tokens: normalizedTokens,
 		addedWords: promoted,
+		messageId,
+		isReported: true,
 	}
 }
 
@@ -226,8 +260,27 @@ export const getReportEntries = () => {
 	return [...reportEntries]
 }
 
+/**
+ * Check if a message has been reported
+ * @param {string} messageId 
+ * @returns {boolean}
+ */
+export const isMessageReported = (messageId) => {
+	if (!messageId) return false
+	return reportedMessageIds.has(messageId)
+}
+
+/**
+ * Get all reported message IDs
+ * @returns {string[]}
+ */
+export const getReportedMessageIds = () => {
+	return [...reportedMessageIds]
+}
+
 export const clearReports = () => {
 	reportEntries = []
 	wordCounts = {}
+	reportedMessageIds = new Set()
 	saveToStorage()
 }

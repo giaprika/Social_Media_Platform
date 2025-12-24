@@ -24,7 +24,7 @@ import { useChat } from 'src/contexts/ChatContext'
 import useAuth from 'src/hooks/useAuth'
 import { formatDistanceToNow } from 'date-fns'
 import * as userApi from 'src/api/user'
-import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
+import { MagnifyingGlassIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
 import Avatar from 'src/components/ui/Avatar'
 import { filterOffensiveContent } from 'src/utils/contentFilter'
 import { CHAT_MESSAGE_TYPES } from 'src/api/chat'
@@ -36,7 +36,7 @@ import {
   getFileTypeLabel,
   getAcceptedFileTypes,
 } from 'src/services/chatMediaUpload'
-import { downloadReportFiles, reportMessageTokens } from 'src/services/chatReportService'
+import { downloadReportFiles, reportMessageTokens, isMessageReported, subscribeToReportUpdates } from 'src/services/chatReportService'
 
 const filterOptions = [
   { id: 'channels', label: 'Chat channels' },
@@ -193,6 +193,31 @@ const MessageItem = ({ message, isOwn, senderName, onReport }) => {
   const mediaMetadata = message.media_metadata || message.mediaMetadata || {}
   const originalFilename = mediaMetadata.original_filename || mediaMetadata.originalFilename
 
+  // Check if this message has been reported (for censoring)
+  const messageId = message.id || message.message_id
+  const [isReported, setIsReported] = useState(false)
+  const [isRevealed, setIsRevealed] = useState(false)
+
+  useEffect(() => {
+    // Check if message is reported on mount
+    if (messageId && mediaUrl) {
+      setIsReported(isMessageReported(messageId))
+    }
+  }, [messageId, mediaUrl])
+
+  // Subscribe to report updates to update UI immediately after report
+  useEffect(() => {
+    if (!messageId || !mediaUrl) return
+
+    const unsubscribe = subscribeToReportUpdates((reportedMsgId) => {
+      if (reportedMsgId === messageId) {
+        setIsReported(true)
+      }
+    })
+
+    return unsubscribe
+  }, [messageId, mediaUrl])
+
   // Filter offensive content from message
   const [filteredContent, setFilteredContent] = useState(message.content)
 
@@ -216,6 +241,9 @@ const MessageItem = ({ message, isOwn, senderName, onReport }) => {
     (mediaUrl && mediaUrl.match(/\.(mp4|webm|ogg|mov)$/i))
   const isFile = messageType === CHAT_MESSAGE_TYPES?.FILE ||
     (mediaUrl && !isImage && !isVideo)
+
+  // Should show censor overlay?
+  const showCensor = isReported && !isRevealed && mediaUrl
 
   // Get filename - prioritize original filename from metadata
   const getFileName = () => {
@@ -256,6 +284,25 @@ const MessageItem = ({ message, isOwn, senderName, onReport }) => {
   // Check if content is just a file marker (should not display as text bubble)
   const isFileMarker = /^\[FILE:.+\]$/.test(message.content || '')
 
+  // Censor overlay component
+  const CensorOverlay = ({ children, type = 'media' }) => (
+    <div className="relative">
+      {children}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setIsRevealed(true)
+        }}
+        className="absolute inset-0 flex flex-col items-center justify-center bg-gray-800/90 backdrop-blur-sm rounded-2xl cursor-pointer transition-all hover:bg-gray-700/90"
+      >
+        <ExclamationTriangleIcon className="h-8 w-8 text-yellow-400 mb-2" />
+        <span className="text-gray-300 text-xs mt-1">Nhấn để xem</span>
+      </button>
+    </div>
+  )
+
   return (
     <div
       className={clsx('flex mb-2 group', isOwn ? 'justify-end' : 'justify-start')}
@@ -271,63 +318,111 @@ const MessageItem = ({ message, isOwn, senderName, onReport }) => {
 
           {/* Image attachment */}
           {mediaUrl && isImage && (
-            <a
-              href={mediaUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="block overflow-hidden rounded-2xl border border-border bg-background"
-            >
-              <img
-                src={mediaUrl}
-                alt={hasText ? 'Chat attachment' : 'Photo attachment'}
-                className="max-h-64 w-full object-cover"
-                loading="lazy"
-              />
-            </a>
+            showCensor ? (
+              <CensorOverlay>
+                <div className="block overflow-hidden rounded-2xl border border-border bg-background">
+                  <img
+                    src={mediaUrl}
+                    alt="Censored content"
+                    className="max-h-64 w-full object-cover blur-xl opacity-30"
+                    loading="lazy"
+                  />
+                </div>
+              </CensorOverlay>
+            ) : (
+              <a
+                href={mediaUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="block overflow-hidden rounded-2xl border border-border bg-background"
+              >
+                <img
+                  src={mediaUrl}
+                  alt={hasText ? 'Chat attachment' : 'Photo attachment'}
+                  className="max-h-64 w-full object-cover"
+                  loading="lazy"
+                />
+              </a>
+            )
           )}
 
           {/* Video attachment */}
           {mediaUrl && isVideo && (
-            <div className="relative overflow-hidden rounded-2xl border border-border bg-background">
-              <video
-                src={mediaUrl}
-                controls
-                preload="metadata"
-                className="max-h-64 max-w-full"
-              >
-                <track kind="captions" />
-              </video>
-            </div>
+            showCensor ? (
+              <CensorOverlay>
+                <div className="relative overflow-hidden rounded-2xl border border-border bg-background">
+                  <video
+                    src={mediaUrl}
+                    preload="metadata"
+                    className="max-h-64 max-w-full blur-xl opacity-30"
+                  >
+                    <track kind="captions" />
+                  </video>
+                </div>
+              </CensorOverlay>
+            ) : (
+              <div className="relative overflow-hidden rounded-2xl border border-border bg-background">
+                <video
+                  src={mediaUrl}
+                  controls
+                  preload="metadata"
+                  className="max-h-64 max-w-full"
+                >
+                  <track kind="captions" />
+                </video>
+              </div>
+            )
           )}
 
           {/* File attachment */}
           {mediaUrl && isFile && (
-            <a
-              href={mediaUrl}
-              target="_blank"
-              rel="noreferrer"
-              download
-              className={clsx(
-                'flex items-center gap-3 rounded-2xl border px-4 py-3 transition-colors w-full max-w-xs',
-                isOwn
-                  ? 'border-primary/30 bg-primary/10 hover:bg-primary/20'
-                  : 'border-border bg-muted hover:bg-muted/80'
-              )}
-            >
-              <div className={clsx(
-                'flex items-center justify-center w-10 h-10 rounded-xl flex-shrink-0',
-                isOwn ? 'bg-primary/20' : 'bg-background'
-              )}>
-                <DocumentIcon className={clsx('h-5 w-5', isOwn ? 'text-primary' : 'text-muted-foreground')} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className={clsx('text-sm font-medium truncate', isOwn ? 'text-primary' : 'text-foreground')}>
-                  {getFileName()}
-                </p>
-                <p className="text-xs text-muted-foreground">Nhấn để tải xuống</p>
-              </div>
-              <ArrowDownTrayIcon className={clsx('h-4 w-4 flex-shrink-0', isOwn ? 'text-primary' : 'text-muted-foreground')} />
-            </a>
+            showCensor ? (
+              <CensorOverlay>
+                <div className={clsx(
+                  'flex items-center gap-3 rounded-2xl border px-4 py-3 w-full max-w-xs',
+                  isOwn
+                    ? 'border-primary/30 bg-primary/10'
+                    : 'border-border bg-muted'
+                )}>
+                  <div className={clsx(
+                    'flex items-center justify-center w-10 h-10 rounded-xl flex-shrink-0',
+                    isOwn ? 'bg-primary/20' : 'bg-background'
+                  )}>
+                    <DocumentIcon className={clsx('h-5 w-5', isOwn ? 'text-primary' : 'text-muted-foreground')} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-400">Tệp đính kèm</p>
+                  </div>
+                </div>
+              </CensorOverlay>
+            ) : (
+              <a
+                href={mediaUrl}
+                target="_blank"
+                rel="noreferrer"
+                download
+                className={clsx(
+                  'flex items-center gap-3 rounded-2xl border px-4 py-3 transition-colors w-full max-w-xs',
+                  isOwn
+                    ? 'border-primary/30 bg-primary/10 hover:bg-primary/20'
+                    : 'border-border bg-muted hover:bg-muted/80'
+                )}
+              >
+                <div className={clsx(
+                  'flex items-center justify-center w-10 h-10 rounded-xl flex-shrink-0',
+                  isOwn ? 'bg-primary/20' : 'bg-background'
+                )}>
+                  <DocumentIcon className={clsx('h-5 w-5', isOwn ? 'text-primary' : 'text-muted-foreground')} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={clsx('text-sm font-medium truncate', isOwn ? 'text-primary' : 'text-foreground')}>
+                    {getFileName()}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Nhấn để tải xuống</p>
+                </div>
+                <ArrowDownTrayIcon className={clsx('h-4 w-4 flex-shrink-0', isOwn ? 'text-primary' : 'text-muted-foreground')} />
+              </a>
+            )
           )}
 
           {hasText && !isFileMarker && (
@@ -436,10 +531,23 @@ const ChatView = ({ conversation }) => {
 
   const reportTokenOptions = useMemo(() => {
     if (!reportModal.message?.content) return []
-    return buildTokenOptions(reportModal.message.content)
+    // Skip file marker content like [FILE:name.ext]
+    const content = reportModal.message.content
+    if (/^\[FILE:.+\]$/.test(content)) return []
+    return buildTokenOptions(content)
   }, [reportModal.message?.content, buildTokenOptions])
 
-  const canSubmitReport = reportTokenOptions.length > 0 && selectedReportTokens.length > 0
+  // Check if this is a media-only message (image/video/file without meaningful text)
+  const isMediaMessage = useMemo(() => {
+    if (!reportModal.message) return false
+    const mediaUrl = reportModal.message.media_url || reportModal.message.mediaUrl
+    const content = reportModal.message.content || ''
+    const isFileMarker = /^\[FILE:.+\]$/.test(content)
+    return Boolean(mediaUrl) && (!content || isFileMarker)
+  }, [reportModal.message])
+
+  // Can submit: either has tokens selected OR is a media message
+  const canSubmitReport = (reportTokenOptions.length > 0 && selectedReportTokens.length > 0) || isMediaMessage
 
   const closeReportModal = useCallback(() => {
     setReportModal({ isOpen: false, message: null })
@@ -477,7 +585,12 @@ const ChatView = ({ conversation }) => {
       return
     }
 
-    if (selectedReportTokens.length === 0) {
+    // For media messages, we don't need tokens - use a default token
+    const tokensToReport = isMediaMessage
+      ? ['media_content']
+      : selectedReportTokens
+
+    if (tokensToReport.length === 0) {
       setReportFeedback({ type: 'error', message: 'Hãy chọn ít nhất một từ để report.' })
       return
     }
@@ -492,18 +605,13 @@ const ChatView = ({ conversation }) => {
           reportModal.message.conversation_id ||
           reportModal.message.conversationId ||
           conversation.id,
-        tokens: selectedReportTokens,
+        tokens: tokensToReport,
       })
 
-      if (result.addedWords?.length) {
-        setReportFeedback({
-          type: 'success',
-        })
-      } else {
-        setReportFeedback({
-          type: 'success',
-        })
-      }
+      setReportFeedback({
+        type: 'success',
+        message: isMediaMessage ? 'Đã báo cáo nội dung media!' : 'Đã gửi báo cáo thành công!',
+      })
 
       setSelectedReportTokens([])
       setTimeout(() => {
@@ -913,7 +1021,11 @@ const ChatView = ({ conversation }) => {
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <p className="text-sm font-semibold text-foreground">Report tin nhắn</p>
-                <p className="text-[11px] text-muted-foreground">Chọn phần nội dung độc hại để hệ thống ghi nhận.</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {isMediaMessage
+                    ? 'Báo cáo nội dung media vi phạm'
+                    : 'Chọn phần nội dung độc hại để hệ thống ghi nhận.'}
+                </p>
               </div>
               <button
                 type="button"
@@ -925,41 +1037,56 @@ const ChatView = ({ conversation }) => {
               </button>
             </div>
 
-            <div className="mb-3 rounded-xl bg-muted/40 p-3 text-sm text-foreground">
-              {reportModal.message?.content
-                ? reportModal.message.content
-                : 'Tin nhắn không có nội dung text. Hãy mô tả nội dung cần report trong ô bên dưới.'}
-            </div>
-
-            <div className="mb-4 space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground">Chọn từ/cụm từ cần report</p>
-              {reportTokenOptions.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {reportTokenOptions.map((token) => {
-                    const isActive = selectedReportTokens.includes(token.value)
-                    return (
-                      <button
-                        key={token.value}
-                        type="button"
-                        onClick={() => toggleReportToken(token.value)}
-                        className={clsx(
-                          'rounded-full border px-3 py-1 text-xs transition-all',
-                          isActive
-                            ? 'border-destructive bg-destructive text-destructive-foreground'
-                            : 'border-border bg-muted text-muted-foreground hover:border-foreground'
-                        )}
-                      >
-                        {token.label}
-                      </button>
-                    )
-                  })}
+            {/* Media preview for media messages */}
+            {isMediaMessage ? (
+              <div className="mb-4">
+                <div className="rounded-xl bg-muted/40 p-4 flex flex-col items-center justify-center gap-3">
+                  <ExclamationTriangleIcon className="h-10 w-10 text-yellow-500" />
+                  <p className="text-sm text-foreground text-center font-medium">
+                    Bạn có chắc muốn báo cáo nội dung này?
+                  </p>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Nội dung sẽ được đánh dấu là vi phạm và sẽ bị che khi hiển thị
+                  </p>
                 </div>
-              ) : (
-                <p className="text-xs text-destructive">
-                  Tin nhắn này không chứa ký tự văn bản nên không thể report.
-                </p>
-              )}
-            </div>
+              </div>
+            ) : (
+              <>
+                <div className="mb-3 rounded-xl bg-muted/40 p-3 text-sm text-foreground">
+                  {reportModal.message?.content || 'Tin nhắn không có nội dung text.'}
+                </div>
+
+                <div className="mb-4 space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground">Chọn từ/cụm từ cần report</p>
+                  {reportTokenOptions.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {reportTokenOptions.map((token) => {
+                        const isActive = selectedReportTokens.includes(token.value)
+                        return (
+                          <button
+                            key={token.value}
+                            type="button"
+                            onClick={() => toggleReportToken(token.value)}
+                            className={clsx(
+                              'rounded-full border px-3 py-1 text-xs transition-all',
+                              isActive
+                                ? 'border-destructive bg-destructive text-destructive-foreground'
+                                : 'border-border bg-muted text-muted-foreground hover:border-foreground'
+                            )}
+                          >
+                            {token.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-destructive">
+                      Tin nhắn này không chứa ký tự văn bản nên không thể report.
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
 
             {reportFeedback.message && (
               <p
@@ -984,9 +1111,13 @@ const ChatView = ({ conversation }) => {
                 type="button"
                 onClick={handleSubmitReport}
                 disabled={!canSubmitReport || isReportSubmitting}
-                className="rounded-full bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+                className="rounded-full bg-destructive px-4 py-1.5 text-xs font-semibold text-destructive-foreground disabled:opacity-50 hover:bg-destructive/90"
               >
-                {isReportSubmitting ? 'Đang gửi...' : 'Gửi report'}
+                {isReportSubmitting
+                  ? 'Đang gửi...'
+                  : isMediaMessage
+                    ? 'Báo cáo nội dung'
+                    : 'Gửi report'}
               </button>
             </div>
           </div>
