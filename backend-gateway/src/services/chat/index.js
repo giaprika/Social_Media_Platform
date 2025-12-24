@@ -1,6 +1,7 @@
 import express from 'express'
 import { createProxyMiddleware, fixRequestBody } from 'http-proxy-middleware'
 import logger from '../../utils/logger.js'
+import { moderateChatMedia } from './chatService.js'
 
 const router = express.Router()
 
@@ -16,6 +17,52 @@ const isValidUUID = (str) => {
 	if (!str || typeof str !== 'string') return false
 	return UUID_REGEX.test(str)
 }
+
+/**
+ * POST /api/chat/moderate
+ * Kiểm duyệt media (ảnh/video) bằng AI trước khi gửi
+ * Body: { mediaUrl: string, mediaType: string }
+ */
+router.post('/moderate', async (req, res) => {
+	try {
+		const userId = req.user?.id || req.headers['x-user-id']
+		const { mediaUrl, mediaType } = req.body
+
+		if (!mediaUrl) {
+			return res.status(400).json({
+				error: 'Missing mediaUrl',
+				isViolation: false,
+			})
+		}
+
+		logger.info('[Chat Moderate] Checking media', {
+			userId,
+			mediaType,
+			mediaUrl: mediaUrl.substring(0, 80) + '...',
+		})
+
+		const result = await moderateChatMedia(mediaUrl, mediaType, userId)
+
+		logger.info('[Chat Moderate] Result', {
+			userId,
+			isViolation: result.isViolation,
+			result: result.result,
+		})
+
+		return res.json(result)
+	} catch (error) {
+		logger.error('[Chat Moderate] Error', {
+			error: error.message,
+		})
+
+		// Fail-open: nếu lỗi, cho phép content
+		return res.json({
+			isViolation: false,
+			result: 'Accepted',
+			message: 'Moderation service error',
+		})
+	}
+})
 
 // Create proxy middleware for chat service
 const chatProxy = createProxyMiddleware({
@@ -83,7 +130,8 @@ const chatProxy = createProxyMiddleware({
 	},
 })
 
-// Apply proxy to all routes
+// Apply proxy to all other routes (AFTER /moderate)
 router.use('/', chatProxy)
 
 export default router
+

@@ -27,7 +27,7 @@ import * as userApi from 'src/api/user'
 import { MagnifyingGlassIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
 import Avatar from 'src/components/ui/Avatar'
 import { filterOffensiveContent } from 'src/utils/contentFilter'
-import { CHAT_MESSAGE_TYPES } from 'src/api/chat'
+import { CHAT_MESSAGE_TYPES, moderateChatMedia } from 'src/api/chat'
 import {
   requestChatUploadCredentials,
   uploadMediaToCloudinary,
@@ -780,22 +780,56 @@ const ChatView = ({ conversation }) => {
           original_filename: selectedFile.name, // Use actual file name, not Cloudinary's
           duration: uploadResult.duration,
         }
+
+        // AI Moderation: Check media content for violations (for images/videos only)
+        if (messageType === CHAT_MESSAGE_TYPES?.IMAGE || messageType === CHAT_MESSAGE_TYPES?.VIDEO) {
+          setUploadStatus('moderating')
+          console.log('[ChatPanel] Moderating media with AI...')
+
+          const moderationResult = await moderateChatMedia(mediaUrl, messageType)
+          console.log('[ChatPanel] Moderation result:', moderationResult)
+
+          if (moderationResult.isViolation) {
+            // Flag this message for auto-censor after sending
+            messageOptions.pendingCensor = true
+            messageOptions.moderationMessage = moderationResult.message
+            console.log('[ChatPanel] Media flagged for censoring:', moderationResult.message)
+          }
+        }
       }
+
+      let sendResult = null
 
       if (conversation.isNew) {
         // New conversation -> use startNewConversation with recipient info
         console.log('[ChatPanel] Starting new conversation with recipient:', conversation.recipient)
-        const result = await startNewConversation(
+        sendResult = await startNewConversation(
           conversation.recipient.id,
           content,
           conversation.recipient, // Pass recipient info to cache
           messageOptions
         )
-        console.log('[ChatPanel] New conversation result:', result)
+        console.log('[ChatPanel] New conversation result:', sendResult)
       } else {
         // Existing conversation -> send message with recipient ID to ensure they're a participant
         console.log('[ChatPanel] Sending to existing conversation:', conversation.id, 'recipient:', recipientId)
-        await sendMessage(conversation.id, content, recipientId, messageOptions)
+        sendResult = await sendMessage(conversation.id, content, recipientId, messageOptions)
+      }
+
+      // Auto-censor if AI flagged this message
+      if (messageOptions.pendingCensor && sendResult?.message_id) {
+        console.log('[ChatPanel] Auto-censoring message:', sendResult.message_id)
+        try {
+          await reportMessageTokens({
+            reporterId: currentUserId,
+            messageId: sendResult.message_id,
+            conversationId: sendResult.conversation_id || conversation.id,
+            tokens: ['ai_moderation_violation'],
+          })
+          console.log('[ChatPanel] Message auto-censored successfully')
+        } catch (reportError) {
+          console.error('[ChatPanel] Failed to auto-censor message:', reportError)
+        }
       }
 
       if (selectedFile) {

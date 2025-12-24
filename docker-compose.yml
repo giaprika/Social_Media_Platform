@@ -309,7 +309,7 @@ services:
     container_name: ai-service
     environment:
       PORT: 9000
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-AIzaSyAoGPpAaA-lp-sk8eKFGI9_EhcKJF3EiFI}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-AIzaSyAOFauz5GQgmWSFPDSfnC1EM0OrTWUDHzs}
       GOOGLE_GENAI_USE_VERTEXAI: 0
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
