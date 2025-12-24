@@ -23,11 +23,12 @@ class FeedService {
       const feedItems = feedResponse.data?.data || [];
 
       let orderedPosts;
+      let isFallbackToPosts = false;
 
       if (feedItems.length === 0) {
-        // Nếu feed rỗng, lấy posts từ post-service như thường
+        // Nếu feed rỗng hoàn toàn, lấy posts từ post-service
         logger.info(
-          `[FeedService] No feed items found for user ${userId}, fetching latest posts`
+          `[FeedService] No feed items found for user ${userId} on page ${page}, falling back to latest posts`
         );
 
         const postsResponse = await postServiceInstance.get("/posts", {
@@ -38,6 +39,7 @@ class FeedService {
         });
 
         orderedPosts = postsResponse.data?.data || [];
+        isFallbackToPosts = true;
       } else {
         // 2. Extract post IDs từ feed items
         const postIds = feedItems.map((item) => item.post_id);
@@ -62,6 +64,37 @@ class FeedService {
         orderedPosts = feedItems
           .map((feedItem) => postsMap.get(feedItem.post_id))
           .filter((post) => post !== undefined); // Lọc bỏ posts đã bị xóa
+
+        // 6. Nếu số posts từ feed < limit, bổ sung thêm posts từ post-service
+        if (orderedPosts.length < limit) {
+          logger.info(
+            `[FeedService] Feed only has ${orderedPosts.length} posts, supplementing with latest posts`
+          );
+
+          const existingPostIds = new Set(orderedPosts.map((p) => p.post_id));
+          const supplementCount = limit - orderedPosts.length;
+
+          // Lấy thêm posts từ post-service (lấy nhiều hơn để có dự phòng sau khi filter)
+          const supplementResponse = await postServiceInstance.get("/posts", {
+            params: {
+              limit: supplementCount * 2, // Lấy gấp đôi để đảm bảo đủ sau khi lọc trùng
+              offset: 0, // Lấy từ đầu
+            },
+          });
+
+          const supplementPosts = (supplementResponse.data?.data || [])
+            .filter((post) => !existingPostIds.has(post.post_id)) // Loại bỏ posts đã có trong feed
+            .slice(0, supplementCount); // Chỉ lấy đúng số lượng cần
+
+          orderedPosts = [...orderedPosts, ...supplementPosts];
+
+          if (supplementPosts.length > 0) {
+            isFallbackToPosts = true; // Đánh dấu đã có posts bổ sung
+            logger.info(
+              `[FeedService] Added ${supplementPosts.length} supplement posts`
+            );
+          }
+        }
       }
 
       logger.info(
@@ -69,19 +102,26 @@ class FeedService {
       );
 
       // 6. Mark feed items as viewed (fire-and-forget, chạy background)
-      const feedItemIds = feedItems.map((item) => item.id);
-      // Không await - chạy async background, không block response
-      this.markAsViewed(feedItemIds).catch((error) => {
-        logger.error("[FeedService] Failed to mark items as viewed", {
-          userId,
-          error: error.message,
+      // Chỉ mark khi có feed items, không mark khi fallback sang posts
+      if (!isFallbackToPosts && feedItems.length > 0) {
+        const feedItemIds = feedItems.map((item) => item.id);
+        // Không await - chạy async background, không block response
+        this.markAsViewed(feedItemIds).catch((error) => {
+          logger.error("[FeedService] Failed to mark items as viewed", {
+            userId,
+            error: error.message,
+          });
         });
-      });
+      }
 
       // 7. Trả về đúng format như PostListResponse
+      // Note: total_items không thể xác định chính xác vì feed items có thể hết
+      // hoặc posts có thể bị xóa. Frontend sẽ dựa vào số posts trả về để check hasMore
       return {
         status: "success",
-        message: `Retrieved ${orderedPosts.length} posts`,
+        message: `Retrieved ${orderedPosts.length} posts${
+          isFallbackToPosts ? " (from latest posts)" : ""
+        }`,
         data: orderedPosts,
         _links: {
           self: { href: "/api/feed", method: "GET" },
@@ -90,7 +130,9 @@ class FeedService {
           pagination: {
             limit,
             offset: (page - 1) * limit,
-            total_items: orderedPosts.length,
+            current_page: page,
+            returned_count: orderedPosts.length,
+            is_fallback: isFallbackToPosts, // Flag cho frontend biết đã chuyển sang posts thông thường
           },
         },
       };

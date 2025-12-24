@@ -179,10 +179,9 @@ export default function Feed() {
           `[Feed] Loaded ${rawPosts.length} posts from intelligent feed (page ${currentPage})`
         );
 
-        // Check if there are more posts
-        const hasMorePosts = pagination
-          ? currentPage * POSTS_PER_PAGE < pagination.total_items
-          : rawPosts.length >= POSTS_PER_PAGE;
+        // Check if there are more posts based on actual returned count
+        // If we got less than limit, means no more posts
+        const hasMorePosts = rawPosts.length >= POSTS_PER_PAGE;
         setHasMore(hasMorePosts);
 
         // Transform posts WITHOUT fetching reactions immediately (lazy load)

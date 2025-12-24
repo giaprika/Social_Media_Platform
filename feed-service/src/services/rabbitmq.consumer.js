@@ -73,6 +73,9 @@ class RabbitMQConsumer {
       case "user.followed":
         await this.handleUserFollowed(eventData);
         break;
+      case "user.unfollowed":
+        await this.handleUserUnfollowed(eventData);
+        break;
       case "post.deleted":
         await this.handlePostDeleted(eventData);
         break;
@@ -85,6 +88,11 @@ class RabbitMQConsumer {
    * Handle post.created event - fanout to followers
    */
   async handlePostCreated(data) {
+    if (!data.user_id) {
+      logger.error("Missing user_id in post.created event", data);
+      return;
+    }
+
     const postData = {
       postId: data.post_id,
       authorId: data.user_id,
@@ -174,6 +182,27 @@ class RabbitMQConsumer {
     await feedService.addRecentPostsToFeed(followerId, followedUserId, 10);
     logger.info(
       `Added recent posts from ${followedUserId} to ${followerId}'s feed`
+    );
+  }
+
+  /**
+   * Handle user.unfollowed event - remove posts from unfollowed user in follower's feed
+   */
+  async handleUserUnfollowed(data) {
+    const unfollowerId = data.unfollower_id;
+    const unfollowedUserId = data.user_id;
+
+    if (!unfollowerId || !unfollowedUserId) {
+      logger.warn(
+        "Missing unfollower_id or user_id in user.unfollowed event",
+        data
+      );
+      return;
+    }
+
+    await feedService.removeUserPostsFromFeed(unfollowerId, unfollowedUserId);
+    logger.info(
+      `Removed posts from ${unfollowedUserId} in ${unfollowerId}'s feed`
     );
   }
 

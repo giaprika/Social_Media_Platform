@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS feed_items (
     id SERIAL PRIMARY KEY,
     user_id UUID NOT NULL,
     post_id UUID NOT NULL,
+    author_id UUID NOT NULL,
     likes INTEGER DEFAULT 0,
     comments INTEGER DEFAULT 0,
     post_created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -77,3 +78,6 @@ CREATE INDEX IF NOT EXISTS idx_feed_items_cleanup ON feed_items(viewed_at, creat
 
 -- Index for post_id lookups (for score updates)
 CREATE INDEX IF NOT EXISTS idx_feed_items_post_id ON feed_items(post_id);
+
+-- Index for author_id lookups (for unfollow cleanup)
+CREATE INDEX IF NOT EXISTS idx_feed_items_user_author ON feed_items(user_id, author_id);

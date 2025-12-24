@@ -25,9 +25,9 @@ class FeedRepository {
       const values = recipientIds
         .map(
           (userId, index) =>
-            `($${index * 5 + 1}, $${index * 5 + 2}, $${index * 5 + 3}, $${
-              index * 5 + 4
-            }, $${index * 5 + 5})`
+            `($${index * 6 + 1}, $${index * 6 + 2}, $${index * 6 + 3}, $${
+              index * 6 + 4
+            }, $${index * 6 + 5}, $${index * 6 + 6})`
         )
         .join(",");
 
@@ -36,13 +36,14 @@ class FeedRepository {
       const params = recipientIds.flatMap((userId) => [
         userId,
         postId,
+        authorId,
         likes,
         comments,
         createdAt,
       ]);
 
       const query = `
-        INSERT INTO feed_items (user_id, post_id, likes, comments, post_created_at)
+        INSERT INTO feed_items (user_id, post_id, author_id, likes, comments, post_created_at)
         VALUES ${values}
         ON CONFLICT (user_id, post_id) DO NOTHING
         RETURNING *
@@ -75,9 +76,10 @@ class FeedRepository {
     const createdAt = postCreatedAt || new Date();
 
     const query = `
-      INSERT INTO feed_items (user_id, post_id, likes, comments, post_created_at)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO feed_items (user_id, post_id, author_id, likes, comments, post_created_at)
+      VALUES ($1, $2, $3, $4, $5, $6)
       ON CONFLICT (user_id, post_id) DO UPDATE SET
+        author_id = EXCLUDED.author_id,
         likes = EXCLUDED.likes,
         comments = EXCLUDED.comments,
         post_created_at = EXCLUDED.post_created_at
@@ -87,6 +89,7 @@ class FeedRepository {
     const result = await pool.query(query, [
       userId,
       postId,
+      authorId,
       likes,
       comments,
       createdAt,
@@ -207,6 +210,21 @@ class FeedRepository {
     `;
 
     const result = await pool.query(query, [postId]);
+    return result.rows.length;
+  }
+
+  /**
+   * Delete feed items by user_id and author_id (when user unfollows)
+   * Removes all posts from a specific author in a user's feed
+   */
+  async deleteFeedItemsByUserAndAuthor(userId, authorId) {
+    const query = `
+      DELETE FROM feed_items 
+      WHERE user_id = $1 AND author_id = $2
+      RETURNING id
+    `;
+
+    const result = await pool.query(query, [userId, authorId]);
     return result.rows.length;
   }
 }

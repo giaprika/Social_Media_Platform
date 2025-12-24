@@ -18,6 +18,12 @@ class FeedService {
         postCreatedAt,
       } = postData;
 
+      // Validate required fields
+      if (!authorId) {
+        logger.error("Missing authorId in fanoutPostToFollowers", postData);
+        throw new Error("authorId is required");
+      }
+
       // If followerIds not provided or empty, fetch from user-service
       if (!followerIds || followerIds.length === 0) {
         logger.info(`Fetching followers for user ${authorId}`);
@@ -130,15 +136,25 @@ class FeedService {
       for (const post of posts) {
         // Handle both post_id and id field names
         const postId = post.post_id || post.id;
+        const postAuthorId = post.user_id || authorId; // Extract author from post, fallback to parameter
         const likes = post.reacts_count || post.likes || 0;
         const comments = post.comments_count || post.comments || 0;
         const postCreatedAt = post.created_at; // Use actual post creation time
+
+        // Validate author_id before creating feed item
+        if (!postAuthorId) {
+          logger.error(`Missing author_id for post ${postId}`, {
+            post,
+            authorId,
+          });
+          continue; // Skip this post
+        }
 
         // Create feed item with initial score based on post age
         const item = await feedRepository.createFeedItemWithScore(
           followerId,
           postId,
-          authorId,
+          postAuthorId,
           likes,
           comments,
           postCreatedAt
@@ -187,6 +203,27 @@ class FeedService {
       return { success: true, deletedCount };
     } catch (error) {
       logger.error("Error in removePostFromFeeds:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Remove all posts from a specific author in a user's feed
+   * Used when user unfollows someone
+   */
+  async removeUserPostsFromFeed(userId, authorId) {
+    try {
+      const deletedCount = await feedRepository.deleteFeedItemsByUserAndAuthor(
+        userId,
+        authorId
+      );
+
+      logger.info(
+        `Removed ${deletedCount} posts from author ${authorId} in user ${userId}'s feed`
+      );
+      return { success: true, deletedCount };
+    } catch (error) {
+      logger.error("Error in removeUserPostsFromFeed:", error);
       throw error;
     }
   }

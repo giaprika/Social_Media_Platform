@@ -14,7 +14,9 @@ const ROUTING_KEYS = {
   POST_UNLIKED: "post.unliked",
   POST_COMMENTED: "post.commented",
   POST_UNCOMMENTED: "post.uncommented",
+  POST_DELETED: "post.deleted",
   USER_FOLLOWED: "user.followed",
+  USER_UNFOLLOWED: "user.unfollowed",
 };
 
 const connectRabbitMQ = async () => {
@@ -42,7 +44,13 @@ const connectRabbitMQ = async () => {
       EXCHANGE_NAME,
       ROUTING_KEYS.POST_UNCOMMENTED
     );
+    await channel.bindQueue(q.queue, EXCHANGE_NAME, ROUTING_KEYS.POST_DELETED);
     await channel.bindQueue(q.queue, EXCHANGE_NAME, ROUTING_KEYS.USER_FOLLOWED);
+    await channel.bindQueue(
+      q.queue,
+      EXCHANGE_NAME,
+      ROUTING_KEYS.USER_UNFOLLOWED
+    );
 
     logger.info("RabbitMQ connected and queues configured successfully");
 
