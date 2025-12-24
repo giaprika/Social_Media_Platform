@@ -92,62 +92,6 @@ const config = {
     },
   },
 };
-	services: {
-		users: {
-			target: process.env.USER_SERVICE_URL,
-			pathRewrite: {
-				'^/api/service/users': '/users',
-			},
-			excludeList: [
-				'/',
-				'/login',
-				'/register',
-				'/deleteUser',
-				'/saveRefreshToken',
-			],
-			timeout: 5000,
-		},
-		notifications: {
-			target: process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:8002',
-			pathRewrite: {
-				'^/api/service/notifications': '/notifications',
-			},
-			excludeList: [],
-			timeout: 5000,
-		},
-		posts: {
-			target: process.env.POST_SERVICE_URL || 'http://localhost:8003',
-			pathRewrite: {
-				'^/api/service/posts': '/api/v1',
-			},
-			excludeList: [
-				'/health',
-				'/posts', // GET posts không cần auth
-			],
-			timeout: 5000,
-		},
-		chat: {
-			target: process.env.CHAT_SERVICE_URL || 'http://34.143.185.208:8080',
-			pathRewrite: {
-				'^/api/service/chat': '', // /api/service/chat/v1/messages → /v1/messages
-			},
-			excludeList: [],
-			timeout: 10000,
-		},
-		community: {
-			target: process.env.COMMUNITY_SERVICE_URL || 'http://localhost:8004',
-			pathRewrite: {
-				'^/api/service/community': '', // /api/service/community/communities → /communities
-			},
-			excludeList: [
-				'/communities', // GET list communities (public browse)
-				'/communities/search', // GET search communities
-				'/communities/categories', // GET categories
-			],
-			timeout: 5000,
-		},
-	},
-}
 
 // Validate required configuration
 const requiredEnvVars = ["ACCESS_TOKEN_SECRET", "REFRESH_TOKEN_SECRET"];
