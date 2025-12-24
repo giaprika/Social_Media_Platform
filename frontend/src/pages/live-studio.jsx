@@ -328,14 +328,33 @@ const LiveStudio = () => {
   }, []);
 
   // Connect to chat WebSocket
+  // Track seen messages for deduplication
+  const seenMessageIdsRef = useRef(new Set());
+
   const connectChat = useCallback(() => {
-    if (!streamData?.id || !userId) return;
+    if (!streamData?.id || !userId || chatClientRef.current) return;
 
     chatClientRef.current = new LiveChatClient(
       streamData.id,
       userId,
       username,
-      (msg) => setChatMessages((prev) => [...prev, msg]),
+      (msg) => {
+        // Deduplicate messages by key
+        const msgKey = `${msg.userId || msg.user}_${msg.time?.getTime?.() || Date.now()}_${msg.message?.slice(0, 20)}`;
+        if (seenMessageIdsRef.current.has(msgKey)) {
+          console.log("[Chat] Duplicate message ignored:", msgKey);
+          return;
+        }
+        seenMessageIdsRef.current.add(msgKey);
+
+        // Keep set size manageable
+        if (seenMessageIdsRef.current.size > 200) {
+          const entries = Array.from(seenMessageIdsRef.current);
+          entries.slice(0, 100).forEach(id => seenMessageIdsRef.current.delete(id));
+        }
+
+        setChatMessages((prev) => [...prev.slice(-100), msg]);
+      },
       (count) => setViewerCount(count)
     );
     chatClientRef.current.connect();
@@ -344,6 +363,7 @@ const LiveStudio = () => {
   const disconnectChat = useCallback(() => {
     chatClientRef.current?.disconnect();
     chatClientRef.current = null;
+    seenMessageIdsRef.current.clear();
   }, []);
 
   const handleStartStream = useCallback(async () => {

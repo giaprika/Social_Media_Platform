@@ -131,6 +131,7 @@ const LiveWatch = () => {
     const chatClientRef = useRef(null);
     const chatContainerRef = useRef(null);
     const viewerIntervalRef = useRef(null);
+    const hlsInitializedRef = useRef(false);
 
     // State
     const [streamData, setStreamData] = useState(location.state?.stream || null);
@@ -176,29 +177,76 @@ const LiveWatch = () => {
         }
     }, [streamId, streamData]);
 
+    // Debug: Log when streamData changes
+    useEffect(() => {
+        console.log("[LiveWatch] State:", {
+            streamData: !!streamData,
+            streamId,
+            loading,
+            hlsStatus,
+            videoRef: !!videoRef.current,
+            hlsInitialized: hlsInitializedRef.current
+        });
+    }, [streamData, streamId, loading, hlsStatus]);
+
     // Initialize HLS player
     useEffect(() => {
-        if (!streamData || !videoRef.current) return;
+        // Wait for loading to complete and video element to be available
+        if (loading || !streamData || !videoRef.current || hlsInitializedRef.current) {
+            console.log("[HLS] Waiting... loading:", loading, "streamData:", !!streamData, "videoRef:", !!videoRef.current, "initialized:", hlsInitializedRef.current);
+            return;
+        }
 
-        const hlsUrl = streamData.hls_url || `${LIVE_CDN_BASE_URL}/live/${streamData.id}.m3u8`;
+        hlsInitializedRef.current = true;
+
+        // Handle both camelCase (from hydrateStream) and snake_case (from API)
+        const streamIdForUrl = streamData.id || streamId;
+        const hlsUrl = streamData.hlsUrl || streamData.hls_url || `${LIVE_CDN_BASE_URL}/live/${streamIdForUrl}.m3u8`;
         console.log("[HLS] Loading stream from:", hlsUrl);
+        console.log("[HLS] Stream data:", streamData);
 
         let connectionTimeout;
         let retryCount = 0;
         const maxRetries = 3;
+        let isDestroyed = false;
 
         const initHls = () => {
+            if (isDestroyed) return;
+
             if (Hls.isSupported()) {
                 const hls = new Hls({
-                    lowLatencyMode: true,
-                    liveSyncDuration: 3,
-                    liveMaxLatencyDuration: 10,
+                    // Latency settings - balance between low latency and stability
+                    lowLatencyMode: false, // Disable for more stable playback
+                    liveSyncDuration: 4,   // Target 4 seconds behind live edge
+                    liveMaxLatencyDuration: 15, // Max 15 seconds behind
                     liveDurationInfinity: true,
+
+                    // Buffer settings for smoother playback
+                    maxBufferLength: 30,        // Buffer up to 30 seconds
+                    maxMaxBufferLength: 60,     // Allow up to 60 seconds in good conditions
+                    maxBufferSize: 60 * 1000 * 1000, // 60MB buffer
+                    maxBufferHole: 0.5,         // Allow 0.5s gaps
+
+                    // Back buffer for seeking
+                    backBufferLength: 30,       // Keep 30 seconds of back buffer
+
+                    // Loading settings
                     enableWorker: true,
-                    manifestLoadingTimeOut: 10000,
-                    manifestLoadingMaxRetry: 2,
-                    levelLoadingTimeOut: 10000,
-                    fragLoadingTimeOut: 20000,
+                    manifestLoadingTimeOut: 15000,
+                    manifestLoadingMaxRetry: 3,
+                    levelLoadingTimeOut: 15000,
+                    levelLoadingMaxRetry: 4,
+                    fragLoadingTimeOut: 25000,
+                    fragLoadingMaxRetry: 4,
+
+                    // Start settings
+                    startLevel: -1,             // Auto select quality
+                    startFragPrefetch: true,    // Prefetch first fragment
+
+                    // ABR (Adaptive Bitrate) settings
+                    abrEwmaDefaultEstimate: 500000, // 500kbps initial estimate
+                    abrBandWidthFactor: 0.95,
+                    abrBandWidthUpFactor: 0.7,
                 });
 
                 hls.loadSource(hlsUrl);
@@ -206,13 +254,14 @@ const LiveWatch = () => {
 
                 // Set a timeout for initial connection
                 connectionTimeout = setTimeout(() => {
-                    if (hlsStatus === "loading") {
+                    if (!isDestroyed) {
                         console.warn("[HLS] Connection timeout");
                         setHlsStatus("error");
                     }
                 }, 15000);
 
                 hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    if (isDestroyed) return;
                     console.log("[HLS] Manifest parsed successfully");
                     clearTimeout(connectionTimeout);
                     setHlsStatus("playing");
@@ -223,6 +272,7 @@ const LiveWatch = () => {
                 });
 
                 hls.on(Hls.Events.ERROR, (event, data) => {
+                    if (isDestroyed) return;
                     console.error("[HLS] Error:", data.type, data.details);
 
                     if (data.fatal) {
@@ -255,20 +305,24 @@ const LiveWatch = () => {
                 videoRef.current.src = hlsUrl;
 
                 connectionTimeout = setTimeout(() => {
-                    if (hlsStatus === "loading") {
+                    if (!isDestroyed) {
                         setHlsStatus("error");
                     }
                 }, 15000);
 
                 videoRef.current.addEventListener("loadedmetadata", () => {
-                    clearTimeout(connectionTimeout);
-                    setHlsStatus("playing");
-                    videoRef.current?.play();
+                    if (!isDestroyed) {
+                        clearTimeout(connectionTimeout);
+                        setHlsStatus("playing");
+                        videoRef.current?.play();
+                    }
                 });
 
                 videoRef.current.addEventListener("error", () => {
-                    clearTimeout(connectionTimeout);
-                    setHlsStatus("error");
+                    if (!isDestroyed) {
+                        clearTimeout(connectionTimeout);
+                        setHlsStatus("error");
+                    }
                 });
             } else {
                 setError("Your browser does not support HLS playback");
@@ -278,10 +332,12 @@ const LiveWatch = () => {
         initHls();
 
         return () => {
+            isDestroyed = true;
             clearTimeout(connectionTimeout);
             hlsRef.current?.destroy();
         };
-    }, [streamData, hlsStatus]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [streamData, loading]);
 
     // Video event handlers
     useEffect(() => {
@@ -305,14 +361,30 @@ const LiveWatch = () => {
 
     // Connect to chat
     useEffect(() => {
-        if (!streamData?.id || !userId) return;
+        if (!streamData?.id || !userId || chatClientRef.current) return;
+
+        // Track seen message IDs to prevent duplicates
+        const seenMessageIds = new Set();
 
         chatClientRef.current = new LiveChatClient(
             streamData.id,
             userId,
             username,
             (msg) => {
-                setChatMessages((prev) => [...prev.slice(-100), msg]); // Keep last 100 messages
+                // Deduplicate messages by ID
+                const msgKey = `${msg.userId || msg.user}_${msg.time?.getTime?.() || Date.now()}_${msg.message?.slice(0, 20)}`;
+                if (seenMessageIds.has(msgKey)) {
+                    return;
+                }
+                seenMessageIds.add(msgKey);
+
+                // Keep set size manageable
+                if (seenMessageIds.size > 200) {
+                    const entries = Array.from(seenMessageIds);
+                    entries.slice(0, 100).forEach(id => seenMessageIds.delete(id));
+                }
+
+                setChatMessages((prev) => [...prev.slice(-100), msg]);
             },
             (count) => setViewerCount(count),
             (error) => console.error("Chat error:", error)
@@ -321,6 +393,7 @@ const LiveWatch = () => {
 
         return () => {
             chatClientRef.current?.disconnect();
+            chatClientRef.current = null;
         };
     }, [streamData?.id, userId, username]);
 

@@ -132,7 +132,6 @@ const LiveStreams = () => {
   // Modal states
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
-  const [isOBSModalOpen, setIsOBSModalOpen] = useState(false);
 
   // Dropdown state
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -141,9 +140,6 @@ const LiveStreams = () => {
   const [createForm, setCreateForm] = useState({ title: "", description: "" });
   const [scheduleForm, setScheduleForm] = useState({ title: "", description: "", scheduledAt: "" });
   const [creating, setCreating] = useState(false);
-
-  // OBS stream data
-  const [obsStreamData, setObsStreamData] = useState(null);
 
   // Scheduled streams from localStorage
   const [scheduledStreams, setScheduledStreams] = useState(() => getScheduledStreams());
@@ -260,10 +256,14 @@ const LiveStreams = () => {
         description: createForm.description.trim() || undefined,
       };
       const { data } = await createStream(payload);
-      setObsStreamData(data);
-      setIsCreateModalOpen(false);
-      setIsOBSModalOpen(true);
-      toast.success("Stream created! Copy your stream key to OBS.");
+      toast.success("Stream created! Redirecting to OBS Studio...");
+
+      // Navigate to OBS studio page
+      setTimeout(() => {
+        navigate("/app/live/studio-obs", {
+          state: { stream: data }
+        });
+      }, 500);
     } catch (err) {
       console.error("Failed to create stream", err);
       const message =
@@ -725,98 +725,6 @@ const LiveStreams = () => {
             </div>
           </form>
         </div>
-      </Modal>
-
-      {/* OBS Stream Key Modal */}
-      <Modal
-        isOpen={isOBSModalOpen}
-        onClose={() => {
-          setIsOBSModalOpen(false);
-          setObsStreamData(null);
-        }}
-        title="Your OBS Stream Key"
-        size="lg"
-      >
-        {obsStreamData && (
-          <div className="space-y-6">
-            <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-4">
-              <p className="text-sm font-medium text-green-700">✓ Stream created successfully!</p>
-              <p className="mt-1 text-sm text-green-600">Copy these credentials to OBS Studio.</p>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">RTMP Server URL</label>
-                <div className="mt-2 flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2">
-                  <code className="flex-1 truncate text-sm text-foreground">
-                    rtmp://{LIVE_SERVICE_HOST}:1935/live
-                  </code>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(`rtmp://${LIVE_SERVICE_HOST}:1935/live`, "RTMP URL")}
-                    className="rounded-lg p-2 text-muted-foreground transition hover:text-foreground hover:bg-muted"
-                  >
-                    <DocumentDuplicateIcon className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Stream Key (Secret)</label>
-                <div className="mt-2 flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2">
-                  <code className="flex-1 truncate text-sm text-foreground font-mono">
-                    {obsStreamData.id}?token={obsStreamData.stream_key}
-                  </code>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(`${obsStreamData.id}?token=${obsStreamData.stream_key}`, "Stream Key")}
-                    className="rounded-lg p-2 text-muted-foreground transition hover:text-foreground hover:bg-muted"
-                  >
-                    <DocumentDuplicateIcon className="h-4 w-4" />
-                  </button>
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">⚠️ Keep this key secret! Anyone with it can stream to your channel.</p>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">HLS Playback URL</label>
-                <div className="mt-2 flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2">
-                  <code className="flex-1 truncate text-sm text-foreground">
-                    {obsStreamData.hls_url || `${LIVE_CDN_BASE_URL}/live/${obsStreamData.id}.m3u8`}
-                  </code>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(obsStreamData.hls_url || `${LIVE_CDN_BASE_URL}/live/${obsStreamData.id}.m3u8`, "HLS URL")}
-                    className="rounded-lg p-2 text-muted-foreground transition hover:text-foreground hover:bg-muted"
-                  >
-                    <DocumentDuplicateIcon className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setIsOBSModalOpen(false);
-                  setObsStreamData(null);
-                }}
-              >
-                Close
-              </Button>
-              <Button
-                onClick={() => {
-                  const hlsUrl = obsStreamData.hls_url || `${LIVE_CDN_BASE_URL}/live/${obsStreamData.id}.m3u8`;
-                  window.open(hlsUrl, "_blank");
-                }}
-              >
-                <PlayCircleIcon className="h-4 w-4" />
-                Watch Preview
-              </Button>
-            </div>
-          </div>
-        )}
       </Modal>
 
       {/* Schedule Stream Modal */}
