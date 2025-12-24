@@ -22,48 +22,47 @@ class FeedService {
 
       const feedItems = feedResponse.data?.data || [];
 
+      let orderedPosts;
+
       if (feedItems.length === 0) {
-        logger.info(`[FeedService] No feed items found for user ${userId}`);
-        return {
-          status: "success",
-          message: "Feed retrieved successfully",
-          data: [],
-          _links: {
-            self: { href: "/api/feed", method: "GET" },
+        // Nếu feed rỗng, lấy posts từ post-service như thường
+        logger.info(
+          `[FeedService] No feed items found for user ${userId}, fetching latest posts`
+        );
+
+        const postsResponse = await postServiceInstance.get("/posts", {
+          params: {
+            limit,
+            offset: (page - 1) * limit,
           },
-          metadata: {
-            pagination: {
-              limit,
-              offset: (page - 1) * limit,
-              total_items: 0,
-            },
-          },
-        };
+        });
+
+        orderedPosts = postsResponse.data?.data || [];
+      } else {
+        // 2. Extract post IDs từ feed items
+        const postIds = feedItems.map((item) => item.post_id);
+        logger.info(
+          `[FeedService] Fetching ${postIds.length} posts from post-service`
+        );
+
+        // 3. Batch get posts từ post-service
+        const postsResponse = await postServiceInstance.post("/posts/batch", {
+          post_ids: postIds,
+        });
+
+        const posts = postsResponse.data?.data || [];
+
+        // 4. Tạo map để lookup posts theo score
+        const postsMap = new Map();
+        posts.forEach((post) => {
+          postsMap.set(post.post_id, post);
+        });
+
+        // 5. Sắp xếp posts theo thứ tự của feed items (theo score)
+        orderedPosts = feedItems
+          .map((feedItem) => postsMap.get(feedItem.post_id))
+          .filter((post) => post !== undefined); // Lọc bỏ posts đã bị xóa
       }
-
-      // 2. Extract post IDs từ feed items
-      const postIds = feedItems.map((item) => item.post_id);
-      logger.info(
-        `[FeedService] Fetching ${postIds.length} posts from post-service`
-      );
-
-      // 3. Batch get posts từ post-service
-      const postsResponse = await this.postServiceAxios.post("/posts/batch", {
-        post_ids: postIds,
-      });
-
-      const posts = postsResponse.data?.data || [];
-
-      // 4. Tạo map để lookup postpostServiceInstance theo score
-      const postsMap = new Map();
-      posts.forEach((post) => {
-        postsMap.set(post.post_id, post);
-      });
-
-      // 5. Sắp xếp posts theo thứ tự của feed items (theo score)
-      const orderedPosts = feedItems
-        .map((feedItem) => postsMap.get(feedItem.post_id))
-        .filter((post) => post !== undefined); // Lọc bỏ posts đã bị xóa
 
       logger.info(
         `[FeedService] Successfully retrieved ${orderedPosts.length} posts in feed order`
