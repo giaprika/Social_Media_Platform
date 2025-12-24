@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import Input from "src/components/ui/Input";
 import Button from "src/components/ui/Button";
@@ -7,9 +7,14 @@ import Card from "src/components/ui/Card";
 import Avatar from "src/components/ui/Avatar";
 import Badge from "src/components/ui/Badge";
 import Skeleton from "src/components/ui/Skeleton";
+import { getPosts } from "src/api/post";
+import { searchUsers, getUserById } from "src/api/user";
+import { searchCommunities } from "src/api/community";
+import toast from "react-hot-toast";
 
 const SearchPage = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [query, setQuery] = useState(location.state?.query || "");
   const [activeTab, setActiveTab] = useState("all");
   const [loading, setLoading] = useState(false);
@@ -27,32 +32,66 @@ const SearchPage = () => {
     if (!query.trim()) return;
 
     setLoading(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    
-    // Mock results
-    setResults({
-      posts: [
-        {
-          id: "1",
-          title: "Search result post",
-          content: `This post contains "${query}"`,
-          author: { name: "John Doe", avatar: null },
-          likes: 10,
-        },
-      ],
-      users: [
-        {
-          id: "1",
-          name: "John Doe",
-          username: "johndoe",
-          avatar: null,
-          followers: 1234,
-        },
-      ],
-      communities: [],
-    });
-    setLoading(false);
+    try {
+      // Parallel API calls for better performance
+      const [postsResponse, usersResponse, communitiesResponse] =
+        await Promise.allSettled([
+          getPosts({ q: query, limit: 20 }),
+          searchUsers(query),
+          searchCommunities(query, { limit: 20 }),
+        ]);
+
+      // Get posts and enrich with author information
+      let posts = [];
+      if (postsResponse.status === "fulfilled") {
+        const rawPosts = postsResponse.value.data.data || [];
+
+        // Fetch author information for each post
+        const postsWithAuthors = await Promise.all(
+          rawPosts.map(async (post) => {
+            try {
+              if (post.user_id) {
+                const authorResponse = await getUserById(post.user_id);
+                return {
+                  ...post,
+                  author: authorResponse.data,
+                };
+              }
+              return post;
+            } catch (error) {
+              console.error(
+                `Failed to fetch author for post ${post.post_id}:`,
+                error
+              );
+              return post;
+            }
+          })
+        );
+        posts = postsWithAuthors;
+      }
+
+      setResults({
+        posts,
+        users:
+          usersResponse.status === "fulfilled"
+            ? usersResponse.value.data || []
+            : [],
+        communities:
+          communitiesResponse.status === "fulfilled"
+            ? communitiesResponse.value.data?.communities || []
+            : [],
+      });
+    } catch (error) {
+      console.error("Search error:", error);
+      toast.error("Có lỗi xảy ra khi tìm kiếm");
+      setResults({
+        posts: [],
+        users: [],
+        communities: [],
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -123,25 +162,39 @@ const SearchPage = () => {
               {results.posts.length > 0 ? (
                 <div className="space-y-4">
                   {results.posts.map((post) => (
-                    <Card key={post.id} hover>
+                    <Card
+                      key={post.post_id}
+                      hover
+                      onClick={() => navigate(`/app/p/${post.post_id}`)}
+                      className="cursor-pointer"
+                    >
                       <div className="mb-2 flex items-center gap-2">
                         <Avatar
-                          src={post.author?.avatar}
-                          name={post.author?.name}
+                          src={post.author?.avatar_url}
+                          name={post.author?.full_name || post.author?.username}
                           size="sm"
                         />
                         <span className="text-sm font-medium text-foreground">
-                          {post.author?.name}
+                          {post.author?.full_name ||
+                            post.author?.username ||
+                            "Unknown"}
                         </span>
                       </div>
-                      <h3 className="mb-2 text-lg font-bold text-foreground">
-                        {post.title}
-                      </h3>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-sm text-muted-foreground line-clamp-3">
                         {post.content}
                       </p>
                       <div className="mt-3 flex items-center gap-4 text-sm text-muted-foreground">
-                        <span>{post.likes} lượt thích</span>
+                        <span>{post.reacts_count || 0} lượt thích</span>
+                        <span>{post.comments_count || 0} bình luận</span>
+                        {post.tags && post.tags.length > 0 && (
+                          <div className="flex gap-1">
+                            {post.tags.slice(0, 3).map((tag, idx) => (
+                              <Badge key={idx} variant="secondary" size="sm">
+                                #{tag}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </Card>
                   ))}
@@ -162,25 +215,39 @@ const SearchPage = () => {
               {results.users.length > 0 ? (
                 <div className="space-y-4">
                   {results.users.map((user) => (
-                    <Card key={user.id} hover>
+                    <Card
+                      key={user.id}
+                      hover
+                      onClick={() => navigate(`/app/profile/${user.id}`)}
+                      className="cursor-pointer"
+                    >
                       <div className="flex items-center gap-4">
                         <Avatar
-                          src={user.avatar}
-                          name={user.name}
+                          src={user.avatar_url}
+                          name={user.full_name || user.username}
                           size="lg"
                         />
                         <div className="flex-1">
                           <h3 className="text-lg font-semibold text-foreground">
-                            {user.name}
+                            {user.full_name || user.username}
                           </h3>
                           <p className="text-sm text-muted-foreground">
                             @{user.username}
                           </p>
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            {user.followers} người theo dõi
-                          </p>
+                          {user.bio && (
+                            <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
+                              {user.bio}
+                            </p>
+                          )}
                         </div>
-                        <Button variant="outline" size="sm">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Handle follow action
+                          }}
+                        >
                           Theo dõi
                         </Button>
                       </div>
@@ -203,10 +270,15 @@ const SearchPage = () => {
               {results.communities.length > 0 ? (
                 <div className="space-y-4">
                   {results.communities.map((community) => (
-                    <Card key={community.id} hover>
+                    <Card
+                      key={community.id}
+                      hover
+                      onClick={() => navigate(`/c/${community.slug}`)}
+                      className="cursor-pointer"
+                    >
                       <div className="flex items-center gap-4">
                         <Avatar
-                          src={community.avatar}
+                          src={community.avatar_url}
                           name={community.name}
                           size="lg"
                         />
@@ -214,11 +286,23 @@ const SearchPage = () => {
                           <h3 className="text-lg font-semibold text-foreground">
                             {community.name}
                           </h3>
-                          <p className="text-sm text-muted-foreground">
-                            {community.members} thành viên
+                          {community.description && (
+                            <p className="text-sm text-muted-foreground line-clamp-2">
+                              {community.description}
+                            </p>
+                          )}
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {community.members_count || 0} thành viên
                           </p>
                         </div>
-                        <Button variant="outline" size="sm">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Handle join action
+                          }}
+                        >
                           Tham gia
                         </Button>
                       </div>
@@ -246,4 +330,3 @@ const SearchPage = () => {
 };
 
 export default SearchPage;
-

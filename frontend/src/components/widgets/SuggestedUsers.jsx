@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { UserPlusIcon, CheckIcon } from "@heroicons/react/24/outline";
 import Avatar from "../ui/Avatar";
 
 const SuggestedUsers = ({ users = [] }) => {
+  const navigate = useNavigate();
   const [followedUsers, setFollowedUsers] = useState(new Set());
 
   // Mock data nếu không có
@@ -80,7 +82,8 @@ const SuggestedUsers = ({ users = [] }) => {
         {displayUsers.map((user) => (
           <div
             key={user.id}
-            className="px-3 py-2.5 hover:bg-muted/50 transition-colors"
+            className="px-3 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer"
+            onClick={() => navigate(`/app/profile/${user.id}`)}
           >
             <div className="flex items-center gap-2.5">
               {/* Avatar */}
@@ -114,7 +117,10 @@ const SuggestedUsers = ({ users = [] }) => {
 
               {/* Follow Button */}
               <button
-                onClick={() => handleFollow(user.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleFollow(user.id);
+                }}
                 className={`flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${
                   isFollowing(user.id)
                     ? "bg-muted text-foreground hover:bg-muted/80"
@@ -128,9 +134,7 @@ const SuggestedUsers = ({ users = [] }) => {
         ))}
       </div>
 
-      <button
-        className="w-full px-3 py-2.5 text-xs font-medium text-primary hover:bg-muted/50 transition-colors border-t border-border"
-      >
+      <button className="w-full px-3 py-2.5 text-xs font-medium text-primary hover:bg-muted/50 transition-colors border-t border-border">
         See More
       </button>
     </div>
@@ -138,4 +142,3 @@ const SuggestedUsers = ({ users = [] }) => {
 };
 
 export default SuggestedUsers;
-
