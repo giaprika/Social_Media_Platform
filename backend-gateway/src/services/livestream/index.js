@@ -447,7 +447,7 @@ router.post("/moderation", async (req, res) => {
 });
 
 /**
- * GET /api/livestream_moderation/health
+ * GET /api/livestream/health
  * Response: { status: string }
  */
 router.get("/health", (req, res) => {

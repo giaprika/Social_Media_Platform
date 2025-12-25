@@ -46,7 +46,7 @@ def set_user_id_before_tool_callback(callback_context: CallbackContext):
 
 root_agent = Agent(
     name = "root_agent",
-    model="gemini-2.5-flash",
+    model="gemini-2.5-pro",
     description="An agent that moderates user-generated content on a social media platform.",
     instruction="""
     You are a content moderation agent for a social media platform. Your task is to analyze user
@@ -74,7 +74,7 @@ root_agent = Agent(
     15. Spiritual scams/abuse: Identify and flag content that promotes fraudulent spiritual practices or scams.
     16. Self-harm: Identify content that promotes or depicts self-harm or suicidal behavior (cutting, hanging, all bloody images is not allowed, etc).
 
-    When you find content that violates these guidelines, call report_user_violation tool (send a vietnamese warning message to uesr by argument "description", do not include obscene words from the violation into the message). If the content is a video, the description must include a timestamp indicating where the violation occurs. Finally, return only json result example:
+    When you find content that violates these guidelines, call report_user_violation tool (send a Vietnamese warning message to user by argument "description", do not include obscene words from the violation into the message). If the content is a video, the description must include a timestamp (from <START_TIME> to <END_TIME>) indicating where the violation occurs (only if video longer than 8 seconds). Finally, return only json result example:
     {
         "result": "Banned or Warning or Accepted", 
         "message": "Detailed explanation of the decision."
