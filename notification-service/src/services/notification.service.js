@@ -77,7 +77,6 @@ export class NotificationService {
       return [];
     }
   }
-
   static async findNotificationByUserId(user_id) {
     return await NotificationRepository.findNotificationByUserId(user_id);
   }

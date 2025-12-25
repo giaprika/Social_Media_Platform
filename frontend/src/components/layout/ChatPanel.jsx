@@ -1078,20 +1078,9 @@ const ChatView = ({ conversation }) => {
           duration: uploadResult.duration,
         }
 
-        // AI Moderation: Check media content for violations (for images/videos only)
+        // Mark for background AI moderation (for images/videos only)
         if (messageType === CHAT_MESSAGE_TYPES?.IMAGE || messageType === CHAT_MESSAGE_TYPES?.VIDEO) {
-          setUploadStatus('moderating')
-          console.log('[ChatPanel] Moderating media with AI...')
-
-          const moderationResult = await moderateChatMedia(mediaUrl, messageType)
-          console.log('[ChatPanel] Moderation result:', moderationResult)
-
-          if (moderationResult.isViolation) {
-            // Flag this message for auto-censor after sending
-            messageOptions.pendingCensor = true
-            messageOptions.moderationMessage = moderationResult.message
-            console.log('[ChatPanel] Media flagged for censoring:', moderationResult.message)
-          }
+          messageOptions.needsModeration = true
         }
       }
 
@@ -1113,20 +1102,51 @@ const ChatView = ({ conversation }) => {
         sendResult = await sendMessage(conversation.id, content, recipientId, messageOptions)
       }
 
-      // Auto-censor if AI flagged this message
-      if (messageOptions.pendingCensor && sendResult?.message_id) {
-        console.log('[ChatPanel] Auto-censoring message:', sendResult.message_id)
-        try {
-          await reportMessageTokens({
-            reporterId: currentUserId,
-            messageId: sendResult.message_id,
-            conversationId: sendResult.conversation_id || conversation.id,
-            tokens: ['ai_moderation_violation'],
+      // Debug: Log sendResult để xem structure
+      console.log('[ChatPanel] sendResult:', sendResult)
+      console.log('[ChatPanel] messageOptions:', {
+        needsModeration: messageOptions.needsModeration,
+        mediaUrl: messageOptions.mediaUrl?.substring(0, 50),
+        type: messageOptions.type
+      })
+
+      // Background AI Moderation: Check AFTER message sent (non-blocking)
+      // Support both message_id and messageId
+      const messageId = sendResult?.message_id || sendResult?.messageId
+      if (messageOptions.needsModeration && messageId && messageOptions.mediaUrl) {
+        console.log('[ChatPanel] Starting background AI moderation for message:', messageId)
+
+        // Run moderation in background - don't await, don't block
+        const conversationId = sendResult.conversation_id || conversation.id
+        const mediaUrl = messageOptions.mediaUrl
+        const mediaType = messageOptions.type
+
+        // Fire and forget - moderation happens async
+        moderateChatMedia(mediaUrl, mediaType)
+          .then((moderationResult) => {
+            console.log('[ChatPanel] Background moderation result:', moderationResult)
+
+            if (moderationResult.isViolation) {
+              console.log('[ChatPanel] AI detected violation, auto-censoring message:', messageId)
+
+              // Auto-censor the message
+              reportMessageTokens({
+                reporterId: currentUserId,
+                messageId: messageId,
+                conversationId: conversationId,
+                tokens: ['ai_moderation_violation'],
+              })
+                .then(() => {
+                  console.log('[ChatPanel] Message auto-censored successfully:', messageId)
+                })
+                .catch((err) => {
+                  console.error('[ChatPanel] Failed to auto-censor message:', err)
+                })
+            }
           })
-          console.log('[ChatPanel] Message auto-censored successfully')
-        } catch (reportError) {
-          console.error('[ChatPanel] Failed to auto-censor message:', reportError)
-        }
+          .catch((err) => {
+            console.error('[ChatPanel] Background moderation failed:', err)
+          })
       }
 
       if (selectedFile) {

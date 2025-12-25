@@ -4,7 +4,7 @@ import Cookies from 'universal-cookie'
 import { filterOffensiveContent } from '../utils/contentFilter'
 
 // Gateway URL for AI moderation (backend-gateway)
-const GATEWAY_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+const GATEWAY_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 const cookies = new Cookies()
 

@@ -23,7 +23,7 @@ const isValidUUID = (str) => {
  * Kiểm duyệt media (ảnh/video) bằng AI trước khi gửi
  * Body: { mediaUrl: string, mediaType: string }
  */
-router.post('/moderate', async (req, res) => {
+router.post('/moderate', express.json(), async (req, res) => {
 	try {
 		const userId = req.user?.id || req.headers['x-user-id']
 		const { mediaUrl, mediaType } = req.body
