@@ -14,9 +14,15 @@ import {
   ExclamationTriangleIcon,
 } from "@heroicons/react/24/outline";
 import { useToast } from "src/components/ui";
+import { useNotifications } from "src/hooks/useNotifications";
 import Button from "src/components/ui/Button";
 import ConfirmDialog from "src/components/ui/ConfirmDialog";
-import { getWebRTCInfo, getViewerCount, LIVE_SERVICE_BASE_URL } from "src/api/live";
+import {
+  getWebRTCInfo,
+  getViewerCount,
+  LIVE_SERVICE_BASE_URL,
+} from "src/api/live";
+import { startLivestreamMonitoring } from "src/api/livestreamMonitor";
 import Cookies from "universal-cookie";
 
 // WebRTC Client for SRS Server (WHIP protocol)
@@ -128,7 +134,9 @@ class WebRTCPublisher {
     // Determine base URL for WHIP endpoint
     // In production, use the same origin (Caddy proxies to SRS)
     // In local dev, we need to hit the SRS server directly
-    const isLocal = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+    const isLocal = ["localhost", "127.0.0.1"].includes(
+      window.location.hostname
+    );
 
     if (isLocal) {
       // Local development - use the live service URL
@@ -149,16 +157,25 @@ class WebRTCPublisher {
 
       const checkState = () => {
         if (this.peerConnection?.iceGatheringState === "complete") {
-          this.peerConnection?.removeEventListener("icegatheringstatechange", checkState);
+          this.peerConnection?.removeEventListener(
+            "icegatheringstatechange",
+            checkState
+          );
           resolve();
         }
       };
 
-      this.peerConnection?.addEventListener("icegatheringstatechange", checkState);
+      this.peerConnection?.addEventListener(
+        "icegatheringstatechange",
+        checkState
+      );
 
       // Timeout after 5 seconds
       setTimeout(() => {
-        this.peerConnection?.removeEventListener("icegatheringstatechange", checkState);
+        this.peerConnection?.removeEventListener(
+          "icegatheringstatechange",
+          checkState
+        );
         resolve();
       }, 5000);
     });
@@ -194,7 +211,9 @@ class LiveChatClient {
   }
 
   connect() {
-    const isLocal = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+    const isLocal = ["localhost", "127.0.0.1"].includes(
+      window.location.hostname
+    );
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 
     let wsUrl;
@@ -202,10 +221,14 @@ class LiveChatClient {
       // Local development
       const baseUrl = LIVE_SERVICE_BASE_URL || "https://api.extase.dev";
       const wsBase = baseUrl.replace(/^https?:/, wsProtocol);
-      wsUrl = `${wsBase}/ws/live/${this.streamId}?user_id=${this.userId}&username=${encodeURIComponent(this.username)}`;
+      wsUrl = `${wsBase}/ws/live/${this.streamId}?user_id=${
+        this.userId
+      }&username=${encodeURIComponent(this.username)}`;
     } else {
       // Production
-      wsUrl = `${wsProtocol}//${window.location.host}/ws/live/${this.streamId}?user_id=${this.userId}&username=${encodeURIComponent(this.username)}`;
+      wsUrl = `${wsProtocol}//${window.location.host}/ws/live/${
+        this.streamId
+      }?user_id=${this.userId}&username=${encodeURIComponent(this.username)}`;
     }
 
     this.ws = new WebSocket(wsUrl);
@@ -260,6 +283,14 @@ const LiveStudio = () => {
   const streamData = location.state?.stream;
   const cookies = new Cookies();
 
+  // Get user info from cookies
+  const userId = cookies.get("x-user-id");
+  const username = cookies.get("username") || "Streamer";
+  const token = cookies.get("accessToken");
+
+  // Connect to notification socket
+  const { socket } = useNotifications(token);
+
   // Refs
   const videoRef = useRef(null);
   const publisherRef = useRef(null);
@@ -276,17 +307,18 @@ const LiveStudio = () => {
   const [viewerCount, setViewerCount] = useState(0);
   const [videoSettings, setVideoSettings] = useState(null);
   const [chatMessages, setChatMessages] = useState([
-    { id: 1, user: "System", message: "Welcome to the live session! 🎉", time: new Date() },
+    {
+      id: 1,
+      user: "System",
+      message: "Welcome to the live session! 🎉",
+      time: new Date(),
+    },
   ]);
   const [chatInput, setChatInput] = useState("");
 
   // Dialog states
   const [showStopDialog, setShowStopDialog] = useState(false);
   const [showEndDialog, setShowEndDialog] = useState(false);
-
-  // Get user info from cookies
-  const userId = cookies.get("x-user-id");
-  const username = cookies.get("username") || "Streamer";
 
   useEffect(() => {
     if (!streamData) {
@@ -295,6 +327,45 @@ const LiveStudio = () => {
       return;
     }
   }, [streamData, navigate, toast]);
+
+  // Listen for livestream violation notifications
+  useEffect(() => {
+    if (!socket || !streamData?.id) return;
+
+    const handleNotification = (data) => {
+      try {
+        // Parse metadata if it's a string
+        const metadata =
+          typeof data.metadata === "string"
+            ? JSON.parse(data.metadata)
+            : data.metadata;
+
+        // Check if this is a livestream violation for our current stream
+        if (
+          metadata?.type === "LIVESTREAM_VIOLATION" &&
+          metadata?.stream_id === streamData.id
+        ) {
+          console.log("⚠️ Livestream violation detected:", metadata);
+
+          // Show error toast
+          toast.error(`Livestream stopped: ${metadata.reason}`, {
+            duration: 10000,
+          });
+
+          // Force stop the stream using confirmStopStream
+          confirmStopStream();
+        }
+      } catch (error) {
+        console.error("Error handling notification:", error);
+      }
+    };
+
+    socket.on("notification", handleNotification);
+
+    return () => {
+      socket.off("notification", handleNotification);
+    };
+  }, [socket, streamData?.id, toast]);
 
   // Session timer
   useEffect(() => {
@@ -340,7 +411,9 @@ const LiveStudio = () => {
       username,
       (msg) => {
         // Deduplicate messages by key
-        const msgKey = `${msg.userId || msg.user}_${msg.time?.getTime?.() || Date.now()}_${msg.message?.slice(0, 20)}`;
+        const msgKey = `${msg.userId || msg.user}_${
+          msg.time?.getTime?.() || Date.now()
+        }_${msg.message?.slice(0, 20)}`;
         if (seenMessageIdsRef.current.has(msgKey)) {
           console.log("[Chat] Duplicate message ignored:", msgKey);
           return;
@@ -350,7 +423,9 @@ const LiveStudio = () => {
         // Keep set size manageable
         if (seenMessageIdsRef.current.size > 200) {
           const entries = Array.from(seenMessageIdsRef.current);
-          entries.slice(0, 100).forEach(id => seenMessageIdsRef.current.delete(id));
+          entries
+            .slice(0, 100)
+            .forEach((id) => seenMessageIdsRef.current.delete(id));
         }
 
         setChatMessages((prev) => [...prev.slice(-100), msg]);
@@ -395,6 +470,16 @@ const LiveStudio = () => {
         // Start viewer polling and chat
         startViewerPolling();
         connectChat();
+
+        // Start AI content monitoring
+        startLivestreamMonitoring(streamData.id, userId)
+          .then((result) => {
+            console.log("✅ Livestream monitoring started:", result);
+          })
+          .catch((error) => {
+            console.error("❌ Failed to start monitoring:", error);
+            // Don't fail the stream if monitoring fails
+          });
       }
     };
 
@@ -438,6 +523,12 @@ const LiveStudio = () => {
     toast.info("Live stream stopped");
   }, [toast, stopViewerPolling, disconnectChat]);
 
+  // Add confirmStopStream to violation listener dependencies
+  useEffect(() => {
+    // This effect ensures confirmStopStream is accessible in violation listener
+    return () => {};
+  }, [confirmStopStream]);
+
   const handleEndSessionClick = useCallback(() => {
     setShowEndDialog(true);
   }, []);
@@ -472,9 +563,13 @@ const LiveStudio = () => {
     const secs = seconds % 60;
 
     if (hrs > 0) {
-      return `${hrs.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+      return `${hrs.toString().padStart(2, "0")}:${mins
+        .toString()
+        .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
     }
-    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    return `${mins.toString().padStart(2, "0")}:${secs
+      .toString()
+      .padStart(2, "0")}`;
   };
 
   const getStatusColor = () => {
@@ -539,16 +634,26 @@ const LiveStudio = () => {
                 Back
               </Button>
               <div>
-                <h1 className="text-xl font-bold text-foreground">Live Studio Control</h1>
-                <p className="text-sm text-muted-foreground">{streamData.title || "Untitled Stream"}</p>
+                <h1 className="text-xl font-bold text-foreground">
+                  Live Studio Control
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  {streamData.title || "Untitled Stream"}
+                </p>
               </div>
             </div>
 
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2 rounded-full bg-muted px-4 py-2 text-sm text-foreground">
-                <div className={`h-2.5 w-2.5 rounded-full ${getStatusDotColor()}`} />
+                <div
+                  className={`h-2.5 w-2.5 rounded-full ${getStatusDotColor()}`}
+                />
                 <span className="font-semibold">
-                  {streamStatus === "live" ? "LIVE" : streamStatus === "connecting" ? "CONNECTING" : "OFFLINE"}
+                  {streamStatus === "live"
+                    ? "LIVE"
+                    : streamStatus === "connecting"
+                    ? "CONNECTING"
+                    : "OFFLINE"}
                 </span>
               </div>
 
@@ -570,7 +675,9 @@ const LiveStudio = () => {
                   disabled={streamStatus === "connecting"}
                 >
                   <VideoCameraIcon className="h-4 w-4" />
-                  {streamStatus === "connecting" ? "Starting..." : "Start Streaming"}
+                  {streamStatus === "connecting"
+                    ? "Starting..."
+                    : "Start Streaming"}
                 </Button>
               )}
             </div>
@@ -597,7 +704,9 @@ const LiveStudio = () => {
                     <>
                       <SignalIcon className="h-4 w-4 text-green-500" />
                       <span className="text-xs text-green-600">
-                        {videoSettings ? `${videoSettings.width}x${videoSettings.height}` : "Connected"}
+                        {videoSettings
+                          ? `${videoSettings.width}x${videoSettings.height}`
+                          : "Connected"}
                       </span>
                     </>
                   ) : streamStatus === "error" ? (
@@ -606,7 +715,9 @@ const LiveStudio = () => {
                       <span className="text-xs text-red-600">Error</span>
                     </>
                   ) : (
-                    <span className={`text-xs ${getStatusColor()}`}>{statusMessage}</span>
+                    <span className={`text-xs ${getStatusColor()}`}>
+                      {statusMessage}
+                    </span>
                   )}
                 </div>
               </div>
@@ -633,7 +744,9 @@ const LiveStudio = () => {
                   <div className="absolute inset-0 flex items-center justify-center bg-background/60">
                     <div className="text-center">
                       <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-                      <p className="mt-4 text-sm text-foreground">{statusMessage}</p>
+                      <p className="mt-4 text-sm text-foreground">
+                        {statusMessage}
+                      </p>
                     </div>
                   </div>
                 )}
@@ -651,7 +764,9 @@ const LiveStudio = () => {
               <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
                 <div className="flex items-center gap-2 text-blue-500">
                   <ClockIcon className="h-5 w-5" />
-                  <span className="text-xs font-semibold uppercase tracking-wide">Duration</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide">
+                    Duration
+                  </span>
                 </div>
                 <p className="mt-2 text-2xl font-bold text-foreground">
                   {isStreaming ? formatTime(sessionTick) : "00:00"}
@@ -661,15 +776,21 @@ const LiveStudio = () => {
               <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
                 <div className="flex items-center gap-2 text-purple-500">
                   <EyeIcon className="h-5 w-5" />
-                  <span className="text-xs font-semibold uppercase tracking-wide">Viewers</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide">
+                    Viewers
+                  </span>
                 </div>
-                <p className="mt-2 text-2xl font-bold text-foreground">{viewerCount}</p>
+                <p className="mt-2 text-2xl font-bold text-foreground">
+                  {viewerCount}
+                </p>
               </div>
 
               <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
                 <div className="flex items-center gap-2 text-green-500">
                   <SignalIcon className="h-5 w-5" />
-                  <span className="text-xs font-semibold uppercase tracking-wide">Quality</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide">
+                    Quality
+                  </span>
                 </div>
                 <p className="mt-2 text-lg font-bold text-foreground">
                   {videoSettings ? `${videoSettings.width}p` : "Auto"}
@@ -679,10 +800,16 @@ const LiveStudio = () => {
               <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
                 <div className="flex items-center gap-2 text-amber-500">
                   <CheckCircleIcon className="h-5 w-5" />
-                  <span className="text-xs font-semibold uppercase tracking-wide">Status</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide">
+                    Status
+                  </span>
                 </div>
                 <p className={`mt-2 text-base font-bold ${getStatusColor()}`}>
-                  {streamStatus === "live" ? "Streaming" : streamStatus === "connecting" ? "Connecting" : "Ready"}
+                  {streamStatus === "live"
+                    ? "Streaming"
+                    : streamStatus === "connecting"
+                    ? "Connecting"
+                    : "Ready"}
                 </p>
               </div>
             </div>
@@ -736,10 +863,18 @@ const LiveStudio = () => {
 
             {/* Stream Info */}
             <div className="rounded-2xl border border-border bg-muted/30 p-4">
-              <h3 className="mb-2 text-sm font-semibold text-muted-foreground">Stream Info</h3>
+              <h3 className="mb-2 text-sm font-semibold text-muted-foreground">
+                Stream Info
+              </h3>
               <div className="space-y-1 text-xs text-muted-foreground">
-                <p><span className="font-medium">Stream ID:</span> {streamData.id}</p>
-                <p><span className="font-medium">HLS URL:</span> https://cdn.extase.dev/live/{streamData.id}.m3u8</p>
+                <p>
+                  <span className="font-medium">Stream ID:</span>{" "}
+                  {streamData.id}
+                </p>
+                <p>
+                  <span className="font-medium">HLS URL:</span>{" "}
+                  https://cdn.extase.dev/live/{streamData.id}.m3u8
+                </p>
               </div>
             </div>
           </div>
@@ -771,7 +906,9 @@ const LiveStudio = () => {
                     className="rounded-xl border border-border bg-muted/50 p-3 text-sm"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold text-foreground">{msg.user}</span>
+                      <span className="font-semibold text-foreground">
+                        {msg.user}
+                      </span>
                       <span className="text-xs text-muted-foreground">
                         {new Date(msg.time).toLocaleTimeString("en-US", {
                           hour: "2-digit",
@@ -797,7 +934,9 @@ const LiveStudio = () => {
                     placeholder="Send a message..."
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleSendChatMessage()}
+                    onKeyDown={(e) =>
+                      e.key === "Enter" && handleSendChatMessage()
+                    }
                     className="flex-1 rounded-xl border border-border bg-background px-4 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                     disabled={!isStreaming}
                   />
@@ -811,7 +950,9 @@ const LiveStudio = () => {
                   </Button>
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  {isStreaming ? "Chat is live!" : "Start streaming to enable chat"}
+                  {isStreaming
+                    ? "Chat is live!"
+                    : "Start streaming to enable chat"}
                 </p>
               </div>
             </div>
