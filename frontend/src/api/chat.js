@@ -1,8 +1,12 @@
 import chatApi from './chatAxios'
+import axios from 'axios'
+import Cookies from 'universal-cookie'
 import { filterOffensiveContent } from '../utils/contentFilter'
 
-// API paths - direct to chat service (no gateway prefix)
-const CHAT_PATH = ''
+// Gateway URL for AI moderation (backend-gateway)
+const GATEWAY_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+
+const cookies = new Cookies()
 
 export const CHAT_MESSAGE_TYPES = {
 	TEXT: 'MESSAGE_TYPE_TEXT',
@@ -74,11 +78,19 @@ export const sendMessage = async (
 	// ✨ Filter offensive content before sending
 	const normalizedContent = typeof content === 'string' ? content : ''
 	const filteredContent = await filterOffensiveContent(normalizedContent)
-	const { type, mediaUrl } = options || {}
+	const { type, mediaUrl, originalFilename } = options || {}
+
+	// For file attachments without text content, store filename in content
+	// Format: [FILE:filename.ext] - this allows frontend to display proper filename
+	let finalContent = filteredContent
+	if (mediaUrl && originalFilename && !filteredContent) {
+		// Add filename marker for all media types that need it displayed
+		finalContent = `[FILE:${originalFilename}]`
+	}
 
 	const payload = {
 		conversation_id: conversationId,
-		content: filteredContent, // Use filtered content
+		content: finalContent,
 		idempotency_key: generateUUID(),
 	}
 
@@ -121,9 +133,8 @@ export const getMessages = async (
 	if (limit) params.append('limit', limit.toString())
 
 	const queryString = params.toString()
-	const url = `/v1/conversations/${conversationId}/messages${
-		queryString ? '?' + queryString : ''
-	}`
+	const url = `/v1/conversations/${conversationId}/messages${queryString ? '?' + queryString : ''
+		}`
 
 	const response = await chatApi.get(url)
 	return response.data
@@ -189,11 +200,17 @@ export const startConversation = async (
 
 	const normalizedContent = typeof content === 'string' ? content : ''
 	const filteredContent = await filterOffensiveContent(normalizedContent)
-	const { type, mediaUrl } = options || {}
+	const { type, mediaUrl, originalFilename } = options || {}
+
+	// For file attachments without text content, store filename in content
+	let finalContent = filteredContent
+	if (mediaUrl && originalFilename && !filteredContent) {
+		finalContent = `[FILE:${originalFilename}]`
+	}
 
 	const payload = {
 		conversation_id: conversationId,
-		content: filteredContent,
+		content: finalContent,
 		idempotency_key: generateUUID(),
 		receiver_ids: [recipientId], // Add recipient as participant
 	}
@@ -214,7 +231,48 @@ export const startConversation = async (
 	}
 }
 
-export default {
+/**
+ * Moderate chat media (image/video) using AI
+ * Call this after uploading to Cloudinary to check for violations
+ * @param {string} mediaUrl - URL of uploaded media
+ * @param {string} mediaType - CHAT_MESSAGE_TYPES value (IMAGE, VIDEO, FILE)
+ * @returns {Promise<{isViolation: boolean, result: string, message: string}>}
+ */
+export const moderateChatMedia = async (mediaUrl, mediaType) => {
+	try {
+		const accessToken = cookies.get('accessToken')
+		const userId = cookies.get('x-user-id')
+
+		const response = await axios.post(
+			`${GATEWAY_URL}/api/chat/moderate`,
+			{
+				mediaUrl,
+				mediaType,
+			},
+			{
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: accessToken ? `Bearer ${accessToken}` : undefined,
+					'x-user-id': userId,
+				},
+				timeout: 60000, // 60s timeout for AI processing
+			}
+		)
+
+		console.log('[Chat] Media moderation result:', response.data)
+		return response.data
+	} catch (error) {
+		console.error('[Chat] Media moderation error:', error.message)
+		// Fail-open: nếu lỗi, cho phép content
+		return {
+			isViolation: false,
+			result: 'Accepted',
+			message: 'Moderation service unavailable',
+		}
+	}
+}
+
+const chatApiModule = {
 	sendMessage,
 	getMessages,
 	getConversations,
@@ -224,5 +282,8 @@ export default {
 	generateConversationIdForUsers,
 	generateUUID,
 	getUploadCredentials,
+	moderateChatMedia,
 	CHAT_MESSAGE_TYPES,
 }
+
+export default chatApiModule

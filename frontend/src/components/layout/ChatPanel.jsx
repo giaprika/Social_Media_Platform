@@ -11,25 +11,34 @@ import {
   FlagIcon,
   EnvelopeOpenIcon,
   PaperAirplaneIcon,
-  PhotoIcon,
   PlusCircleIcon,
   UserGroupIcon,
   XMarkIcon,
+  DocumentIcon,
+  FilmIcon,
+  PaperClipIcon,
+  PlayIcon,
+  PauseIcon,
+  SpeakerWaveIcon,
+  SpeakerXMarkIcon,
 } from '@heroicons/react/24/outline'
+import { PlayIcon as PlayIconSolid } from '@heroicons/react/24/solid'
 import { useChat } from 'src/contexts/ChatContext'
 import useAuth from 'src/hooks/useAuth'
 import { formatDistanceToNow } from 'date-fns'
 import * as userApi from 'src/api/user'
-import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
+import { MagnifyingGlassIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
 import Avatar from 'src/components/ui/Avatar'
 import { filterOffensiveContent } from 'src/utils/contentFilter'
-import { CHAT_MESSAGE_TYPES } from 'src/api/chat'
+import { CHAT_MESSAGE_TYPES, moderateChatMedia } from 'src/api/chat'
 import {
   requestChatUploadCredentials,
-  uploadImageToCloudinary,
-  validateImageFile,
+  uploadMediaToCloudinary,
+  validateMediaFile,
+  getFileTypeLabel,
+  getAcceptedFileTypes,
 } from 'src/services/chatMediaUpload'
-import { downloadReportFiles, reportMessageTokens } from 'src/services/chatReportService'
+import { downloadReportFiles, reportMessageTokens, isMessageReported, subscribeToReportUpdates } from 'src/services/chatReportService'
 
 const filterOptions = [
   { id: 'channels', label: 'Chat channels' },
@@ -172,6 +181,311 @@ const ConversationItem = ({ conversation, isActive, onClick, currentUserId, unre
   )
 }
 
+// Custom Video Player Component với UI đẹp
+const ChatVideoPlayer = ({ src, className }) => {
+  const containerRef = useRef(null)
+  const videoRef = useRef(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [isMuted, setIsMuted] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [showControls, setShowControls] = useState(true)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [playbackSpeed, setPlaybackSpeed] = useState(1)
+  const [showSpeedMenu, setShowSpeedMenu] = useState(false)
+  const hideControlsTimeout = useRef(null)
+
+  const speedOptions = [0.5, 0.75, 1, 1.25, 1.5, 2]
+
+  const formatTime = (seconds) => {
+    if (isNaN(seconds)) return '0:00'
+    const mins = Math.floor(seconds / 60)
+    const secs = Math.floor(seconds % 60)
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
+  const togglePlay = () => {
+    if (videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.pause()
+      } else {
+        videoRef.current.play()
+      }
+    }
+  }
+
+  const toggleMute = (e) => {
+    e.stopPropagation()
+    if (videoRef.current) {
+      videoRef.current.muted = !isMuted
+      setIsMuted(!isMuted)
+    }
+  }
+
+  const handleTimeUpdate = () => {
+    if (videoRef.current) {
+      const current = videoRef.current.currentTime
+      const total = videoRef.current.duration
+      setProgress((current / total) * 100)
+      setCurrentTime(current)
+    }
+  }
+
+  const handleLoadedMetadata = () => {
+    if (videoRef.current) {
+      setDuration(videoRef.current.duration)
+    }
+  }
+
+  const handleSeek = (e) => {
+    e.stopPropagation()
+    const rect = e.currentTarget.getBoundingClientRect()
+    const clickX = e.clientX - rect.left
+    const width = rect.width
+    const percent = clickX / width
+    if (videoRef.current) {
+      videoRef.current.currentTime = percent * videoRef.current.duration
+    }
+  }
+
+  const handleMouseEnter = () => {
+    setShowControls(true)
+    if (hideControlsTimeout.current) {
+      clearTimeout(hideControlsTimeout.current)
+    }
+  }
+
+  const handleMouseLeave = () => {
+    setShowSpeedMenu(false)
+    if (isPlaying) {
+      hideControlsTimeout.current = setTimeout(() => {
+        setShowControls(false)
+      }, 2000)
+    }
+  }
+
+  const handleDownload = (e) => {
+    e.stopPropagation()
+    const link = document.createElement('a')
+    link.href = src
+    link.download = 'video.mp4'
+    link.target = '_blank'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  const toggleFullscreen = (e) => {
+    e.stopPropagation()
+    if (!containerRef.current) return
+
+    if (!isFullscreen) {
+      if (containerRef.current.requestFullscreen) {
+        containerRef.current.requestFullscreen()
+      } else if (containerRef.current.webkitRequestFullscreen) {
+        containerRef.current.webkitRequestFullscreen()
+      } else if (containerRef.current.msRequestFullscreen) {
+        containerRef.current.msRequestFullscreen()
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen()
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen()
+      } else if (document.msExitFullscreen) {
+        document.msExitFullscreen()
+      }
+    }
+  }
+
+  const changeSpeed = (speed) => {
+    if (videoRef.current) {
+      videoRef.current.playbackRate = speed
+      setPlaybackSpeed(speed)
+    }
+    setShowSpeedMenu(false)
+  }
+
+  // Listen for fullscreen changes
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+    }
+  }, [])
+
+  return (
+    <div
+      ref={containerRef}
+      className={clsx(
+        'relative group overflow-hidden rounded-2xl bg-black cursor-pointer',
+        isFullscreen ? 'w-screen h-screen rounded-none' : '',
+        className
+      )}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onClick={togglePlay}
+    >
+      <video
+        ref={videoRef}
+        src={src}
+        preload="metadata"
+        className={clsx(
+          'object-contain',
+          isFullscreen ? 'w-full h-full' : 'max-h-72 max-w-xs w-full'
+        )}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onEnded={() => setIsPlaying(false)}
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
+      >
+        <track kind="captions" />
+      </video>
+
+      {/* Play overlay - shows when paused */}
+      {!isPlaying && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity">
+          <div className={clsx(
+            'rounded-full bg-white/90 flex items-center justify-center shadow-lg hover:scale-110 transition-transform',
+            isFullscreen ? 'w-20 h-20' : 'w-16 h-16'
+          )}>
+            <PlayIconSolid className={clsx('text-gray-900 ml-1', isFullscreen ? 'w-10 h-10' : 'w-8 h-8')} />
+          </div>
+        </div>
+      )}
+
+      {/* Controls overlay */}
+      <div
+        className={clsx(
+          'absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent transition-opacity duration-300',
+          isFullscreen ? 'p-6' : 'p-3',
+          showControls || !isPlaying ? 'opacity-100' : 'opacity-0'
+        )}
+      >
+        {/* Progress bar */}
+        <div
+          className={clsx(
+            'w-full bg-white/30 rounded-full cursor-pointer hover:h-2 transition-all',
+            isFullscreen ? 'h-2 mb-4' : 'h-1.5 mb-2'
+          )}
+          onClick={handleSeek}
+        >
+          <div
+            className="h-full bg-white rounded-full relative"
+            style={{ width: `${progress}%` }}
+          >
+            <div className={clsx(
+              'absolute right-0 top-1/2 -translate-y-1/2 bg-white rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity',
+              isFullscreen ? 'w-4 h-4' : 'w-3 h-3'
+            )} />
+          </div>
+        </div>
+
+        {/* Controls row */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {/* Play/Pause button */}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); togglePlay(); }}
+              className="text-white hover:text-white/80 transition-colors"
+            >
+              {isPlaying ? (
+                <PauseIcon className={clsx(isFullscreen ? 'w-6 h-6' : 'w-5 h-5')} />
+              ) : (
+                <PlayIcon className={clsx(isFullscreen ? 'w-6 h-6' : 'w-5 h-5')} />
+              )}
+            </button>
+
+            {/* Mute button - always visible */}
+            <button
+              type="button"
+              onClick={toggleMute}
+              className="text-white hover:text-white/80 transition-colors p-1"
+            >
+              {isMuted ? (
+                <SpeakerXMarkIcon className={clsx(isFullscreen ? 'w-6 h-6' : 'w-5 h-5')} />
+              ) : (
+                <SpeakerWaveIcon className={clsx(isFullscreen ? 'w-6 h-6' : 'w-5 h-5')} />
+              )}
+            </button>
+
+            {/* Time display */}
+            <span className={clsx('text-white font-medium', isFullscreen ? 'text-sm' : 'text-xs')}>
+              {formatTime(currentTime)} / {formatTime(duration)}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Playback speed */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setShowSpeedMenu(!showSpeedMenu); }}
+                className={clsx(
+                  'text-white hover:text-white/80 transition-colors font-medium rounded hover:bg-white/10',
+                  isFullscreen ? 'px-2 py-1 text-sm' : 'px-1.5 py-0.5 text-xs'
+                )}
+              >
+                {playbackSpeed}x
+              </button>
+              {showSpeedMenu && (
+                <div className="absolute bottom-full right-0 mb-2 bg-gray-900/95 rounded-lg py-1 shadow-xl border border-white/10">
+                  {speedOptions.map((speed) => (
+                    <button
+                      key={speed}
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); changeSpeed(speed); }}
+                      className={clsx(
+                        'block w-full px-4 py-1.5 text-sm text-left hover:bg-white/10 transition-colors',
+                        playbackSpeed === speed ? 'text-blue-400' : 'text-white'
+                      )}
+                    >
+                      {speed}x
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Download button - only in fullscreen */}
+            {isFullscreen && (
+              <button
+                type="button"
+                onClick={handleDownload}
+                className="text-white hover:text-white/80 transition-colors p-1"
+              >
+                <ArrowDownTrayIcon className="w-6 h-6" />
+              </button>
+            )}
+
+            {/* Fullscreen button - always visible */}
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              className="text-white hover:text-white/80 transition-colors p-1"
+            >
+              {isFullscreen ? (
+                <ArrowsPointingInIcon className={clsx(isFullscreen ? 'w-6 h-6' : 'w-5 h-5')} />
+              ) : (
+                <ArrowsPointingOutIcon className={clsx(isFullscreen ? 'w-6 h-6' : 'w-5 h-5')} />
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
 // Message Component
 const MessageItem = ({ message, isOwn, senderName, onReport }) => {
   // Support both camelCase (from API) and snake_case (legacy)
@@ -180,6 +494,36 @@ const MessageItem = ({ message, isOwn, senderName, onReport }) => {
     ? formatDistanceToNow(new Date(createdAt), { addSuffix: true })
     : ''
   const mediaUrl = message.media_url || message.mediaUrl
+  const messageType = message.type || message.messageType || CHAT_MESSAGE_TYPES?.TEXT
+
+  // Get media metadata for original filename
+  const mediaMetadata = message.media_metadata || message.mediaMetadata || {}
+  const originalFilename = mediaMetadata.original_filename || mediaMetadata.originalFilename
+
+  // Check if this message has been reported (for censoring)
+  const messageId = message.id || message.message_id
+  const [isReported, setIsReported] = useState(false)
+  const [isRevealed, setIsRevealed] = useState(false)
+
+  useEffect(() => {
+    // Check if message is reported on mount
+    if (messageId && mediaUrl) {
+      setIsReported(isMessageReported(messageId))
+    }
+  }, [messageId, mediaUrl])
+
+  // Subscribe to report updates to update UI immediately after report
+  useEffect(() => {
+    if (!messageId || !mediaUrl) return
+
+    const unsubscribe = subscribeToReportUpdates((reportedMsgId) => {
+      if (reportedMsgId === messageId) {
+        setIsReported(true)
+      }
+    })
+
+    return unsubscribe
+  }, [messageId, mediaUrl])
 
   // Filter offensive content from message
   const [filteredContent, setFilteredContent] = useState(message.content)
@@ -197,12 +541,81 @@ const MessageItem = ({ message, isOwn, senderName, onReport }) => {
   const hasText = Boolean(filteredContent && filteredContent.trim().length > 0)
   const showSenderLabel = !isOwn && senderName
 
+  // Determine media type for rendering
+  const isImage = messageType === CHAT_MESSAGE_TYPES?.IMAGE ||
+    (mediaUrl && !messageType && mediaUrl.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i))
+  const isVideo = messageType === CHAT_MESSAGE_TYPES?.VIDEO ||
+    (mediaUrl && mediaUrl.match(/\.(mp4|webm|ogg|mov)$/i))
+  const isFile = messageType === CHAT_MESSAGE_TYPES?.FILE ||
+    (mediaUrl && !isImage && !isVideo)
+
+  // Should show censor overlay?
+  const showCensor = isReported && !isRevealed && mediaUrl
+
+  // Get filename - prioritize original filename from metadata
+  const getFileName = () => {
+    // 1. Use original filename from metadata if available
+    if (originalFilename) {
+      // Add extension from format if missing
+      const format = mediaMetadata.format
+      if (format && !originalFilename.includes('.')) {
+        return `${originalFilename}.${format}`
+      }
+      return originalFilename
+    }
+
+    // 2. Parse from content if format is [FILE:filename.ext]
+    const contentText = message.content || ''
+    const fileMatch = contentText.match(/^\[FILE:(.+)\]$/)
+    if (fileMatch && fileMatch[1]) {
+      return fileMatch[1]
+    }
+
+    // 3. Fallback: try to extract from URL
+    if (mediaUrl) {
+      try {
+        const urlPath = new URL(mediaUrl).pathname
+        const fileName = decodeURIComponent(urlPath.split('/').pop() || '')
+        if (fileName && fileName.length > 0) {
+          return fileName
+        }
+      } catch {
+        // Ignore URL parsing errors
+      }
+    }
+
+    // 4. Default fallback
+    return 'Tệp đính kèm'
+  }
+
+  // Check if content is just a file marker (should not display as text bubble)
+  const isFileMarker = /^\[FILE:.+\]$/.test(message.content || '')
+
+  // Censor overlay component
+  const CensorOverlay = ({ children, type = 'media' }) => (
+    <div className="relative">
+      {children}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setIsRevealed(true)
+        }}
+        className="absolute inset-0 flex flex-col items-center justify-center bg-gray-800/90 backdrop-blur-sm rounded-2xl cursor-pointer transition-all hover:bg-gray-700/90"
+      >
+        <ExclamationTriangleIcon className="h-8 w-8 text-yellow-400 mb-2" />
+        <span className="text-gray-300 text-xs mt-1">Nhấn để xem</span>
+      </button>
+    </div>
+  )
+
   return (
     <div
       className={clsx('flex mb-2 group', isOwn ? 'justify-end' : 'justify-start')}
     >
-      <div className={clsx('flex items-end gap-2', isOwn ? 'flex-row-reverse' : 'flex-row')}>
-        <div className={clsx('max-w-[70%] flex flex-col gap-2', isOwn ? 'items-end' : 'items-start')}>
+      <div className={clsx('flex items-end gap-2 max-w-[85%]', isOwn ? 'flex-row-reverse' : 'flex-row')}>
+        <div className={clsx('flex flex-col gap-2 min-w-0', isOwn ? 'items-end' : 'items-start')}>
           {/* Show sender name for received messages in group chats */}
           {showSenderLabel && (
             <span className="text-xs text-muted-foreground mb-1 block px-2">
@@ -210,23 +623,107 @@ const MessageItem = ({ message, isOwn, senderName, onReport }) => {
             </span>
           )}
 
-          {mediaUrl && (
-            <a
-              href={mediaUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="block overflow-hidden rounded-2xl border border-border bg-background"
-            >
-              <img
-                src={mediaUrl}
-                alt={hasText ? 'Chat attachment' : 'Photo attachment'}
-                className="max-h-64 w-full object-cover"
-                loading="lazy"
-              />
-            </a>
+          {/* Image attachment */}
+          {mediaUrl && isImage && (
+            showCensor ? (
+              <CensorOverlay>
+                <div className="block overflow-hidden rounded-2xl border border-border bg-background">
+                  <img
+                    src={mediaUrl}
+                    alt="Censored content"
+                    className="max-h-64 w-full object-cover blur-xl opacity-30"
+                    loading="lazy"
+                  />
+                </div>
+              </CensorOverlay>
+            ) : (
+              <a
+                href={mediaUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="block overflow-hidden rounded-2xl border border-border bg-background"
+              >
+                <img
+                  src={mediaUrl}
+                  alt={hasText ? 'Chat attachment' : 'Photo attachment'}
+                  className="max-h-64 w-full object-cover"
+                  loading="lazy"
+                />
+              </a>
+            )
           )}
 
-          {hasText && (
+          {/* Video attachment */}
+          {mediaUrl && isVideo && (
+            showCensor ? (
+              <CensorOverlay>
+                <div className="relative overflow-hidden rounded-2xl border border-border bg-background">
+                  <video
+                    src={mediaUrl}
+                    preload="metadata"
+                    className="max-h-72 max-w-xs w-full blur-xl opacity-30"
+                  >
+                    <track kind="captions" />
+                  </video>
+                </div>
+              </CensorOverlay>
+            ) : (
+              <ChatVideoPlayer src={mediaUrl} />
+            )
+          )}
+
+          {/* File attachment */}
+          {mediaUrl && isFile && (
+            showCensor ? (
+              <CensorOverlay>
+                <div className={clsx(
+                  'flex items-center gap-3 rounded-2xl border px-4 py-3 w-full max-w-xs',
+                  isOwn
+                    ? 'border-primary/30 bg-primary/10'
+                    : 'border-border bg-muted'
+                )}>
+                  <div className={clsx(
+                    'flex items-center justify-center w-10 h-10 rounded-xl flex-shrink-0',
+                    isOwn ? 'bg-primary/20' : 'bg-background'
+                  )}>
+                    <DocumentIcon className={clsx('h-5 w-5', isOwn ? 'text-primary' : 'text-muted-foreground')} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-400">Tệp đính kèm</p>
+                  </div>
+                </div>
+              </CensorOverlay>
+            ) : (
+              <a
+                href={mediaUrl}
+                target="_blank"
+                rel="noreferrer"
+                download
+                className={clsx(
+                  'flex items-center gap-3 rounded-2xl border px-4 py-3 transition-colors w-full max-w-xs',
+                  isOwn
+                    ? 'border-primary/30 bg-primary/10 hover:bg-primary/20'
+                    : 'border-border bg-muted hover:bg-muted/80'
+                )}
+              >
+                <div className={clsx(
+                  'flex items-center justify-center w-10 h-10 rounded-xl flex-shrink-0',
+                  isOwn ? 'bg-primary/20' : 'bg-background'
+                )}>
+                  <DocumentIcon className={clsx('h-5 w-5', isOwn ? 'text-primary' : 'text-muted-foreground')} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={clsx('text-sm font-medium truncate', isOwn ? 'text-primary' : 'text-foreground')}>
+                    {getFileName()}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Nhấn để tải xuống</p>
+                </div>
+                <ArrowDownTrayIcon className={clsx('h-4 w-4 flex-shrink-0', isOwn ? 'text-primary' : 'text-muted-foreground')} />
+              </a>
+            )
+          )}
+
+          {hasText && !isFileMarker && (
             <div
               className={clsx(
                 'rounded-2xl px-4 py-2 inline-block text-left',
@@ -238,7 +735,7 @@ const MessageItem = ({ message, isOwn, senderName, onReport }) => {
           )}
         </div>
         {/* Time - only visible on hover */}
-        <div className="flex flex-col items-center gap-1">
+        <div className="flex flex-col items-center gap-1 flex-shrink-0 self-end pb-1">
           <span
             className={clsx(
               'text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap',
@@ -268,17 +765,18 @@ const ChatView = ({ conversation }) => {
     messages,
     sendMessage,
     startNewConversation,
-    setActiveConversation,
     isLoading,
     loadMessages,
   } = useChat()
   const { user: authUser } = useAuth()
   const [inputValue, setInputValue] = useState('')
   const [isSending, setIsSending] = useState(false)
-  const [selectedImage, setSelectedImage] = useState(null)
-  const [imagePreviewUrl, setImagePreviewUrl] = useState('')
+  const [selectedFile, setSelectedFile] = useState(null)
+  const [selectedMediaType, setSelectedMediaType] = useState(null)
+  const [filePreviewUrl, setFilePreviewUrl] = useState('')
   const [attachmentError, setAttachmentError] = useState('')
   const [uploadStatus, setUploadStatus] = useState('idle')
+  const [uploadProgress, setUploadProgress] = useState(0)
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -330,10 +828,23 @@ const ChatView = ({ conversation }) => {
 
   const reportTokenOptions = useMemo(() => {
     if (!reportModal.message?.content) return []
-    return buildTokenOptions(reportModal.message.content)
+    // Skip file marker content like [FILE:name.ext]
+    const content = reportModal.message.content
+    if (/^\[FILE:.+\]$/.test(content)) return []
+    return buildTokenOptions(content)
   }, [reportModal.message?.content, buildTokenOptions])
 
-  const canSubmitReport = reportTokenOptions.length > 0 && selectedReportTokens.length > 0
+  // Check if this is a media-only message (image/video/file without meaningful text)
+  const isMediaMessage = useMemo(() => {
+    if (!reportModal.message) return false
+    const mediaUrl = reportModal.message.media_url || reportModal.message.mediaUrl
+    const content = reportModal.message.content || ''
+    const isFileMarker = /^\[FILE:.+\]$/.test(content)
+    return Boolean(mediaUrl) && (!content || isFileMarker)
+  }, [reportModal.message])
+
+  // Can submit: either has tokens selected OR is a media message
+  const canSubmitReport = (reportTokenOptions.length > 0 && selectedReportTokens.length > 0) || isMediaMessage
 
   const closeReportModal = useCallback(() => {
     setReportModal({ isOpen: false, message: null })
@@ -371,7 +882,12 @@ const ChatView = ({ conversation }) => {
       return
     }
 
-    if (selectedReportTokens.length === 0) {
+    // For media messages, we don't need tokens - use a default token
+    const tokensToReport = isMediaMessage
+      ? ['media_content']
+      : selectedReportTokens
+
+    if (tokensToReport.length === 0) {
       setReportFeedback({ type: 'error', message: 'Hãy chọn ít nhất một từ để report.' })
       return
     }
@@ -379,25 +895,20 @@ const ChatView = ({ conversation }) => {
     try {
       setIsReportSubmitting(true)
       setReportFeedback({ type: '', message: '' })
-      const result = await reportMessageTokens({
+      await reportMessageTokens({
         reporterId: currentUserId,
         messageId: reportModal.message.id,
         conversationId:
           reportModal.message.conversation_id ||
           reportModal.message.conversationId ||
           conversation.id,
-        tokens: selectedReportTokens,
+        tokens: tokensToReport,
       })
 
-      if (result.addedWords?.length) {
-        setReportFeedback({
-          type: 'success',
-        })
-      } else {
-        setReportFeedback({
-          type: 'success',
-        })
-      }
+      setReportFeedback({
+        type: 'success',
+        message: isMediaMessage ? 'Đã báo cáo nội dung media!' : 'Đã gửi báo cáo thành công!',
+      })
 
       setSelectedReportTokens([])
       setTimeout(() => {
@@ -418,15 +929,17 @@ const ChatView = ({ conversation }) => {
   }, [openReportModal])
 
   useEffect(() => {
-    previewUrlRef.current = imagePreviewUrl
-  }, [imagePreviewUrl])
+    previewUrlRef.current = filePreviewUrl
+  }, [filePreviewUrl])
 
   const resetAttachment = useCallback(() => {
     const previousUrl = previewUrlRef.current
-    setSelectedImage(null)
-    setImagePreviewUrl('')
+    setSelectedFile(null)
+    setSelectedMediaType(null)
+    setFilePreviewUrl('')
     setAttachmentError('')
     setUploadStatus('idle')
+    setUploadProgress(0)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -438,11 +951,11 @@ const ChatView = ({ conversation }) => {
 
   useEffect(() => {
     return () => {
-      if (imagePreviewUrl) {
-        URL.revokeObjectURL(imagePreviewUrl)
+      if (filePreviewUrl) {
+        URL.revokeObjectURL(filePreviewUrl)
       }
     }
-  }, [imagePreviewUrl])
+  }, [filePreviewUrl])
 
   useEffect(() => {
     if (conversation?.id) {
@@ -484,14 +997,21 @@ const ChatView = ({ conversation }) => {
     const file = event.target.files?.[0]
     if (!file) return
     try {
-      validateImageFile(file)
-      if (imagePreviewUrl) {
-        URL.revokeObjectURL(imagePreviewUrl)
+      const { messageType } = validateMediaFile(file)
+      if (filePreviewUrl) {
+        URL.revokeObjectURL(filePreviewUrl)
       }
-      setSelectedImage(file)
-      setImagePreviewUrl(URL.createObjectURL(file))
+      setSelectedFile(file)
+      setSelectedMediaType(messageType)
+      // Create preview URL for images and videos
+      if (messageType === CHAT_MESSAGE_TYPES?.IMAGE || messageType === CHAT_MESSAGE_TYPES?.VIDEO) {
+        setFilePreviewUrl(URL.createObjectURL(file))
+      } else {
+        setFilePreviewUrl('')
+      }
       setAttachmentError('')
       setUploadStatus('idle')
+      setUploadProgress(0)
     } catch (error) {
       setAttachmentError(error.message)
       event.target.value = ''
@@ -502,7 +1022,7 @@ const ChatView = ({ conversation }) => {
     e.preventDefault()
     const rawValue = inputValue
     const content = rawValue.trim()
-    const hasAttachment = Boolean(selectedImage)
+    const hasAttachment = Boolean(selectedFile)
     if ((!content && !hasAttachment) || isSending) return
 
     // Get recipient ID from various sources
@@ -513,8 +1033,7 @@ const ChatView = ({ conversation }) => {
       isNew: conversation.isNew,
       conversationId: conversation.id,
       recipientId: recipientId,
-      recipientSource: conversation.recipient?.id ? 'recipient' : otherParticipant?.id ? 'otherParticipant' : 'none',
-      conversationData: conversation,
+      fileType: selectedMediaType,
     })
 
     setIsSending(true)
@@ -524,55 +1043,103 @@ const ChatView = ({ conversation }) => {
     try {
       const messageOptions = {}
 
-      if (selectedImage) {
-        validateImageFile(selectedImage)
+      if (selectedFile) {
+        const { messageType } = validateMediaFile(selectedFile)
         setUploadStatus('credentials')
         const credentials = await requestChatUploadCredentials()
         setUploadStatus('uploading')
-        const uploadResult = await uploadImageToCloudinary(selectedImage, credentials)
+
+        // Upload with progress tracking for videos
+        const { uploadResult } = await uploadMediaToCloudinary(
+          selectedFile,
+          credentials,
+          (progress) => setUploadProgress(progress)
+        )
+
         setUploadStatus('ready')
         const mediaUrl = uploadResult.secure_url || uploadResult.url
         if (!mediaUrl) {
-          throw new Error('Không nhận được URL ảnh sau khi tải lên')
+          throw new Error('Không nhận được URL sau khi tải lên')
         }
-        messageOptions.type = CHAT_MESSAGE_TYPES?.IMAGE || 'MESSAGE_TYPE_IMAGE'
+        messageOptions.type = messageType
         messageOptions.mediaUrl = mediaUrl
+
+        // Store original filename in content for files (since backend doesn't support metadata)
+        // Format: [FILE:original_filename.ext] or just the filename for display
+        messageOptions.originalFilename = selectedFile.name
+
         messageOptions.mediaMetadata = {
           width: uploadResult.width,
           height: uploadResult.height,
           bytes: uploadResult.bytes,
           format: uploadResult.format,
           resource_type: uploadResult.resource_type,
-          original_filename: uploadResult.original_filename,
+          original_filename: selectedFile.name, // Use actual file name, not Cloudinary's
+          duration: uploadResult.duration,
+        }
+
+        // AI Moderation: Check media content for violations (for images/videos only)
+        if (messageType === CHAT_MESSAGE_TYPES?.IMAGE || messageType === CHAT_MESSAGE_TYPES?.VIDEO) {
+          setUploadStatus('moderating')
+          console.log('[ChatPanel] Moderating media with AI...')
+
+          const moderationResult = await moderateChatMedia(mediaUrl, messageType)
+          console.log('[ChatPanel] Moderation result:', moderationResult)
+
+          if (moderationResult.isViolation) {
+            // Flag this message for auto-censor after sending
+            messageOptions.pendingCensor = true
+            messageOptions.moderationMessage = moderationResult.message
+            console.log('[ChatPanel] Media flagged for censoring:', moderationResult.message)
+          }
         }
       }
+
+      let sendResult = null
 
       if (conversation.isNew) {
         // New conversation -> use startNewConversation with recipient info
         console.log('[ChatPanel] Starting new conversation with recipient:', conversation.recipient)
-        const result = await startNewConversation(
+        sendResult = await startNewConversation(
           conversation.recipient.id,
           content,
           conversation.recipient, // Pass recipient info to cache
           messageOptions
         )
-        console.log('[ChatPanel] New conversation result:', result)
+        console.log('[ChatPanel] New conversation result:', sendResult)
       } else {
         // Existing conversation -> send message with recipient ID to ensure they're a participant
         console.log('[ChatPanel] Sending to existing conversation:', conversation.id, 'recipient:', recipientId)
-        await sendMessage(conversation.id, content, recipientId, messageOptions)
+        sendResult = await sendMessage(conversation.id, content, recipientId, messageOptions)
       }
 
-      if (selectedImage) {
+      // Auto-censor if AI flagged this message
+      if (messageOptions.pendingCensor && sendResult?.message_id) {
+        console.log('[ChatPanel] Auto-censoring message:', sendResult.message_id)
+        try {
+          await reportMessageTokens({
+            reporterId: currentUserId,
+            messageId: sendResult.message_id,
+            conversationId: sendResult.conversation_id || conversation.id,
+            tokens: ['ai_moderation_violation'],
+          })
+          console.log('[ChatPanel] Message auto-censored successfully')
+        } catch (reportError) {
+          console.error('[ChatPanel] Failed to auto-censor message:', reportError)
+        }
+      }
+
+      if (selectedFile) {
         resetAttachment()
       }
     } catch (error) {
       console.error('[ChatPanel] Failed to send message:', error)
       setInputValue(rawValue) // Restore input on error
-      setAttachmentError(error.message || 'Failed to send message')
+      setAttachmentError(error.message || 'Gửi tin nhắn thất bại')
     } finally {
       setIsSending(false)
       setUploadStatus('idle')
+      setUploadProgress(0)
     }
   }
 
@@ -679,33 +1246,59 @@ const ChatView = ({ conversation }) => {
 
       {/* Input & Attachments */}
       <div className="border-t border-border p-3">
-        {selectedImage && (
+        {selectedFile && (
           <div className="mb-3 flex items-center gap-3 rounded-2xl border border-border bg-muted/40 p-2.5">
-            <div className="relative h-12 w-12 overflow-hidden rounded-xl border border-border">
-              <img
-                src={imagePreviewUrl}
-                alt="Selected attachment preview"
-                className="h-full w-full object-cover"
-              />
+            {/* Preview based on file type */}
+            <div className="relative h-12 w-12 overflow-hidden rounded-xl border border-border flex items-center justify-center bg-background">
+              {selectedMediaType === CHAT_MESSAGE_TYPES?.IMAGE && filePreviewUrl ? (
+                <img
+                  src={filePreviewUrl}
+                  alt="Selected attachment preview"
+                  className="h-full w-full object-cover"
+                />
+              ) : selectedMediaType === CHAT_MESSAGE_TYPES?.VIDEO ? (
+                <div className="flex items-center justify-center h-full w-full bg-primary/10">
+                  <FilmIcon className="h-6 w-6 text-primary" />
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-full w-full bg-muted">
+                  <DocumentIcon className="h-6 w-6 text-muted-foreground" />
+                </div>
+              )}
             </div>
-            <div className="flex-1 text-xs">
-              <p className="font-medium text-foreground truncate">{selectedImage.name}</p>
-              <p className="text-muted-foreground">{formatFileSize(selectedImage.size)}</p>
+            <div className="flex-1 text-xs min-w-0">
+              <p className="font-medium text-foreground truncate">{selectedFile.name}</p>
+              <p className="text-muted-foreground">
+                {formatFileSize(selectedFile.size)} • {getFileTypeLabel(selectedMediaType)}
+              </p>
               {uploadStatus !== 'idle' && (
-                <p className="text-[11px] text-primary mt-0.5">
-                  {uploadStatus === 'credentials'
-                    ? 'Requesting upload token...'
-                    : uploadStatus === 'uploading'
-                      ? 'Uploading photo...'
-                      : 'Upload ready'}
-                </p>
+                <div className="mt-1">
+                  <p className="text-[11px] text-primary">
+                    {uploadStatus === 'credentials'
+                      ? 'Đang lấy token...'
+                      : uploadStatus === 'uploading'
+                        ? selectedMediaType === CHAT_MESSAGE_TYPES?.VIDEO
+                          ? `Đang tải video... ${uploadProgress}%`
+                          : 'Đang tải lên...'
+                        : 'Sẵn sàng gửi'}
+                  </p>
+                  {uploadStatus === 'uploading' && selectedMediaType === CHAT_MESSAGE_TYPES?.VIDEO && (
+                    <div className="w-full h-1 bg-muted rounded-full mt-1 overflow-hidden">
+                      <div
+                        className="h-full bg-primary transition-all duration-300"
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
               )}
             </div>
             <button
               type="button"
               onClick={resetAttachment}
               className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted"
-              aria-label="Remove image"
+              aria-label="Xóa file"
+              disabled={isSending}
             >
               <XMarkIcon className="h-4 w-4" />
             </button>
@@ -720,7 +1313,7 @@ const ChatView = ({ conversation }) => {
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept={getAcceptedFileTypes()}
             onChange={handleAttachmentChange}
             className="hidden"
           />
@@ -728,23 +1321,24 @@ const ChatView = ({ conversation }) => {
             type="button"
             onClick={() => fileInputRef.current?.click()}
             className="rounded-full bg-muted p-2 text-muted-foreground transition-colors hover:text-foreground focus:outline-none disabled:opacity-50"
-            aria-label="Add image"
+            aria-label="Đính kèm file"
+            title="Gửi ảnh, video hoặc tệp đính kèm"
             disabled={isSending}
           >
-            <PhotoIcon className="h-5 w-5" />
+            <PaperClipIcon className="h-5 w-5" />
           </button>
           <input
             ref={inputRef}
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Type a message..."
+            placeholder="Nhập tin nhắn..."
             disabled={isSending}
             className="flex-1 rounded-full bg-muted px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
           />
           <button
             type="submit"
-            disabled={(!inputValue.trim() && !selectedImage) || isSending}
+            disabled={(!inputValue.trim() && !selectedFile) || isSending}
             className="rounded-full bg-primary p-2 text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             <PaperAirplaneIcon className="h-4 w-4" />
@@ -758,7 +1352,11 @@ const ChatView = ({ conversation }) => {
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <p className="text-sm font-semibold text-foreground">Report tin nhắn</p>
-                <p className="text-[11px] text-muted-foreground">Chọn phần nội dung độc hại để hệ thống ghi nhận.</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {isMediaMessage
+                    ? 'Báo cáo nội dung media vi phạm'
+                    : 'Chọn phần nội dung độc hại để hệ thống ghi nhận.'}
+                </p>
               </div>
               <button
                 type="button"
@@ -770,41 +1368,56 @@ const ChatView = ({ conversation }) => {
               </button>
             </div>
 
-            <div className="mb-3 rounded-xl bg-muted/40 p-3 text-sm text-foreground">
-              {reportModal.message?.content
-                ? reportModal.message.content
-                : 'Tin nhắn không có nội dung text. Hãy mô tả nội dung cần report trong ô bên dưới.'}
-            </div>
-
-            <div className="mb-4 space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground">Chọn từ/cụm từ cần report</p>
-              {reportTokenOptions.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {reportTokenOptions.map((token) => {
-                    const isActive = selectedReportTokens.includes(token.value)
-                    return (
-                      <button
-                        key={token.value}
-                        type="button"
-                        onClick={() => toggleReportToken(token.value)}
-                        className={clsx(
-                          'rounded-full border px-3 py-1 text-xs transition-all',
-                          isActive
-                            ? 'border-destructive bg-destructive text-destructive-foreground'
-                            : 'border-border bg-muted text-muted-foreground hover:border-foreground'
-                        )}
-                      >
-                        {token.label}
-                      </button>
-                    )
-                  })}
+            {/* Media preview for media messages */}
+            {isMediaMessage ? (
+              <div className="mb-4">
+                <div className="rounded-xl bg-muted/40 p-4 flex flex-col items-center justify-center gap-3">
+                  <ExclamationTriangleIcon className="h-10 w-10 text-yellow-500" />
+                  <p className="text-sm text-foreground text-center font-medium">
+                    Bạn có chắc muốn báo cáo nội dung này?
+                  </p>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Nội dung sẽ được đánh dấu là vi phạm và sẽ bị che khi hiển thị
+                  </p>
                 </div>
-              ) : (
-                <p className="text-xs text-destructive">
-                  Tin nhắn này không chứa ký tự văn bản nên không thể report.
-                </p>
-              )}
-            </div>
+              </div>
+            ) : (
+              <>
+                <div className="mb-3 rounded-xl bg-muted/40 p-3 text-sm text-foreground">
+                  {reportModal.message?.content || 'Tin nhắn không có nội dung text.'}
+                </div>
+
+                <div className="mb-4 space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground">Chọn từ/cụm từ cần report</p>
+                  {reportTokenOptions.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {reportTokenOptions.map((token) => {
+                        const isActive = selectedReportTokens.includes(token.value)
+                        return (
+                          <button
+                            key={token.value}
+                            type="button"
+                            onClick={() => toggleReportToken(token.value)}
+                            className={clsx(
+                              'rounded-full border px-3 py-1 text-xs transition-all',
+                              isActive
+                                ? 'border-destructive bg-destructive text-destructive-foreground'
+                                : 'border-border bg-muted text-muted-foreground hover:border-foreground'
+                            )}
+                          >
+                            {token.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-destructive">
+                      Tin nhắn này không chứa ký tự văn bản nên không thể report.
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
 
             {reportFeedback.message && (
               <p
@@ -829,9 +1442,13 @@ const ChatView = ({ conversation }) => {
                 type="button"
                 onClick={handleSubmitReport}
                 disabled={!canSubmitReport || isReportSubmitting}
-                className="rounded-full bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+                className="rounded-full bg-destructive px-4 py-1.5 text-xs font-semibold text-destructive-foreground disabled:opacity-50 hover:bg-destructive/90"
               >
-                {isReportSubmitting ? 'Đang gửi...' : 'Gửi report'}
+                {isReportSubmitting
+                  ? 'Đang gửi...'
+                  : isMediaMessage
+                    ? 'Báo cáo nội dung'
+                    : 'Gửi report'}
               </button>
             </div>
           </div>
@@ -1059,22 +1676,9 @@ const ChatPanel = ({ isOpen, onClose }) => {
     setActiveConversation,
     isLoading,
     unreadCount,
-    startNewConversation,
     getConversationUnread,
   } = useChat()
 
-  const filtersSummary = useMemo(() => {
-    if (selectedFilters.size === filterOptions.length && !showUnreadOnly) {
-      return 'All conversations'
-    }
-
-    const enabled = filterOptions
-      .filter((option) => selectedFilters.has(option.id))
-      .map((option) => option.label)
-
-    const summary = enabled.length ? enabled.join(', ') : 'No filters'
-    return showUnreadOnly ? `${summary} • Unread` : summary
-  }, [selectedFilters, showUnreadOnly])
 
   const toggleFilter = (id) => {
     setSelectedFilters((prev) => {
