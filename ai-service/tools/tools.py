@@ -40,7 +40,7 @@ def report_user_violation( description: str) -> None:
         violation_detail = create_violation_record(user_id, description, text_content, image_content) # type: ignore
         violation_count = query_user_validations_count(user_id)
         print(f"User {user_id} violation reported: {violation_count}")
-        if violation_count >= 10:
+        if violation_count >= 100:
             result = ban_user(user_id, "Exceeded maximum number of violations.")
         else:
             result = warning_user(user_id, description)

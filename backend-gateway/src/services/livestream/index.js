@@ -141,8 +141,9 @@ router.post("/start-monitoring", async (req, res) => {
  * Monitor livestream by fetching segments and checking for violations
  */
 async function monitorLivestream(streamId, userId) {
-  const CHECK_INTERVAL = 10000; // Check every 10 seconds
-  const OFFLINE_THRESHOLD = 4; // Consider offline after 3 consecutive failures
+  const CHECK_INTERVAL = 30000; // Check every 30 seconds
+  const OFFLINE_THRESHOLD = 10; // Consider offline after 10 consecutive failures
+  const SEGMENTS_PER_BATCH = 6; // Check last 6 segments per batch
   let consecutiveFailures = 0;
   const checkedSegments = new Set(); // Track checked segments to avoid duplicates
 
@@ -153,11 +154,12 @@ async function monitorLivestream(streamId, userId) {
         checkedCount: checkedSegments.size,
       });
 
-      // Fetch and check stream segments
+      // Fetch and check stream segments (last 6 segments)
       const violation = await checkStreamSegments(
         streamId,
         userId,
-        checkedSegments
+        checkedSegments,
+        SEGMENTS_PER_BATCH
       );
       // const violation = true;
 
@@ -193,7 +195,7 @@ async function monitorLivestream(streamId, userId) {
         });
 
         // Create violation notification
-        await createViolationNotification(streamId, userId, violation.message);
+        // await createViolationNotification(streamId, userId, violation.message);
 
         // Stop monitoring after violation
         clearInterval(intervalId);
@@ -229,9 +231,18 @@ async function monitorLivestream(streamId, userId) {
 
 /**
  * Fetch stream segments from CDN and check for violations
+ * @param {string} streamId - Stream ID
+ * @param {string} userId - User ID
+ * @param {Set} checkedSegments - Set of already checked segments
+ * @param {number} batchSize - Number of segments to check (last N segments)
  * @returns {Object|null|false} - Violation object if found, null if no new segments, false if checked and no violation
  */
-async function checkStreamSegments(streamId, userId, checkedSegments) {
+async function checkStreamSegments(
+  streamId,
+  userId,
+  checkedSegments,
+  batchSize = 6
+) {
   try {
     // Fetch HLS playlist
     const playlistUrl = `${CDN_BASE_URL}/live/${streamId}.m3u8`;
@@ -256,46 +267,70 @@ async function checkStreamSegments(streamId, userId, checkedSegments) {
       return null;
     }
 
-    // Get the latest segment (last one)
-    const latestSegment = segmentLines[segmentLines.length - 1];
+    // Get the last N segments (batch)
+    const lastSegments = segmentLines.slice(-batchSize);
 
-    // Skip if already checked this segment
-    if (checkedSegments.has(latestSegment)) {
+    // Filter out already checked segments
+    const newSegments = lastSegments.filter((seg) => !checkedSegments.has(seg));
+
+    // Skip if no new segments to check
+    if (newSegments.length === 0) {
       logger.info(
-        "[LivestreamMonitor] Segment already checked, waiting for new segment",
+        "[LivestreamMonitor] All segments already checked, waiting for new segments",
         {
           streamId,
-          segment: latestSegment,
+          totalSegments: segmentLines.length,
+          batchSize: lastSegments.length,
         }
       );
       return null;
     }
 
-    const segmentUrl = latestSegment.startsWith("http")
-      ? latestSegment
-      : `${CDN_BASE_URL}/live/${latestSegment}`;
-
-    logger.info("[LivestreamMonitor] Fetching new segment", { segmentUrl });
-
-    // Download segment
-    const segmentResponse = await axios.get(segmentUrl, {
-      responseType: "arraybuffer",
-      timeout: 15000,
+    logger.info("[LivestreamMonitor] Fetching new segments", {
+      streamId,
+      newSegmentsCount: newSegments.length,
+      segments: newSegments,
     });
 
-    // Convert to base64
-    const base64Video = Buffer.from(segmentResponse.data).toString("base64");
+    // Download all new segments in parallel
+    const base64Videos = [];
+    const downloadPromises = newSegments.map(async (segment) => {
+      const segmentUrl = segment.startsWith("http")
+        ? segment
+        : `${CDN_BASE_URL}/live/${segment}`;
 
-    logger.info("[LivestreamMonitor] Segment downloaded", {
-      size: segmentResponse.data.byteLength,
-      base64Length: base64Video.length,
+      const segmentResponse = await axios.get(segmentUrl, {
+        responseType: "arraybuffer",
+        timeout: 15000,
+      });
+
+      const base64Video = Buffer.from(segmentResponse.data).toString("base64");
+
+      logger.info("[LivestreamMonitor] Segment downloaded", {
+        segment,
+        size: segmentResponse.data.byteLength,
+      });
+
+      return { segment, base64Video };
     });
 
-    // Mark this segment as checked
-    checkedSegments.add(latestSegment);
+    const downloadedSegments = await Promise.all(downloadPromises);
 
-    // Check content with AI
-    const moderationResult = await moderateLivestream(userId, [base64Video]);
+    // Extract base64 videos in order
+    downloadedSegments.forEach(({ base64Video }) => {
+      base64Videos.push(base64Video);
+    });
+
+    logger.info("[LivestreamMonitor] All segments downloaded", {
+      streamId,
+      count: base64Videos.length,
+    });
+
+    // Mark all new segments as checked
+    newSegments.forEach((seg) => checkedSegments.add(seg));
+
+    // Check content with AI (batch check)
+    const moderationResult = await moderateLivestream(userId, base64Videos);
 
     logger.info("[LivestreamMonitor] Moderation result", {
       streamId,
@@ -304,7 +339,10 @@ async function checkStreamSegments(streamId, userId, checkedSegments) {
     });
 
     // Return violation if rejected
-    if (moderationResult.result === "Rejected") {
+    if (
+      moderationResult.result === "Banned" ||
+      moderationResult.result === "Warning"
+    ) {
       return {
         message: moderationResult.message,
         timestamp: new Date().toISOString(),

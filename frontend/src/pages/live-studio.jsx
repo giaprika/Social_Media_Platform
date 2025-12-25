@@ -328,45 +328,6 @@ const LiveStudio = () => {
     }
   }, [streamData, navigate, toast]);
 
-  // Listen for livestream violation notifications
-  useEffect(() => {
-    if (!socket || !streamData?.id) return;
-
-    const handleNotification = (data) => {
-      try {
-        // Parse metadata if it's a string
-        const metadata =
-          typeof data.metadata === "string"
-            ? JSON.parse(data.metadata)
-            : data.metadata;
-
-        // Check if this is a livestream violation for our current stream
-        if (
-          metadata?.type === "LIVESTREAM_VIOLATION" &&
-          metadata?.stream_id === streamData.id
-        ) {
-          console.log("⚠️ Livestream violation detected:", metadata);
-
-          // Show error toast
-          toast.error(`Livestream stopped: ${metadata.reason}`, {
-            duration: 10000,
-          });
-
-          // Force stop the stream using confirmStopStream
-          confirmStopStream();
-        }
-      } catch (error) {
-        console.error("Error handling notification:", error);
-      }
-    };
-
-    socket.on("notification", handleNotification);
-
-    return () => {
-      socket.off("notification", handleNotification);
-    };
-  }, [socket, streamData?.id, toast]);
-
   // Session timer
   useEffect(() => {
     if (!isStreaming) return undefined;
@@ -522,6 +483,41 @@ const LiveStudio = () => {
 
     toast.info("Live stream stopped");
   }, [toast, stopViewerPolling, disconnectChat]);
+
+  // Listen for violation.events notifications (giống rabbitmq.consumer)
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleNotification = (data) => {
+      try {
+        // Bắt event violation.events qua title_template
+        // Giống handleUserWarning trong rabbitmq.consumer.js
+        console.log("data:", data);
+        if (data.title === "Warning Notification!") {
+          console.log("⚠️ Violation event detected:", {
+            title: data.title_template,
+            body: data.body_template,
+          });
+
+          // Hiển thị toast với nội dung từ notification
+          toast.error(`${data.title_template}: ${data.body_template}`, {
+            duration: 10000,
+          });
+
+          // Tự động dừng livestream
+          confirmStopStream();
+        }
+      } catch (error) {
+        console.error("Error handling notification:", error);
+      }
+    };
+
+    socket.on("notification", handleNotification);
+
+    return () => {
+      socket.off("notification", handleNotification);
+    };
+  }, [socket, toast, confirmStopStream]);
 
   // Add confirmStopStream to violation listener dependencies
   useEffect(() => {
